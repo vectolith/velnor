@@ -1,7 +1,8 @@
 /**
  * Automated End-to-End Verification Suite for Olli
- * Tests Web Search, Document Vector RAG, Long-Term Memory, Travel + Live Weather,
- * iMessage/SMS TwiML & Sendblue Webhooks, Slack Block Kit Webhooks, Siri Shortcut & vCard.
+ * Tests Health/Readiness, Rate-Limiting & Security Headers, Web Search, Document Vector RAG,
+ * Long-Term Memory, Travel + Live Weather, iMessage/SMS TwiML & Sendblue Webhooks,
+ * Slack Block Kit Webhooks, Siri Shortcut & vCard.
  */
 const BASE = process.env.OLLI_BASE_URL || "http://localhost:3000";
 
@@ -12,7 +13,27 @@ async function assertEndpoint(name, fn) {
 }
 
 async function main() {
-  console.log(`🚀 Running Olli End-to-End Verification against ${BASE}...\n`);
+  console.log(`🚀 Running Olli Production End-to-End Verification against ${BASE}...\n`);
+
+  await assertEndpoint("GET /api/health (Readiness, SQLite DB & Security Headers)", async () => {
+    const res = await fetch(`${BASE}/api/health`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (res.headers.get("x-content-type-options") !== "nosniff") {
+      throw new Error("Missing X-Content-Type-Options: nosniff security header");
+    }
+    if (!res.headers.get("x-ratelimit-limit")) {
+      throw new Error("Missing X-RateLimit-Limit header");
+    }
+    const data = await res.json();
+    if (data.status !== "healthy") throw new Error("Service not healthy");
+  });
+
+  await assertEndpoint("GET /manifest.webmanifest (Installable PWA Manifest)", async () => {
+    const res = await fetch(`${BASE}/manifest.webmanifest`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.name?.includes("Olli")) throw new Error("Invalid PWA manifest");
+  });
 
   await assertEndpoint("GET /api/chat (SQLite DB + Initial State)", async () => {
     const res = await fetch(`${BASE}/api/chat`);
@@ -95,7 +116,7 @@ async function main() {
     }
   });
 
-  console.log("\n🎉 All Olli end-to-end verification checks passed!");
+  console.log("\n🎉 All 8 Olli production end-to-end verification checks passed!");
 }
 
 main().catch((err) => {

@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { loadStateFromSqlite, saveStateToSqlite } from "./sqliteDb";
+import { loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
 import {
   CalendarEventItem,
   ChatMessage,
@@ -24,7 +24,7 @@ export interface OlliState {
   conversationCursors: Record<string, string>; // channelKey -> last Gemini interactionId
 }
 
-const DATA_DIR = path.join(process.cwd(), ".data");
+const DATA_DIR = resolveWritableDataDir();
 const STORE_PATH = path.join(DATA_DIR, "olli-store.json");
 
 const DEFAULT_STATE: OlliState = {

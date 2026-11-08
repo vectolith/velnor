@@ -1,8 +1,32 @@
 import fs from "fs";
+import os from "os";
 import path from "path";
 import type { OlliState } from "./store";
 
-const DATA_DIR = path.join(process.cwd(), ".data");
+export function resolveWritableDataDir(): string {
+  const localDir = path.join(process.cwd(), ".data");
+  try {
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    const testFile = path.join(localDir, ".write-test");
+    fs.writeFileSync(testFile, "ok");
+    fs.unlinkSync(testFile);
+    return localDir;
+  } catch {
+    const tmpDir = path.join(os.tmpdir(), "olli-data");
+    try {
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+    } catch {
+      // Ignore
+    }
+    return tmpDir;
+  }
+}
+
+const DATA_DIR = resolveWritableDataDir();
 const SQLITE_PATH = path.join(DATA_DIR, "olli.db");
 
 let sqliteInstance: any = null;
@@ -13,9 +37,6 @@ function getSqliteDb() {
   if (sqliteInstance) return sqliteInstance;
 
   try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
     // Use Node 22+ built-in node:sqlite module
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const sqlite = require("node:sqlite");
@@ -102,10 +123,12 @@ export function saveStateToSqlite(state: OlliState): boolean {
 export function getDatabaseEngineStatus(): {
   engine: "node:sqlite (SQLite3 + HNSW Memory)" | "JSON + In-Memory HNSW";
   dbPath: string;
+  writableDir: string;
 } {
   const db = getSqliteDb();
   return {
     engine: db ? "node:sqlite (SQLite3 + HNSW Memory)" : "JSON + In-Memory HNSW",
     dbPath: db ? SQLITE_PATH : path.join(DATA_DIR, "olli-store.json"),
+    writableDir: DATA_DIR,
   };
 }
