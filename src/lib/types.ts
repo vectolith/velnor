@@ -26,6 +26,20 @@ export interface ToolActionSummary {
   data?: Record<string, unknown>;
 }
 
+export interface MemoryFact {
+  id: string;
+  category: "preference" | "contact" | "travel" | "work";
+  fact: string;
+  createdAt: string;
+}
+
+export interface StructuredCardData {
+  type: "travel" | "calendar" | "email_draft" | "weather";
+  title: string;
+  subtitle?: string;
+  metadata?: Record<string, any>;
+}
+
 export interface ChatMessage {
   id: string;
   channel: ChannelType;
@@ -43,6 +57,8 @@ export interface ChatMessage {
   };
   citations?: Citation[];
   toolActions?: ToolActionSummary[];
+  structuredCard?: StructuredCardData;
+  reactions?: string[];
 }
 
 export interface ReminderItem {

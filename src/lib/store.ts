@@ -7,6 +7,7 @@ import {
   DocumentChunk,
   EmailItem,
   IndexedDocument,
+  MemoryFact,
   ProviderConfig,
   ReminderItem,
 } from "./types";
@@ -18,6 +19,7 @@ export interface OlliState {
   emails: EmailItem[];
   documents: IndexedDocument[];
   documentChunks: DocumentChunk[];
+  memories: MemoryFact[];
   config: ProviderConfig;
   conversationCursors: Record<string, string>; // channelKey -> last Gemini interactionId
 }
@@ -163,6 +165,26 @@ const DEFAULT_STATE: OlliState = {
       docName: "Olli_Product_Brief_2026.pdf",
       content: "Productivity features include Gmail triage (reading, searching, summarizing, drafting, sending, and archiving emails), Google Calendar scheduling, smart text reminders, and travel itinerary planning.",
       tokens: ["productivity", "gmail", "triage", "emails", "google", "calendar", "scheduling", "reminders", "travel", "itinerary", "planning"],
+    },
+  ],
+  memories: [
+    {
+      id: "mem-1",
+      category: "travel",
+      fact: "Home airport is SFO (San Francisco); prefers window seats (6A) and non-stop morning flights.",
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "mem-2",
+      category: "contact",
+      fact: "Sarah Jenkins (sarah@acme.io) is VP of Product; Marcus Vance (marcus@acme.io) leads Infrastructure.",
+      createdAt: new Date().toISOString(),
+    },
+    {
+      id: "mem-3",
+      category: "preference",
+      fact: "Prefers concise bulleted summaries, specialty pour-over coffee spots, and 30-minute default meetings.",
+      createdAt: new Date().toISOString(),
     },
   ],
   config: {

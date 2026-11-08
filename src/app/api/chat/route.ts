@@ -3,10 +3,12 @@ import { processUserMessage } from "@/lib/ai/agent";
 import { getDatabaseEngineStatus } from "@/lib/sqliteDb";
 import { getEffectiveKeys, getStore, saveStore } from "@/lib/store";
 import { ingestDocumentOrUrl } from "@/lib/tools/documentStore";
+import { addMemoryFact, deleteMemoryFact } from "@/lib/tools/memoryStore";
 import { transcribeAudioWithProvider } from "@/lib/tools/multimodal";
 import {
   createCalendarEvent,
   createReminder,
+  organizeEmail,
   toggleReminder,
 } from "@/lib/tools/workspaceService";
 import { Attachment, ChannelType } from "@/lib/types";
@@ -22,6 +24,7 @@ export async function GET() {
     calendarEvents: state.calendarEvents,
     emails: state.emails.filter((e) => !e.archived),
     documents: state.documents,
+    memories: state.memories || [],
     dbStatus,
     providerStatus: {
       activeProvider: state.config.activeProvider,
@@ -51,6 +54,45 @@ export async function POST(req: NextRequest) {
     if (action === "toggle_reminder") {
       const updated = toggleReminder(String(body.id));
       return NextResponse.json({ reminder: updated, reminders: getStore().reminders });
+    }
+
+    if (action === "add_memory") {
+      const mem = addMemoryFact({
+        fact: String(body.fact || ""),
+        category: body.category,
+      });
+      return NextResponse.json({ memory: mem, memories: getStore().memories });
+    }
+
+    if (action === "delete_memory") {
+      const memories = deleteMemoryFact(String(body.id || ""));
+      return NextResponse.json({ memories });
+    }
+
+    if (action === "organize_email") {
+      organizeEmail({
+        emailId: body.emailId ? String(body.emailId) : undefined,
+        query: body.query ? String(body.query) : undefined,
+        action: body.emailAction || "archive",
+        label: body.label ? String(body.label) : undefined,
+      });
+      return NextResponse.json({
+        emails: getStore().emails.filter((e) => !e.archived),
+      });
+    }
+
+    if (action === "toggle_reaction") {
+      const state = getStore();
+      const msg = state.messages.find((m) => m.id === String(body.messageId));
+      const emoji = String(body.emoji || "❤️");
+      if (msg) {
+        const list = msg.reactions || [];
+        msg.reactions = list.includes(emoji)
+          ? list.filter((r) => r !== emoji)
+          : [...list, emoji];
+        saveStore(state);
+      }
+      return NextResponse.json({ messages: state.messages });
     }
 
     if (action === "create_reminder") {
@@ -125,6 +167,7 @@ export async function POST(req: NextRequest) {
       calendarEvents: state.calendarEvents,
       emails: state.emails.filter((e) => !e.archived),
       documents: state.documents,
+      memories: state.memories || [],
     });
   } catch (err) {
     console.error("Error in /api/chat:", err);

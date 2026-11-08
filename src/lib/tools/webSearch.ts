@@ -13,7 +13,7 @@ export async function performWebSearch(query: string): Promise<WebSearchOutput> 
   try {
     // 1. DuckDuckGo Instant Answer API
     const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&no_html=1`;
-    const ddgRes = await fetch(ddgUrl, { signal: AbortSignal.timeout(4500) });
+    const ddgRes = await fetch(ddgUrl, { signal: AbortSignal.timeout(4000) });
     if (ddgRes.ok) {
       const ddgData = await ddgRes.json();
       if (ddgData.AbstractText) {
@@ -38,7 +38,7 @@ export async function performWebSearch(query: string): Promise<WebSearchOutput> 
       }
     }
   } catch {
-    // Ignore timeout and continue to Wikipedia fallback
+    // Ignore timeout and continue
   }
 
   try {
@@ -48,7 +48,7 @@ export async function performWebSearch(query: string): Promise<WebSearchOutput> 
     )}&utf8=&format=json&srlimit=3`;
     const wikiRes = await fetch(wikiUrl, {
       headers: { "User-Agent": "OlliBot/1.0 (https://olly.bot)" },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(4000),
     });
     if (wikiRes.ok) {
       const wikiData = await wikiRes.json();
@@ -72,6 +72,32 @@ export async function performWebSearch(query: string): Promise<WebSearchOutput> 
     // Ignore network errors
   }
 
+  try {
+    // 3. Hacker News Algolia Live Index for real-time tech, AI & world news
+    const hnUrl = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(
+      query
+    )}&tags=story&hitsPerPage=2`;
+    const hnRes = await fetch(hnUrl, { signal: AbortSignal.timeout(3500) });
+    if (hnRes.ok) {
+      const hnData = await hnRes.json();
+      for (const hit of hnData.hits || []) {
+        if (hit.title && (hit.url || hit.objectID)) {
+          const hitUrl = hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`;
+          snippets.push(`Recent discussion: "${hit.title}" (${hit.points || 0} pts)`);
+          if (!citations.some((c) => c.url === hitUrl)) {
+            citations.push({
+              title: hit.title,
+              url: hitUrl,
+              snippet: `${hit.points || 0} points • ${hit.num_comments || 0} comments`,
+            });
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore
+  }
+
   if (citations.length === 0) {
     citations.push({
       title: `Google Search: "${query}"`,
@@ -84,9 +110,8 @@ export async function performWebSearch(query: string): Promise<WebSearchOutput> 
     query,
     summary:
       snippets.length > 0
-        ? snippets.join("\n\n")
-        : `Performed live search for "${query}". Use grounded knowledge and provide direct links.`,
+        ? snippets.slice(0, 4).join("\n\n")
+        : `Performed live search for "${query}".`,
     citations: citations.slice(0, 5),
   };
 }
-

@@ -9,10 +9,14 @@ import {
   ChatMessage,
   EmailItem,
   IndexedDocument,
+  MemoryFact,
   ReminderItem,
 } from "@/lib/types";
+import { RichMessageRenderer } from "@/components/RichMessageRenderer";
 import {
+  Archive,
   Bell,
+  Brain,
   Calendar,
   CheckCircle2,
   Circle,
@@ -35,6 +39,7 @@ import {
   Sparkles,
   Terminal,
   Trash2,
+  UserPlus,
   Volume2,
   Webhook,
   X,
@@ -81,13 +86,15 @@ const QUICK_PROMPTS = [
 export default function OlliAppPage() {
   const [activeChannel, setActiveChannel] = useState<ChannelType>("imessage");
   const [viewMode, setViewMode] = useState<"chat" | "webhooks">("chat");
-  const [rightTab, setRightTab] = useState<"workspace" | "reminders" | "docs">("workspace");
+  const [rightTab, setRightTab] = useState<"workspace" | "reminders" | "docs" | "memory">("workspace");
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [reminders, setReminders] = useState<ReminderItem[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEventItem[]>([]);
   const [emails, setEmails] = useState<EmailItem[]>([]);
   const [documents, setDocuments] = useState<IndexedDocument[]>([]);
+  const [memories, setMemories] = useState<MemoryFact[]>([]);
+  const [newMemoryFact, setNewMemoryFact] = useState("");
 
   const [inputText, setInputText] = useState("");
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -201,6 +208,7 @@ export default function OlliAppPage() {
         setCalendarEvents(data.calendarEvents || []);
         setEmails(data.emails || []);
         setDocuments(data.documents || []);
+        setMemories(data.memories || []);
         if (data.dbStatus?.engine) {
           setDbEngineLabel(data.dbStatus.engine);
         }
@@ -262,6 +270,7 @@ export default function OlliAppPage() {
         setCalendarEvents(data.calendarEvents || []);
         setEmails(data.emails || []);
         setDocuments(data.documents || []);
+        setMemories(data.memories || []);
         if (data.dbStatus?.engine) {
           setDbEngineLabel(data.dbStatus.engine);
         }
@@ -507,6 +516,60 @@ export default function OlliAppPage() {
     }
   }
 
+  async function handleAddMemory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newMemoryFact.trim()) return;
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "add_memory",
+        fact: newMemoryFact.trim(),
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setMemories(data.memories || []);
+      setNewMemoryFact("");
+    }
+  }
+
+  async function handleDeleteMemory(id: string) {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete_memory", id }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setMemories(data.memories || []);
+    }
+  }
+
+  async function handleEmailAction(emailId: string, emailAction: "archive" | "mark_read") {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "organize_email", emailId, emailAction }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setEmails(data.emails || []);
+    }
+  }
+
+  async function handleToggleReaction(messageId: string, emoji: string) {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "toggle_reaction", messageId, emoji }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      setMessages(data.messages || []);
+    }
+  }
+
   async function handleRunWebhookSimulator() {
     setIsTestingWebhook(true);
     setWebhookResponseOutput("Sending live webhook payload...");
@@ -673,6 +736,15 @@ export default function OlliAppPage() {
 
           {/* Right Status & Settings Button */}
           <div className="flex items-center gap-2.5">
+            <a
+              href="/api/vcard"
+              download="Olli_AI_Assistant.vcf"
+              title="Add Olli to Apple Contacts (.vcf)"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-500/15 hover:bg-blue-500/25 border border-blue-400/30 text-xs font-medium text-blue-200 transition"
+            >
+              <UserPlus className="w-3.5 h-3.5 text-blue-400" />
+              <span>Add Contact (.vcf)</span>
+            </a>
             <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs text-slate-300">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
               <span>
@@ -863,8 +935,41 @@ export default function OlliAppPage() {
                           </div>
                         )}
 
-                        {/* Message Body */}
-                        <div className="whitespace-pre-wrap">{msg.text}</div>
+                        {/* Message Body & Structured Cards */}
+                        <RichMessageRenderer
+                          text={msg.text}
+                          structuredCard={msg.structuredCard}
+                        />
+
+                        {/* iMessage Tapback Reactions Bar */}
+                        <div className="mt-2 pt-1.5 flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1">
+                            {["❤️", "👍", "‼️"].map((emoji) => {
+                              const active = msg.reactions?.includes(emoji);
+                              return (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => handleToggleReaction(msg.id, emoji)}
+                                  title={`Tapback ${emoji}`}
+                                  className={`text-[11px] px-1.5 py-0.5 rounded-full transition cursor-pointer ${
+                                    active
+                                      ? "bg-white/25 border border-white/40 scale-105"
+                                      : "opacity-50 hover:opacity-100 hover:bg-white/10"
+                                  }`}
+                                >
+                                  {emoji}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <span className="text-[10px] opacity-60">
+                            {new Date(msg.timestamp).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
 
                         {/* Generated Image Output */}
                         {msg.generatedImage && (
@@ -1226,37 +1331,37 @@ export default function OlliAppPage() {
         {/* Right Column (4 cols): Productivity, Workspace & Vector Memory Hub */}
         <aside className="lg:col-span-4 flex flex-col bg-[#111520] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
           {/* Tab Switcher */}
-          <div className="grid grid-cols-3 border-b border-white/10 bg-[#0d111a]">
+          <div className="grid grid-cols-4 border-b border-white/10 bg-[#0d111a]">
             <button
               type="button"
               onClick={() => setRightTab("workspace")}
-              className={`py-3 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition cursor-pointer ${
+              className={`py-3 text-[11px] font-semibold flex items-center justify-center gap-1 border-b-2 transition cursor-pointer ${
                 rightTab === "workspace"
                   ? "border-blue-500 text-white bg-white/5"
                   : "border-transparent text-slate-400 hover:text-white"
               }`}
             >
               <Mail className="w-3.5 h-3.5 text-blue-400" />
-              <span>Gmail &amp; Cal</span>
+              <span>Workspace</span>
             </button>
 
             <button
               type="button"
               onClick={() => setRightTab("reminders")}
-              className={`py-3 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition cursor-pointer ${
+              className={`py-3 text-[11px] font-semibold flex items-center justify-center gap-1 border-b-2 transition cursor-pointer ${
                 rightTab === "reminders"
                   ? "border-blue-500 text-white bg-white/5"
                   : "border-transparent text-slate-400 hover:text-white"
               }`}
             >
               <Bell className="w-3.5 h-3.5 text-amber-400" />
-              <span>Reminders ({reminders.filter((r) => !r.completed).length})</span>
+              <span>Tasks ({reminders.filter((r) => !r.completed).length})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setRightTab("docs")}
-              className={`py-3 text-xs font-semibold flex items-center justify-center gap-1.5 border-b-2 transition cursor-pointer ${
+              className={`py-3 text-[11px] font-semibold flex items-center justify-center gap-1 border-b-2 transition cursor-pointer ${
                 rightTab === "docs"
                   ? "border-blue-500 text-white bg-white/5"
                   : "border-transparent text-slate-400 hover:text-white"
@@ -1264,6 +1369,19 @@ export default function OlliAppPage() {
             >
               <Layers className="w-3.5 h-3.5 text-emerald-400" />
               <span>Docs ({documents.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setRightTab("memory")}
+              className={`py-3 text-[11px] font-semibold flex items-center justify-center gap-1 border-b-2 transition cursor-pointer ${
+                rightTab === "memory"
+                  ? "border-blue-500 text-white bg-white/5"
+                  : "border-transparent text-slate-400 hover:text-white"
+              }`}
+            >
+              <Brain className="w-3.5 h-3.5 text-pink-400" />
+              <span>Memory ({memories.length})</span>
             </button>
           </div>
 
@@ -1345,17 +1463,37 @@ export default function OlliAppPage() {
                               {lbl}
                             </span>
                           ))}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleSendMessage(
-                                `Draft a reply to "${em.subject}" confirming I reviewed it`
-                              )
-                            }
-                            className="ml-auto text-[11px] text-blue-400 hover:underline cursor-pointer"
-                          >
-                            Quick Reply
-                          </button>
+                          <div className="ml-auto flex items-center gap-2">
+                            {em.unread && (
+                              <button
+                                type="button"
+                                onClick={() => handleEmailAction(em.id, "mark_read")}
+                                className="text-[11px] text-emerald-400 hover:underline cursor-pointer"
+                              >
+                                Mark Read
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleEmailAction(em.id, "archive")}
+                              title="Archive email"
+                              className="text-[11px] text-slate-400 hover:text-rose-300 flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <Archive className="w-3 h-3" />
+                              <span>Archive</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleSendMessage(
+                                  `Draft a reply to "${em.subject}" confirming I reviewed it`
+                                )
+                              }
+                              className="text-[11px] text-blue-400 hover:underline cursor-pointer"
+                            >
+                              Reply
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1573,6 +1711,73 @@ export default function OlliAppPage() {
                         className="text-[11px] text-emerald-400 hover:underline cursor-pointer"
                       >
                         Ask Olli about this document →
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {rightTab === "memory" && (
+              <div className="space-y-4">
+                <div className="p-3.5 rounded-xl bg-pink-500/10 border border-pink-500/25">
+                  <div className="text-xs font-semibold text-pink-300 flex items-center gap-1.5">
+                    <Brain className="w-3.5 h-3.5" />
+                    <span>Personal Memory &amp; Context Graph</span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 mt-1">
+                    Olli remembers your preferences, contacts, and travel habits across iMessage, SMS, and Slack—injecting them into every prompt automatically.
+                  </p>
+                </div>
+
+                <form
+                  onSubmit={handleAddMemory}
+                  className="p-3.5 rounded-xl bg-[#161c2b] border border-white/10 space-y-2"
+                >
+                  <label
+                    htmlFor="new-memory-input"
+                    className="block text-xs font-semibold text-white"
+                  >
+                    Teach Olli a New Preference or Fact
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      id="new-memory-input"
+                      type="text"
+                      placeholder="e.g. Prefer aisle seats and oat milk cortados"
+                      value={newMemoryFact}
+                      onChange={(e) => setNewMemoryFact(e.target.value)}
+                      className="flex-1 rounded-lg bg-[#0d111a] border border-white/10 px-3 py-1.5 text-xs text-white"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3 py-1.5 rounded-lg bg-pink-600 hover:bg-pink-500 text-xs font-medium text-white flex items-center gap-1 cursor-pointer shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Save</span>
+                    </button>
+                  </div>
+                </form>
+
+                <div className="space-y-2">
+                  {memories.map((m) => (
+                    <div
+                      key={m.id}
+                      className="p-3 rounded-xl bg-[#161c2b] border border-white/10 flex items-start justify-between gap-2"
+                    >
+                      <div className="space-y-1">
+                        <span className="inline-block text-[10px] font-semibold uppercase px-2 py-0.5 rounded bg-pink-500/15 text-pink-300">
+                          {m.category}
+                        </span>
+                        <p className="text-xs text-slate-200">{m.fact}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMemory(m.id)}
+                        title="Forget this fact"
+                        className="p-1 text-slate-500 hover:text-rose-400 cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   ))}

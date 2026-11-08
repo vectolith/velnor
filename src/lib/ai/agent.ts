@@ -6,9 +6,11 @@ import {
   ChannelType,
   ChatMessage,
   Citation,
+  StructuredCardData,
   ToolActionSummary,
 } from "../types";
 import { ingestDocumentOrUrl, queryVectorDocuments } from "../tools/documentStore";
+import { addMemoryFact, listMemoryFacts } from "../tools/memoryStore";
 import { generateImageWithProvider } from "../tools/multimodal";
 import { buildTravelPlan } from "../tools/travelService";
 import { performWebSearch } from "../tools/webSearch";
@@ -179,7 +181,7 @@ export const OLLI_FUNCTION_DECLARATIONS = [
   {
     type: "function" as const,
     name: "plan_trip_or_local",
-    description: "Plan a travel itinerary, find local spots, and generate booking links for flights/hotels.",
+    description: "Plan a travel itinerary, fetch live weather, find local spots, and generate booking links for flights/hotels.",
     parameters: {
       type: "object",
       properties: {
@@ -190,12 +192,41 @@ export const OLLI_FUNCTION_DECLARATIONS = [
       required: ["destination"],
     },
   },
+  {
+    type: "function" as const,
+    name: "remember_user_fact",
+    description: "Save a personal preference, contact detail, travel habit, or work fact to long-term user memory.",
+    parameters: {
+      type: "object",
+      properties: {
+        fact: { type: "string", description: "The preference or fact to remember" },
+        category: {
+          type: "string",
+          enum: ["preference", "contact", "travel", "work"],
+          description: "Memory category",
+        },
+      },
+      required: ["fact"],
+    },
+  },
+  {
+    type: "function" as const,
+    name: "recall_user_facts",
+    description: "Recall saved long-term user preferences, contacts, and travel facts.",
+    parameters: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Optional filter keyword" },
+      },
+    },
+  },
 ];
 
 interface ToolExecutionBundle {
   toolActions: ToolActionSummary[];
   citations: Citation[];
   generatedImage?: { dataUrl: string; prompt: string };
+  structuredCard?: StructuredCardData;
 }
 
 async function executeToolCall(
@@ -264,6 +295,12 @@ async function executeToolCall(
         status: "success",
         details: `Subject: "${item.subject}"`,
       });
+      bundle.structuredCard = {
+        type: "email_draft",
+        title: item.subject,
+        subtitle: `To: ${item.to} • Status: ${item.status.toUpperCase()}`,
+        metadata: { email: item },
+      };
       return { email: item };
     }
     case "organize_email": {
@@ -305,6 +342,12 @@ async function executeToolCall(
         status: "success",
         details: `${ev.date} • ${ev.startTime}–${ev.endTime}`,
       });
+      bundle.structuredCard = {
+        type: "calendar",
+        title: ev.title,
+        subtitle: `${ev.date} • ${ev.startTime}–${ev.endTime}`,
+        metadata: { event: ev },
+      };
       return { event: ev };
     }
     case "create_reminder": {
@@ -356,9 +399,41 @@ async function executeToolCall(
         tool: "plan_trip_or_local",
         label: `Built ${plan.days}-day travel guide for ${plan.destination}`,
         status: "success",
-        details: `${plan.localSpots.length} local spots + booking links`,
+        details: `${plan.localSpots.length} local spots${
+          plan.weather ? ` • ${plan.weather.temperatureC}°C ${plan.weather.condition}` : ""
+        }`,
       });
+      bundle.structuredCard = {
+        type: "travel",
+        title: `${plan.days}-Day Trip: ${plan.destination}`,
+        subtitle: plan.weather
+          ? `Live Weather: ${plan.weather.condition}, ${plan.weather.temperatureC}°C (${plan.weather.temperatureF}°F)`
+          : `${plan.localSpots.length} verified local spots`,
+        metadata: { plan },
+      };
       return { plan };
+    }
+    case "remember_user_fact": {
+      const mem = addMemoryFact({
+        fact: String(args.fact || ""),
+        category: args.category,
+      });
+      bundle.toolActions.push({
+        tool: "remember_user_fact",
+        label: `Saved to Olli Long-Term Memory (${mem.category})`,
+        status: "success",
+        details: mem.fact,
+      });
+      return { memory: mem };
+    }
+    case "recall_user_facts": {
+      const memories = listMemoryFacts(args.query ? String(args.query) : undefined);
+      bundle.toolActions.push({
+        tool: "recall_user_facts",
+        label: `Recalled ${memories.length} personal memory fact(s)`,
+        status: "info",
+      });
+      return { memories };
     }
     default:
       return { error: `Unknown tool ${name}` };
@@ -426,6 +501,14 @@ export async function processUserMessage(params: {
   let modelUsed = "olli-smart-router";
   let interactionId: string | undefined;
 
+  const memoryLines = (state.memories || [])
+    .slice(0, 12)
+    .map((m) => `- [${m.category.toUpperCase()}] ${m.fact}`)
+    .join("\n");
+  const systemPromptWithMemories = memoryLines
+    ? `${OLLI_SYSTEM_PROMPT}\n\nKnown User Preferences & Memory Facts:\n${memoryLines}`
+    : OLLI_SYSTEM_PROMPT;
+
   // =========================================================================
   // 1. GOOGLE GEMINI PROVIDER (@google/genai >= 2.3.0 Interactions API)
   // =========================================================================
@@ -462,7 +545,7 @@ export async function processUserMessage(params: {
 
       const interaction = await client.interactions.create({
         model: modelUsed,
-        system_instruction: OLLI_SYSTEM_PROMPT,
+        system_instruction: systemPromptWithMemories,
         input: inputParts.length === 1 ? params.text : (inputParts as any),
         ...(prevId ? { previous_interaction_id: prevId } : {}),
         tools: [{ type: "google_search" }, ...OLLI_FUNCTION_DECLARATIONS] as any,
@@ -507,7 +590,7 @@ export async function processUserMessage(params: {
       if (functionResultsToReturn.length > 0) {
         const followUp = await client.interactions.create({
           model: modelUsed,
-          system_instruction: OLLI_SYSTEM_PROMPT,
+          system_instruction: systemPromptWithMemories,
           previous_interaction_id: interaction.id,
           input: functionResultsToReturn as any,
         });
@@ -560,7 +643,7 @@ export async function processUserMessage(params: {
       }
 
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        { role: "system", content: OLLI_SYSTEM_PROMPT },
+        { role: "system", content: systemPromptWithMemories },
         { role: "user", content: userContent },
       ];
 
@@ -618,7 +701,7 @@ export async function processUserMessage(params: {
         body: JSON.stringify({
           model: modelUsed,
           max_tokens: 1024,
-          system: OLLI_SYSTEM_PROMPT,
+          system: systemPromptWithMemories,
           messages: [{ role: "user", content: params.text }],
         }),
       });
@@ -655,6 +738,7 @@ export async function processUserMessage(params: {
     generatedImage: bundle.generatedImage,
     citations: uniqueCitations.length > 0 ? uniqueCitations : undefined,
     toolActions: bundle.toolActions.length > 0 ? bundle.toolActions : undefined,
+    structuredCard: bundle.structuredCard,
   };
 
   state.messages.push(olliMsg);
@@ -900,11 +984,57 @@ async function runBuiltInAgentOrchestrator(
       `\n\n🔗 **Quick Booking Links (Safe Redirects):**\n` +
       plan.bookingLinks.map((b: any) => `• [${b.label}](${b.url})`).join("\n");
 
+    const weatherLine = plan.weather
+      ? `\n🌤️ **Live Weather in ${plan.destination}:** ${plan.weather.condition}, **${plan.weather.temperatureC}°C (${plan.weather.temperatureF}°F)** • Wind ${plan.weather.windKmh} km/h\n`
+      : "";
+
     return (
-      `✈️ **${plan.days}-Day Travel Plan: ${plan.destination}**\n\n` +
+      `✈️ **${plan.days}-Day Travel Plan: ${plan.destination}**\n` +
+      weatherLine +
+      `\n` +
       plan.highlights.map((h: string) => `• ${h}`).join("\n") +
       spotsList +
       linksList
+    );
+  }
+
+  // Long-Term User Memory intents
+  if (
+    lower.startsWith("remember that") ||
+    lower.startsWith("remember my") ||
+    lower.startsWith("save to memory") ||
+    lower.includes("my favorite ") ||
+    lower.includes("my home airport is")
+  ) {
+    const cleanFact = raw
+      .replace(/^(remember that|remember|save to memory:?)\s*/i, "")
+      .trim() || raw;
+    const { memory } = await executeToolCall(
+      "remember_user_fact",
+      { fact: cleanFact },
+      params.channel,
+      bundle
+    );
+    return `🧠 **Saved to Olli Memory (${memory.category.toUpperCase()}):**\n"${memory.fact}"\n\n_I'll automatically apply this preference across your future chats, travel plans, and emails._`;
+  }
+
+  if (
+    lower.includes("what do you remember") ||
+    lower.includes("my preferences") ||
+    lower.includes("show memory") ||
+    lower.includes("know about me")
+  ) {
+    const { memories } = await executeToolCall(
+      "recall_user_facts",
+      {},
+      params.channel,
+      bundle
+    );
+    return (
+      `🧠 **What Olli Remembers About You (${memories.length} facts):**\n\n` +
+      memories
+        .map((m: any) => `• **[${m.category.toUpperCase()}]** ${m.fact}`)
+        .join("\n")
     );
   }
 
