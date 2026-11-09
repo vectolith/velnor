@@ -67,12 +67,12 @@ function getSqliteDb() {
   return null;
 }
 
-export function loadStateFromSqlite(): VelnorState | null {
+export function loadStateFromSqlite(key = "velnor_root_state"): VelnorState | null {
   const db = getSqliteDb();
   if (!db) return null;
   try {
     const stmt = db.prepare("SELECT value FROM kv_state WHERE key = ?");
-    const row = stmt.get("velnor_root_state") as { value?: string } | undefined;
+    const row = stmt.get(key) as { value?: string } | undefined;
     if (row && row.value) {
       return JSON.parse(row.value) as VelnorState;
     }
@@ -82,7 +82,7 @@ export function loadStateFromSqlite(): VelnorState | null {
   return null;
 }
 
-export function saveStateToSqlite(state: VelnorState): boolean {
+export function saveStateToSqlite(state: VelnorState, key = "velnor_root_state"): boolean {
   const db = getSqliteDb();
   if (!db) return false;
   try {
@@ -92,7 +92,7 @@ export function saveStateToSqlite(state: VelnorState): boolean {
       VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `);
-    upsertKv.run("velnor_root_state", JSON.stringify(state), now);
+    upsertKv.run(key, JSON.stringify(state), now);
 
     // Sync vector_chunks table for structured inspection
     const upsertChunk = db.prepare(`

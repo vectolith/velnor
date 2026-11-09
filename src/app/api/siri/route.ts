@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
+import { resolveUserId, withVelnorUser } from "@/lib/store";
 import { generateSpeechWithProvider } from "@/lib/tools/multimodal";
 
 /**
@@ -41,11 +42,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const reply = await processUserMessage({
-      channel: "imessage",
-      userHandle: body.device ? `Siri (${body.device})` : "Siri Shortcut",
-      text: query,
-    });
+    const handle = body.device ? "Siri (" + body.device + ")" : "Siri Shortcut";
+    const reply = await withVelnorUser(resolveUserId("imessage", handle), () =>
+      processUserMessage({
+        channel: "imessage",
+        userHandle: handle,
+        text: query,
+      })
+    );
 
     // Clean markdown for natural Siri / CarPlay spoken output
     const spokenText = reply.text

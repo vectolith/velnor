@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDatabaseEngineStatus } from "@/lib/sqliteDb";
-import { getEffectiveKeys, getStore } from "@/lib/store";
+import { aggregateUsage, getEffectiveKeys, getStore } from "@/lib/store";
 
 const startedAt = Date.now();
 
@@ -32,7 +32,13 @@ export async function GET() {
         openaiReady: Boolean(keys.openaiApiKey),
         anthropicReady: Boolean(keys.anthropicApiKey),
         builtInFallbackReady: true,
+        models: {
+          gemini: state.config.geminiModel,
+          openai: state.config.openaiModel,
+          anthropic: state.config.anthropicModel,
+        },
       },
+      usage: aggregateUsage(),
       channels: {
         imessageWebhook: "/api/webhooks/imessage",
         slackWebhook: "/api/webhooks/slack",

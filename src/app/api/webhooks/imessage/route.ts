@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
-import { getStore } from "@/lib/store";
+import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
 import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
 
@@ -106,12 +106,14 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const reply = await processUserMessage({
-        channel: "imessage",
-        userHandle: from,
-        text: body || "Sent an attachment",
-        attachments: attachments.length > 0 ? attachments : undefined,
-      });
+      const reply = await withVelnorUser(resolveUserId("imessage", from), () =>
+        processUserMessage({
+          channel: "imessage",
+          userHandle: from,
+          text: body || "Sent an attachment",
+          attachments: attachments.length > 0 ? attachments : undefined,
+        })
+      );
 
           const twiml = `<?xml version="1.0" encoding="UTF-8"?>
     <Response>
@@ -154,54 +156,51 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const reply = await processUserMessage({
-      channel: "imessage",
-      userHandle: senderHandle,
-      text: messageText,
-      attachments: attachments.length > 0 ? attachments : undefined,
-    });
-
+    const { reply, outboundText } = await withVelnorUser(
+      resolveUserId("imessage", senderHandle),
+      async () => {
+        const reply = await processUserMessage({
+          channel: "imessage",
+          userHandle: senderHandle,
+          text: messageText,
+          attachments: attachments.length > 0 ? attachments : undefined,
+        });
         const outboundText = toPlainText(reply.text);
+        const scoped = getStore();
 
         // Optional outbound dispatch via Sendblue if configured
-    if (
-      state.config.sendblueApiKey &&
-      state.config.sendblueApiSecret &&
-      payload.number
-    ) {
-      fetch("https://api.sendblue.co/api/send-message", {
-        method: "POST",
-        headers: {
-          "sb-api-key-id": state.config.sendblueApiKey,
-          "sb-api-secret-key": state.config.sendblueApiSecret,
-          "Content-Type": "application/json",
-        },
-            body: JSON.stringify({
-              number: payload.number,
-              content: outboundText,
-            }),
-      }).catch(() => {});
-    }
+        if (scoped.config.sendblueApiKey && scoped.config.sendblueApiSecret && payload.number) {
+          fetch("https://api.sendblue.co/api/send-message", {
+            method: "POST",
+            headers: {
+              "sb-api-key-id": scoped.config.sendblueApiKey,
+              "sb-api-secret-key": scoped.config.sendblueApiSecret,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ number: payload.number, content: outboundText }),
+          }).catch(() => {});
+        }
 
-    // Optional outbound dispatch via LoopMessage if configured
-    if (
-      state.config.loopMessageAuthKey &&
-      state.config.loopMessageSecretKey &&
-      payload.recipient
-    ) {
-      fetch("https://server.loopmessage.com/api/v1/message/send/", {
-        method: "POST",
-        headers: {
-          Authorization: state.config.loopMessageAuthKey,
-          "Loop-Secret-Key": state.config.loopMessageSecretKey,
-          "Content-Type": "application/json",
-        },
-            body: JSON.stringify({
-              recipient: payload.recipient,
-              text: outboundText,
-            }),
-      }).catch(() => {});
-    }
+        // Optional outbound dispatch via LoopMessage if configured
+        if (
+          scoped.config.loopMessageAuthKey &&
+          scoped.config.loopMessageSecretKey &&
+          payload.recipient
+        ) {
+          fetch("https://server.loopmessage.com/api/v1/message/send/", {
+            method: "POST",
+            headers: {
+              Authorization: scoped.config.loopMessageAuthKey,
+              "Loop-Secret-Key": scoped.config.loopMessageSecretKey,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ recipient: payload.recipient, text: outboundText }),
+          }).catch(() => {});
+        }
+
+        return { reply, outboundText };
+      }
+    );
 
     return NextResponse.json({
       status: "ok",

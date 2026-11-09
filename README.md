@@ -5,7 +5,7 @@
 ## Core Capabilities
 
 1. **Real-Time Web Search & Grounded Q&A**
-   - Native Google Search grounding via Gemini + live DuckDuckGo / Wikipedia search fallback with source citations.
+   - Searches DuckDuckGo's HTML index, then fetches and reads the top pages (article extraction, 5-minute cache) so answers are grounded in page text, not search snippets. Wikipedia and Hacker News supplement the result set.
 2. **Document & Link Summarization (In-Memory Vector DB)**
    - Extract text from PDFs, text attachments, or URLs, chunk and embed (`gemini-embedding-001` + cosine similarity), and answer grounded questions over messaging.
 3. **Productivity & Google Workspace Integration**
@@ -18,8 +18,11 @@
    - **Voice & Siri**: Hands-free voice invocation via `/api/siri` and `/api/tts`.
 5. **Travel & Local Assistant**
    - Multi-day trip itineraries, verified local landmarks via OpenStreetMap Nominatim, quick translations, and flight/hotel booking links.
-6. **Fine-Tuned `velnor-core-v1` LoRA Adapter & Multi-Provider Router**
-   - Includes a dedicated local PyTorch/PEFT LoRA inference daemon (`training/serve_adapter.py` serving `velnor-core-v1` on port `8099`) alongside Gemini, OpenAI, and Anthropic routing.
+6. **One Agent Loop, Every Provider**
+   - Gemini, OpenAI and Anthropic all run through the same tool-calling loop (`src/lib/ai/loop.ts`), so every declared tool works on every model. Providers are tried in order with timeouts, bounded retries on 429/5xx, and per-request token/cost accounting surfaced on `/api/health`.
+   - The local PyTorch/PEFT LoRA daemon (`training/serve_adapter.py`, port `8099`) is opt-in via `VELNOR_LOCAL_LORA=1`; it never silently answers a real request.
+7. **Per-User Tenancy**
+   - Every channel handle gets its own state (messages, reminders, memories, documents, usage), persisted per tenant in SQLite and `.data/users/<id>.json`. Requests are scoped with `withVelnorUser()`; no cross-tenant reads.
 
 ## Headless Webhook & API Endpoints
 
