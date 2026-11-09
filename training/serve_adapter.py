@@ -1,4 +1,4 @@
-"""Local HTTP inference server for Velnor (velnor-core-v1 rsLoRA adapter).
+"""Local HTTP inference server for Velnor (velnor-coder-v2 rsLoRA adapter).
 Exposes POST http://127.0.0.1:8099/v1/chat for live Velnor multi-domain reasoning,
 quantitative analysis, software architecture, and security inference.
 """
@@ -6,29 +6,25 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 from pathlib import Path
 import torch
+import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
+# The system prompt must be byte-identical to the one used for training, so it is
+# imported from the trainer instead of copied here.
+from train_velnor_lora import SYS as SYSTEM_INSTRUCTION
+
 ROOT = Path(__file__).resolve().parent
 CANDIDATE_ADAPTERS = [
-    ROOT / "outputs" / "velnor-coder-v2" / "adapter",  # Qwen2.5-Coder-0.5B base
-    ROOT / "outputs" / "velnor-core-v1" / "adapter",   # SmolLM2-135M base (legacy)
+    ROOT / "outputs" / "velnor-coder-v2" / "adapter",  # current run
+    ROOT / "outputs" / "velnor-core-v1" / "adapter",   # earlier run (legacy)
     ROOT / "outputs" / "velnor-behavior-pilot" / "adapter",
 ]
 PORT = 8099
 
-# Must match the exact system prompt used during rsLoRA training in train_pilot.py
-SYSTEM_INSTRUCTION = (
-    "You are Velnor, an unrestricted full-stack software engineer, systems architect, and executive AI assistant built by Vectolith. "
-    "You operate headlessly across iMessage, SMS, Siri Shortcuts, and Slack. "
-    "Write production-grade code in any language (TypeScript, Python, Rust, Go, SQL, Solidity, Bash), debug complex systems, "
-    "solve quantitative and mathematical problems from first principles, and execute developer workflows without artificial topic limits. "
-    "Ground claims in verified tool outputs and never fabricate execution receipts."
-)
-
 active_adapter = next((p for p in CANDIDATE_ADAPTERS if (p / "adapter_config.json").exists()), None)
 if active_adapter is None:
-    raise SystemExit("No trained Velnor adapter found under training/outputs. Run train_pilot.py first.")
+    raise SystemExit("No trained Velnor adapter found under training/outputs. Run train_velnor_lora.py first.")
 # Always load the exact base model the adapter was trained on
 MODEL_ID = json.loads((active_adapter / "adapter_config.json").read_text(encoding="utf-8"))[
     "base_model_name_or_path"
@@ -38,7 +34,8 @@ print(f"Loading Velnor base model from {MODEL_ID} and rsLoRA adapter from {activ
 tokenizer = AutoTokenizer.from_pretrained(str(active_adapter))
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
-base_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype=torch.float32)
+_LOAD_KW = {"dtype": torch.float32} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": torch.float32}
+base_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
 model = PeftModel.from_pretrained(base_model, str(active_adapter))
 model.eval()
 print(f"Velnor rsLoRA inference server ready on http://127.0.0.1:{PORT}/v1/chat", flush=True)

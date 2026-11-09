@@ -21,6 +21,8 @@ export async function GET() {
   const legacyDir = path.join(trainingDir, "outputs", "velnor-behavior-pilot");
   const activeDir = fs.existsSync(velnorDir) ? velnorDir : legacyDir;
   const committedReportPath = path.join(trainingDir, "pilot_report.json");
+  // "trained" means weights are on disk, not that a JSON file exists.
+  const weightsPresent = fs.existsSync(path.join(activeDir, "adapter", "adapter_config.json"));
 
   const report =
     readJsonIfExists(path.join(activeDir, "report.json")) ??
@@ -40,11 +42,15 @@ export async function GET() {
 
   return NextResponse.json({
     assistant: "Velnor",
-    model: "velnor-core-v1",
-    status: report ? "trained" : "pending",
+    model: report?.model_name ?? null,
+    status: weightsPresent ? "trained" : report ? "report-only" : "pending",
+    weightsPresent,
+    activeOutputDir: path.relative(process.cwd(), activeDir),
     adapterServerOnline,
     endpoint: `${LORA_SERVER_URL}/v1/chat`,
     report,
+    eval: report?.eval ?? null,
+    provenance: report?.provenance ?? null,
     generations,
     examplesCount: examples
       ? {
