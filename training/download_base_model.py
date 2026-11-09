@@ -1,26 +1,25 @@
-"""Download HuggingFaceTB/SmolLM2-135M-Instruct locally to models/smollm2-135m for offline CPU LoRA training."""
+"""Download Qwen/Qwen2.5-Coder-1.5B-Instruct locally to models/qwen2.5-coder-1.5b for high-intelligence quantitative reasoning and coding."""
 from pathlib import Path
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from huggingface_hub import snapshot_download
 
-MODEL_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
-TARGET_DIR = Path("models/smollm2-135m")
+MODEL_ID = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+TARGET_DIR = Path(__file__).resolve().parent / "models" / "qwen2.5-coder-1.5b"
 
 
 def main() -> None:
-    if (TARGET_DIR / "config.json").exists() and (
-        (TARGET_DIR / "model.safetensors").exists()
-        or (TARGET_DIR / "pytorch_model.bin").exists()
-    ):
-        print(f"Base model already exists at {TARGET_DIR}. Skipping download.")
+    TARGET_DIR.mkdir(parents=True, exist_ok=True)
+    safetensors_file = TARGET_DIR / "model.safetensors"
+    if safetensors_file.exists() and safetensors_file.stat().st_size > 3_000_000_000:
+        print(f"Base 1.5B model already exists at {TARGET_DIR} ({safetensors_file.stat().st_size / 1e9:.2f} GB). Skipping download.")
         return
 
-    TARGET_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"Downloading {MODEL_ID} to {TARGET_DIR}...", flush=True)
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, trust_remote_code=False)
-    model = AutoModelForCausalLM.from_pretrained(MODEL_ID, trust_remote_code=False)
-    tokenizer.save_pretrained(TARGET_DIR)
-    model.save_pretrained(TARGET_DIR)
-    print(f"Saved {MODEL_ID} to {TARGET_DIR}.", flush=True)
+    print(f"Downloading 1.5B quantitative reasoning model ({MODEL_ID}) to {TARGET_DIR}...", flush=True)
+    snapshot_download(
+        repo_id=MODEL_ID,
+        local_dir=str(TARGET_DIR),
+        max_workers=4,
+    )
+    print(f"Successfully downloaded {MODEL_ID} to {TARGET_DIR}.", flush=True)
 
 
 if __name__ == "__main__":

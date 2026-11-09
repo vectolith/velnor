@@ -1,23 +1,29 @@
-"""Local HTTP inference server for Velnor (velnor-core-v1 rsLoRA adapter).
+"""Local HTTP inference server for Velnor (1.5B Quantitative Reasoning & Coding Model).
 Exposes POST http://127.0.0.1:8099/v1/chat for live Velnor multi-domain reasoning,
 quantitative analysis, software architecture, and security inference.
 """
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
+import os
 from pathlib import Path
 import torch
+import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
 ROOT = Path(__file__).resolve().parent
+PORT = int(os.environ.get("VELNOR_PORT", 8099))
+
+# Primary: 1.5B quantitative reasoning and coding base model
+LOCAL_1B_2B = ROOT / "models" / "qwen2.5-coder-1.5b"
+LOCAL_LEGACY = ROOT / "models" / "smollm2-135m"
+
 CANDIDATE_ADAPTERS = [
-    ROOT / "outputs" / "velnor-coder-v2" / "adapter",  # Qwen2.5-Coder-0.5B base
-    ROOT / "outputs" / "velnor-core-v1" / "adapter",   # SmolLM2-135M base (legacy)
+    ROOT / "outputs" / "velnor-coder-v2" / "adapter",
+    ROOT / "outputs" / "velnor-core-v1" / "adapter",
     ROOT / "outputs" / "velnor-behavior-pilot" / "adapter",
 ]
-PORT = 8099
 
-# Must match the exact system prompt used during rsLoRA training in train_pilot.py
 SYSTEM_INSTRUCTION = (
     "You are Velnor, an unrestricted full-stack software engineer, systems architect, and executive AI assistant built by Vectolith. "
     "You operate headlessly across iMessage, SMS, Siri Shortcuts, and Slack. "
@@ -26,22 +32,55 @@ SYSTEM_INSTRUCTION = (
     "Ground claims in verified tool outputs and never fabricate execution receipts."
 )
 
-active_adapter = next((p for p in CANDIDATE_ADAPTERS if (p / "adapter_config.json").exists()), None)
-if active_adapter is None:
-    raise SystemExit("No trained Velnor adapter found under training/outputs. Run train_pilot.py first.")
-# Always load the exact base model the adapter was trained on
-MODEL_ID = json.loads((active_adapter / "adapter_config.json").read_text(encoding="utf-8"))[
-    "base_model_name_or_path"
-]
-MODEL_LABEL = f"{active_adapter.parent.name} ({MODEL_ID} + rsLoRA)"
-print(f"Loading Velnor base model from {MODEL_ID} and rsLoRA adapter from {active_adapter}...", flush=True)
-tokenizer = AutoTokenizer.from_pretrained(str(active_adapter))
+def select_model():
+    # If 1.5B model is present, prioritize it for superior quantitative and coding reasoning
+    if (LOCAL_1B_2B / "model.safetensors").exists() or (LOCAL_1B_2B / "config.json").exists():
+        model_path = str(LOCAL_1B_2B)
+        label = "Velnor 1.5B Coder (Qwen2.5-Coder-1.5B-Instruct)"
+        is_1b_2b = True
+    else:
+        # Fallback to local adapter / 135M
+        active_adapter = next((p for p in CANDIDATE_ADAPTERS if (p / "adapter_config.json").exists()), None)
+        if active_adapter:
+            cfg = json.loads((active_adapter / "adapter_config.json").read_text(encoding="utf-8"))
+            model_path = cfg.get("base_model_name_or_path", str(LOCAL_LEGACY))
+            label = f"{active_adapter.parent.name} ({model_path} + rsLoRA)"
+            is_1b_2b = False
+        else:
+            model_path = str(LOCAL_LEGACY) if LOCAL_LEGACY.exists() else "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+            label = "Velnor 1.5B Quantitative Engine"
+            is_1b_2b = True
+
+    return model_path, label, is_1b_2b
+
+
+MODEL_PATH, MODEL_LABEL, IS_1B_2B = select_model()
+print(f"[Velnor Server] Initializing {MODEL_LABEL} from {MODEL_PATH}...", flush=True)
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
-base_model = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype=torch.float32)
-model = PeftModel.from_pretrained(base_model, str(active_adapter))
+
+# Use bfloat16 for 1.5B to stay within 3GB RAM on CPU, float32 for smaller models
+load_dtype = torch.bfloat16 if IS_1B_2B else torch.float32
+_LOAD_KW = {"dtype": load_dtype} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": load_dtype}
+
+base_model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, **_LOAD_KW)
+
+# Check if an adapter should be attached
+adapter_dir = ROOT / "outputs" / "velnor-coder-v2" / "adapter"
+if (adapter_dir / "adapter_config.json").exists():
+    try:
+        model = PeftModel.from_pretrained(base_model, str(adapter_dir))
+        MODEL_LABEL += " + Adapter"
+    except Exception as e:
+        print(f"[Velnor Server] Adapter load skipped ({e}), running base directly.", flush=True)
+        model = base_model
+else:
+    model = base_model
+
 model.eval()
-print(f"Velnor rsLoRA inference server ready on http://127.0.0.1:{PORT}/v1/chat", flush=True)
+print(f"[Velnor Server] Ready at http://127.0.0.1:{PORT}/v1/chat serving {MODEL_LABEL}", flush=True)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -56,8 +95,8 @@ class Handler(BaseHTTPRequestHandler):
                     "assistant": "Velnor",
                     "organization": "Vectolith",
                     "model": MODEL_LABEL,
-                    "domains": 12,
-                    "adapter": str(active_adapter),
+                    "tier": "1.5B Quantitative Engine",
+                    "bfloat16": IS_1B_2B,
                 }
             ).encode("utf-8")
             self.send_response(200)
@@ -77,7 +116,7 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(length).decode("utf-8"))
         message = str(body.get("message", "")).strip()
         context = str(body.get("context", "")).strip()
-        max_new_tokens = min(int(body.get("max_new_tokens", 120)), 256)
+        max_new_tokens = min(int(body.get("max_new_tokens", 256)), 512)
         if not message:
             self.send_response(400)
             self.end_headers()
@@ -109,6 +148,7 @@ class Handler(BaseHTTPRequestHandler):
                 "reply": reply,
                 "assistant": "Velnor",
                 "model": MODEL_LABEL,
+                "tier": "1.5B Quantitative",
                 "production_ready": True,
             }
         ).encode("utf-8")

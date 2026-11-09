@@ -522,8 +522,8 @@ def main():
 
     base = AutoModelForCausalLM.from_pretrained(MODEL_ID, torch_dtype=torch.float32)
     lora_cfg = LoraConfig(
-        r=8,
-        lora_alpha=16,
+        r=16,
+        lora_alpha=32,
         lora_dropout=0.05,
         bias="none",
         use_rslora=True,
@@ -532,6 +532,9 @@ def main():
             "k_proj",
             "v_proj",
             "o_proj",
+            "gate_proj",
+            "up_proj",
+            "down_proj",
         ],
         task_type="CAUSAL_LM",
     )
@@ -560,7 +563,7 @@ def main():
         flush=True,
     )
 
-    epochs = 3
+    epochs = 6
     grad_accum = 2
     steps_per_epoch = math.ceil(len(train_batches) / grad_accum)
     total_opt_steps = epochs * steps_per_epoch
@@ -574,8 +577,6 @@ def main():
         weight_decay=0.01,
     )
 
-    if OUT.exists():
-        shutil.rmtree(OUT)
     OUT.mkdir(parents=True, exist_ok=True)
     adapter_dir = OUT / "adapter"
 
@@ -613,6 +614,13 @@ def main():
         vl_loss = eval_loss(model, val_batches)
         vl_ppl = math.exp(min(20.0, vl_loss))
         is_best = vl_loss < best_val_loss
+
+        # Save per-epoch adapter snapshot
+        ep_dir = OUT / f"adapter-epoch-{ep}"
+        if ep_dir.exists():
+            shutil.rmtree(ep_dir)
+        model.save_pretrained(str(ep_dir))
+        tok.save_pretrained(str(ep_dir))
 
         if is_best:
             best_val_loss = vl_loss
