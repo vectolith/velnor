@@ -18,17 +18,17 @@ export async function dispatchReminderNotification(
 
   for (const rem of pending.slice(0, reminderId ? 1 : 3)) {
     const channelsUsed: string[] = ["in-app-feed"];
-    const alertText = `🔔 **Olli Reminder:** ${rem.text} _(Scheduled for ${rem.dueAt})_`;
+    const alertText = `🔔 **Velnor Reminder:** ${rem.text} _(Scheduled for ${rem.dueAt})_`;
 
     // 1. Append proactive message to the channel conversation
     const msg: ChatMessage = {
       id: `msg-rem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       channel: rem.channel,
-      sender: "olli",
+      sender: "velnor",
       text: alertText,
       timestamp: new Date().toISOString(),
       providerUsed: "scheduler",
-      modelUsed: "olli-proactive-cron",
+      modelUsed: "velnor-proactive-cron",
       toolActions: [
         {
           tool: "proactive_reminder",
@@ -57,7 +57,7 @@ export async function dispatchReminderNotification(
           },
           body: JSON.stringify({
             number: rem.recipient,
-            content: `🔔 Reminder from Olli: ${rem.text}`,
+            content: `🔔 Reminder from Velnor: ${rem.text}`,
           }),
         });
         channelsUsed.push("sendblue-imessage");
@@ -83,7 +83,7 @@ export async function dispatchReminderNotification(
           },
           body: JSON.stringify({
             recipient: rem.recipient,
-            text: `🔔 Reminder from Olli: ${rem.text}`,
+            text: `🔔 Reminder from Velnor: ${rem.text}`,
           }),
         });
         channelsUsed.push("loopmessage-imessage");
@@ -103,8 +103,8 @@ export async function dispatchReminderNotification(
             "Content-Type": "application/json; charset=utf-8",
           },
           body: JSON.stringify({
-            channel: rem.recipient || "#olli-assistant",
-            text: `🔔 *Reminder from Olli:* ${rem.text} _(${rem.dueAt})_`,
+            channel: rem.recipient || "#velnor-assistant",
+            text: `🔔 *Reminder from Velnor:* ${rem.text} _(${rem.dueAt})_`,
           }),
         });
         channelsUsed.push("slack-bot");

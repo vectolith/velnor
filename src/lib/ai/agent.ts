@@ -24,7 +24,7 @@ import {
   organizeEmail,
 } from "../tools/workspaceService";
 
-const OLLI_SYSTEM_PROMPT = `You are Velnor (powered by velnor-core-v1), a fast, executive, privacy-first personal AI assistant living natively inside messaging apps (Apple iMessage, SMS, and Slack).
+const VELNOR_SYSTEM_PROMPT = `You are Velnor (powered by velnor-core-v1), a fast, executive, privacy-first personal AI assistant living natively inside messaging apps (Apple iMessage, SMS, and Slack).
 Keep your responses concise, scannable, and natural for text messaging. Always state what you can verify, refuse raw credentials in chat, and keep user workspaces strictly isolated.
 You have tools to:
 1. Search the real-time web (web_search) and cite sources.
@@ -34,7 +34,7 @@ You have tools to:
 5. Generate images on demand (generate_image) and analyze user-attached images.
 6. Plan trips, suggest local places, translate phrases, and generate flight/hotel booking links (plan_trip_or_local) without finalizing purchases directly.`;
 
-export const OLLI_FUNCTION_DECLARATIONS = [
+export const VELNOR_FUNCTION_DECLARATIONS = [
   {
     type: "function" as const,
     name: "web_search",
@@ -420,7 +420,7 @@ async function executeToolCall(
       });
       bundle.toolActions.push({
         tool: "remember_user_fact",
-        label: `Saved to Olli Long-Term Memory (${mem.category})`,
+        label: `Saved to Velnor Long-Term Memory (${mem.category})`,
         status: "success",
         details: mem.fact,
       });
@@ -498,7 +498,7 @@ export async function processUserMessage(params: {
   }
 
   let replyText = "";
-  let modelUsed = "olli-smart-router";
+  let modelUsed = "velnor-smart-router";
   let interactionId: string | undefined;
 
   const memoryLines = (state.memories || [])
@@ -506,8 +506,8 @@ export async function processUserMessage(params: {
     .map((m) => `- [${m.category.toUpperCase()}] ${m.fact}`)
     .join("\n");
   const systemPromptWithMemories = memoryLines
-    ? `${OLLI_SYSTEM_PROMPT}\n\nKnown User Preferences & Memory Facts:\n${memoryLines}`
-    : OLLI_SYSTEM_PROMPT;
+    ? `${VELNOR_SYSTEM_PROMPT}\n\nKnown User Preferences & Memory Facts:\n${memoryLines}`
+    : VELNOR_SYSTEM_PROMPT;
 
   // =========================================================================
   // 1. GOOGLE GEMINI PROVIDER (@google/genai >= 2.3.0 Interactions API)
@@ -548,7 +548,7 @@ export async function processUserMessage(params: {
         system_instruction: systemPromptWithMemories,
         input: inputParts.length === 1 ? params.text : (inputParts as any),
         ...(prevId ? { previous_interaction_id: prevId } : {}),
-        tools: [{ type: "google_search" }, ...OLLI_FUNCTION_DECLARATIONS] as any,
+        tools: [{ type: "google_search" }, ...VELNOR_FUNCTION_DECLARATIONS] as any,
       });
 
       interactionId = interaction.id;
@@ -616,7 +616,7 @@ export async function processUserMessage(params: {
       modelUsed = state.config.openaiModel || "gpt-4o";
 
       const openAiTools: OpenAI.Chat.Completions.ChatCompletionTool[] =
-        OLLI_FUNCTION_DECLARATIONS.map((fn) => ({
+        VELNOR_FUNCTION_DECLARATIONS.map((fn) => ({
           type: "function",
           function: {
             name: fn.name,
@@ -726,10 +726,10 @@ export async function processUserMessage(params: {
     new Map(bundle.citations.map((c) => [c.url, c])).values()
   );
 
-  const olliMsg: ChatMessage = {
+  const velnorMsg: ChatMessage = {
     id: `msg-${Date.now()}-o`,
     channel: params.channel,
-    sender: "olli",
+    sender: "velnor",
     text: replyText,
     timestamp: new Date().toISOString(),
     providerUsed: chosenProvider,
@@ -741,9 +741,9 @@ export async function processUserMessage(params: {
     structuredCard: bundle.structuredCard,
   };
 
-  state.messages.push(olliMsg);
+  state.messages.push(velnorMsg);
   saveStore(state);
-  return olliMsg;
+  return velnorMsg;
 }
 
 async function runBuiltInAgentOrchestrator(
@@ -817,7 +817,7 @@ async function runBuiltInAgentOrchestrator(
     const latestDoc = state.documents[0];
     return `📄 **Document Indexed & Summarized: ${attachedDoc.name}**\n\n**Quick Summary:**\n${
       latestDoc?.summary || attachedDoc.textContent?.slice(0, 300)
-    }\n\n_Stored in Olli's in-memory HNSW vector database (${
+    }\n\n_Stored in Velnor's in-memory HNSW vector database (${
       latestDoc?.chunkCount || 1
     } chunks). Ask me anything about this file!_`;
   }
@@ -893,7 +893,7 @@ async function runBuiltInAgentOrchestrator(
       ? "Re: Q4 Product Roadmap"
       : lower.includes("sync")
       ? "Follow-up on our sync"
-      : "Quick update from Olli";
+      : "Quick update from Velnor";
     const body = raw
       .replace(/^(send|draft) an email (to [^\s]+ )?(saying|about|that)?\s*/i, "")
       .trim() || "Hi! Following up on our thread—let me know what time works best for you.";
@@ -1050,7 +1050,7 @@ async function runBuiltInAgentOrchestrator(
       params.channel,
       bundle
     );
-    return `🧠 **Saved to Olli Memory (${memory.category.toUpperCase()}):**\n"${memory.fact}"\n\n_I'll automatically apply this preference across your future chats, travel plans, and emails._`;
+    return `🧠 **Saved to Velnor Memory (${memory.category.toUpperCase()}):**\n"${memory.fact}"\n\n_I'll automatically apply this preference across your future chats, travel plans, and emails._`;
   }
 
   if (
@@ -1066,7 +1066,7 @@ async function runBuiltInAgentOrchestrator(
       bundle
     );
     return (
-      `🧠 **What Olli Remembers About You (${memories.length} facts):**\n\n` +
+      `🧠 **What Velnor Remembers About You (${memories.length} facts):**\n\n` +
       memories
         .map((m: any) => `• **[${m.category.toUpperCase()}]** ${m.fact}`)
         .join("\n")

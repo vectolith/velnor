@@ -51,14 +51,14 @@ export function middleware(req: NextRequest) {
     }
 
     // Optional Admin Token gate for /api/settings mutation in production
-    const adminToken = process.env.OLLI_ADMIN_TOKEN;
+    const adminToken = process.env.VELNOR_ADMIN_TOKEN;
     if (adminToken && pathname === "/api/settings" && req.method === "POST") {
       const provided =
-        req.headers.get("x-olli-admin-token") ||
+        req.headers.get("x-velnor-admin-token") ||
         req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
       if (provided !== adminToken) {
         return NextResponse.json(
-          { error: "Unauthorized: valid OLLI_ADMIN_TOKEN required." },
+          { error: "Unauthorized: valid VELNOR_ADMIN_TOKEN required." },
           { status: 401 }
         );
       }

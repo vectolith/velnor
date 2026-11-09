@@ -42,7 +42,7 @@ export async function buildTravelPlan(params: {
     const nomRes = await fetch(
       `https://nominatim.openstreetmap.org/search?q=${encodedDest}&format=json&limit=4&addressdetails=1`,
       {
-        headers: { "User-Agent": "OlliBot/1.0 (https://olly.bot)" },
+        headers: { "User-Agent": "VelnorBot/1.0 (https://pluco.dev)" },
         signal: AbortSignal.timeout(4500),
       }
     );

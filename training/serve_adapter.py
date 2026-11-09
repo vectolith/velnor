@@ -10,7 +10,7 @@ from peft import PeftModel
 
 BASE = Path("models/smollm2-135m")
 ADAPTER = Path("outputs/velnor-core-v1/adapter")
-FALLBACK_ADAPTER = Path("outputs/olli-behavior-pilot/adapter")
+FALLBACK_ADAPTER = Path("outputs/velnor-behavior-pilot/adapter")
 PORT = 8099
 
 SYSTEM_INSTRUCTION = (

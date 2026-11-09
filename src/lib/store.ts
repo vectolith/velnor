@@ -12,7 +12,7 @@ import {
   ReminderItem,
 } from "./types";
 
-export interface OlliState {
+export interface VelnorState {
   messages: ChatMessage[];
   reminders: ReminderItem[];
   calendarEvents: CalendarEventItem[];
@@ -25,15 +25,15 @@ export interface OlliState {
 }
 
 const DATA_DIR = resolveWritableDataDir();
-const STORE_PATH = path.join(DATA_DIR, "olli-store.json");
+const STORE_PATH = path.join(DATA_DIR, "velnor-store.json");
 
-const DEFAULT_STATE: OlliState = {
+const DEFAULT_STATE: VelnorState = {
   messages: [
     {
       id: "welcome-imessage",
       channel: "imessage",
-      sender: "olli",
-      text: "Hey! I'm Olli 👋 Your personal AI assistant right inside iMessage, SMS & Slack.\n\nYou can text me to:\n• Search the live web & get cited answers\n• Summarize PDFs, docs, or links (chat with your files)\n• Read, draft, or send Gmail messages & manage Google Calendar\n• Set reminders & tasks\n• Analyze photos, generate images, or transcribe voice notes\n• Plan travel itineraries, find local spots & translate on the go",
+      sender: "velnor",
+      text: "Hey! I'm Velnor 👋 Your personal AI assistant right inside iMessage, SMS & Slack.\n\nYou can text me to:\n• Search the live web & get cited answers\n• Summarize PDFs, docs, or links (chat with your files)\n• Read, draft, or send Gmail messages & manage Google Calendar\n• Set reminders & tasks\n• Analyze photos, generate images, or transcribe voice notes\n• Plan travel itineraries, find local spots & translate on the go",
       timestamp: new Date().toISOString(),
       providerUsed: "system",
       modelUsed: "gemini-3.8-flash",
@@ -41,8 +41,8 @@ const DEFAULT_STATE: OlliState = {
     {
       id: "welcome-slack",
       channel: "slack",
-      sender: "olli",
-      text: "👋 *Olli Bot is online in `#olli-assistant`!* Mention `@Olli` or use `/olli` to search the web, summarize docs, triage Gmail & Calendar, generate visuals, or plan trips.",
+      sender: "velnor",
+      text: "👋 *Velnor Bot is online in `#velnor-assistant`!* Mention `@Velnor` or use `/velnor` to search the web, summarize docs, triage Gmail & Calendar, generate visuals, or plan trips.",
       timestamp: new Date().toISOString(),
       providerUsed: "system",
       modelUsed: "gemini-3.8-flash",
@@ -96,7 +96,7 @@ const DEFAULT_STATE: OlliState = {
     {
       id: "em-1",
       from: "Sarah Jenkins <sarah@acme.io>",
-      to: "you@olli.bot",
+      to: "you@velnor.bot",
       subject: "Q4 Architecture Review & Launch Checklist",
       snippet: "Hey! Attached the latest metrics for the iMessage + Slack rollout. Can we confirm the webhook rate limits before Thursday?",
       body: "Hey!\n\nAttached the latest metrics for the iMessage + Slack rollout. Can we confirm the webhook rate limits before Thursday's engineering all-hands? Also let me know if you want to move our 10:30 sync.\n\nBest,\nSarah",
@@ -109,10 +109,10 @@ const DEFAULT_STATE: OlliState = {
     {
       id: "em-2",
       from: "ANA Mileage Club <flights@ana.co.jp>",
-      to: "you@olli.bot",
+      to: "you@velnor.bot",
       subject: "Booking Confirmation: SFO to HND (Tokyo Haneda)",
       snippet: "Your reservation is confirmed. Flight NH 105 departing at 12:50 PM, Seat 6A. Hotel: Hoshinoya Tokyo.",
-      body: "Dear Traveler,\n\nYour reservation is confirmed!\nFlight: ANA NH 105 (SFO -> HND)\nDeparture: 12:50 PM | Seat: 6A\nConfirmation Code: OLLI9X\nHotel Reference: Hoshinoya Tokyo (Otemachi, Chiyoda-ku)\n\nSafe travels!",
+      body: "Dear Traveler,\n\nYour reservation is confirmed!\nFlight: ANA NH 105 (SFO -> HND)\nDeparture: 12:50 PM | Seat: 6A\nConfirmation Code: VELNOR9X\nHotel Reference: Hoshinoya Tokyo (Otemachi, Chiyoda-ku)\n\nSafe travels!",
       date: "Yesterday",
       unread: true,
       archived: false,
@@ -122,7 +122,7 @@ const DEFAULT_STATE: OlliState = {
     {
       id: "em-3",
       from: "Marcus Vance <marcus@acme.io>",
-      to: "you@olli.bot",
+      to: "you@velnor.bot",
       subject: "Twilio & LoopMessage throughput report",
       snippet: "P95 latency dropped to 410ms after switching to Gemini 3.8 Flash.",
       body: "Hi team,\n\nJust sharing the weekly report: P95 webhook latency dropped to 410ms after switching to Gemini 3.8 Flash and caching vector embeddings in-memory.\n\nCheers,\nMarcus",
@@ -136,9 +136,9 @@ const DEFAULT_STATE: OlliState = {
   documents: [
     {
       id: "doc-seed-1",
-      name: "Olli_Product_Brief_2026.pdf",
+      name: "Velnor_Product_Brief_2026.pdf",
       sourceType: "file",
-      summary: "Product specification for Olli: an omnichannel personal AI assistant native to iMessage, SMS, and Slack with in-memory HNSW vector search, Google Workspace OAuth, and multi-provider LLM routing.",
+      summary: "Product specification for Velnor: an omnichannel personal AI assistant native to iMessage, SMS, and Slack with in-memory HNSW vector search, Google Workspace OAuth, and multi-provider LLM routing.",
       chunkCount: 3,
       wordCount: 165,
       createdAt: new Date().toISOString(),
@@ -148,21 +148,21 @@ const DEFAULT_STATE: OlliState = {
     {
       id: "chk-1",
       docId: "doc-seed-1",
-      docName: "Olli_Product_Brief_2026.pdf",
-      content: "Olli is a privacy-first personal AI assistant that lives natively inside messaging apps including Apple iMessage, SMS (via Twilio, Sendblue, and LoopMessage), and Slack.",
-      tokens: ["olli", "privacy", "first", "personal", "ai", "assistant", "messaging", "apple", "imessage", "sms", "twilio", "sendblue", "loopmessage", "slack"],
+      docName: "Velnor_Product_Brief_2026.pdf",
+      content: "Velnor is a privacy-first personal AI assistant that lives natively inside messaging apps including Apple iMessage, SMS (via Twilio, Sendblue, and LoopMessage), and Slack.",
+      tokens: ["velnor", "privacy", "first", "personal", "ai", "assistant", "messaging", "apple", "imessage", "sms", "twilio", "sendblue", "loopmessage", "slack"],
     },
     {
       id: "chk-2",
       docId: "doc-seed-1",
-      docName: "Olli_Product_Brief_2026.pdf",
-      content: "For document intelligence, Olli uses an in-memory vector store with cosine similarity and Gemini embeddings to answer questions about uploaded PDFs, articles, and URLs with zero external configuration.",
+      docName: "Velnor_Product_Brief_2026.pdf",
+      content: "For document intelligence, Velnor uses an in-memory vector store with cosine similarity and Gemini embeddings to answer questions about uploaded PDFs, articles, and URLs with zero external configuration.",
       tokens: ["document", "intelligence", "vector", "store", "cosine", "similarity", "gemini", "embeddings", "pdfs", "articles", "urls"],
     },
     {
       id: "chk-3",
       docId: "doc-seed-1",
-      docName: "Olli_Product_Brief_2026.pdf",
+      docName: "Velnor_Product_Brief_2026.pdf",
       content: "Productivity features include Gmail triage (reading, searching, summarizing, drafting, sending, and archiving emails), Google Calendar scheduling, smart text reminders, and travel itinerary planning.",
       tokens: ["productivity", "gmail", "triage", "emails", "google", "calendar", "scheduling", "reminders", "travel", "itinerary", "planning"],
     },
@@ -199,44 +199,44 @@ const DEFAULT_STATE: OlliState = {
 
 declare global {
   // eslint-disable-next-line no-var
-  var __olliMemoryState: OlliState | undefined;
+  var __velnorMemoryState: VelnorState | undefined;
 }
 
-export function getStore(): OlliState {
-  if (global.__olliMemoryState) {
-    return global.__olliMemoryState;
+export function getStore(): VelnorState {
+  if (global.__velnorMemoryState) {
+    return global.__velnorMemoryState;
   }
   const sqliteLoaded = loadStateFromSqlite();
   if (sqliteLoaded) {
-    global.__olliMemoryState = {
+    global.__velnorMemoryState = {
       ...DEFAULT_STATE,
       ...sqliteLoaded,
       config: { ...DEFAULT_STATE.config, ...(sqliteLoaded.config || {}) },
     };
-    return global.__olliMemoryState;
+    return global.__velnorMemoryState;
   }
   try {
     if (fs.existsSync(STORE_PATH)) {
       const raw = fs.readFileSync(STORE_PATH, "utf-8");
-      const parsed = JSON.parse(raw) as OlliState;
-      global.__olliMemoryState = {
+      const parsed = JSON.parse(raw) as VelnorState;
+      global.__velnorMemoryState = {
         ...DEFAULT_STATE,
         ...parsed,
         config: { ...DEFAULT_STATE.config, ...(parsed.config || {}) },
       };
-      saveStateToSqlite(global.__olliMemoryState);
-      return global.__olliMemoryState;
+      saveStateToSqlite(global.__velnorMemoryState);
+      return global.__velnorMemoryState;
     }
   } catch (err) {
     console.warn("Could not read store from disk, using in-memory default:", err);
   }
-  global.__olliMemoryState = structuredClone(DEFAULT_STATE);
-  saveStore(global.__olliMemoryState);
-  return global.__olliMemoryState;
+  global.__velnorMemoryState = structuredClone(DEFAULT_STATE);
+  saveStore(global.__velnorMemoryState);
+  return global.__velnorMemoryState;
 }
 
-export function saveStore(state: OlliState): void {
-  global.__olliMemoryState = state;
+export function saveStore(state: VelnorState): void {
+  global.__velnorMemoryState = state;
   saveStateToSqlite(state);
   try {
     if (!fs.existsSync(DATA_DIR)) {
@@ -248,7 +248,7 @@ export function saveStore(state: OlliState): void {
   }
 }
 
-export function getEffectiveKeys(state: OlliState) {
+export function getEffectiveKeys(state: VelnorState) {
   return {
     geminiApiKey: state.config.geminiApiKey || process.env.GEMINI_API_KEY || "",
     openaiApiKey: state.config.openaiApiKey || process.env.OPENAI_API_KEY || "",

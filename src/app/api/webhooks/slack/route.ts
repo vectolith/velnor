@@ -60,7 +60,7 @@ function buildSlackBlocks(reply: ChatMessage) {
  * Supports:
  * 1. Events API url_verification challenge
  * 2. Events API event_callback (message.im, app_mention)
- * 3. Slash Commands (/olli <prompt> via application/x-www-form-urlencoded)
+ * 3. Slash Commands (/velnor <prompt> via application/x-www-form-urlencoded)
  */
 export async function POST(req: NextRequest) {
   const state = getStore();
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 
   const signingSecret =
     state.config.slackSigningSecret || process.env.SLACK_SIGNING_SECRET || "";
-  const isLocalSimulator = req.headers.get("x-olli-simulator") === "true";
+  const isLocalSimulator = req.headers.get("x-velnor-simulator") === "true";
 
   if (signingSecret && !isLocalSimulator) {
     const ts = req.headers.get("x-slack-request-timestamp");
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // 1. SLACK SLASH COMMAND (/olli)
+    // 1. SLACK SLASH COMMAND (/velnor)
     if (contentType.includes("application/x-www-form-urlencoded")) {
       const params = new URLSearchParams(rawBody);
       const commandText = params.get("text") || "Help";

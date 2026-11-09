@@ -70,7 +70,7 @@ export async function ingestDocumentOrUrl(params: {
   if (params.url && !rawText) {
     try {
       const response = await fetch(params.url, {
-        headers: { "User-Agent": "OlliBot/1.0 (+https://olly.bot)" },
+        headers: { "User-Agent": "VelnorBot/1.0 (+https://pluco.dev)" },
         signal: AbortSignal.timeout(6000),
       });
       const html = await response.text();

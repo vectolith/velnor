@@ -1,7 +1,7 @@
 param(
   [string]$ProjectId = $env:GOOGLE_CLOUD_PROJECT,
   [string]$Region = "us-central1",
-  [string]$ServiceName = "olli-assistant"
+  [string]$ServiceName = "velnor-assistant"
 )
 
 if (-not $ProjectId) {
@@ -9,7 +9,7 @@ if (-not $ProjectId) {
   exit 1
 }
 
-Write-Host "Deploying Olli to Google Cloud Run ($ProjectId / $Region)..." -ForegroundColor Cyan
+Write-Host "Deploying Velnor to Google Cloud Run ($ProjectId / $Region)..." -ForegroundColor Cyan
 gcloud run deploy $ServiceName `
   --source . `
   --project $ProjectId `

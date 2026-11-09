@@ -50,7 +50,7 @@ function verifyTwilioSignature(
 export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type") || "";
   const state = getStore();
-  const isLocalSimulator = req.headers.get("x-olli-simulator") === "true";
+  const isLocalSimulator = req.headers.get("x-velnor-simulator") === "true";
 
   try {
     // =========================================================================

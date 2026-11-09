@@ -43,7 +43,7 @@ export interface StructuredCardData {
 export interface ChatMessage {
   id: string;
   channel: ChannelType;
-  sender: "user" | "olli";
+  sender: "user" | "velnor";
   userHandle?: string; // e.g. +1 (555) 019-2834 or @alex
   text: string;
   timestamp: string;

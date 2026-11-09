@@ -47,7 +47,7 @@ export async function performWebSearch(query: string): Promise<WebSearchOutput> 
       query
     )}&utf8=&format=json&srlimit=3`;
     const wikiRes = await fetch(wikiUrl, {
-      headers: { "User-Agent": "OlliBot/1.0 (https://olly.bot)" },
+      headers: { "User-Agent": "VelnorBot/1.0 (https://pluco.dev)" },
       signal: AbortSignal.timeout(4000),
     });
     if (wikiRes.ok) {

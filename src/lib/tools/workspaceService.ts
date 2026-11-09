@@ -106,7 +106,7 @@ export async function draftOrSendEmail(params: {
 
   const item: EmailItem = {
     id: `em-${Date.now()}`,
-    from: state.config.googleConnectedEmail || "you@olli.bot",
+    from: state.config.googleConnectedEmail || "you@velnor.bot",
     to: params.to,
     subject: params.subject,
     snippet: params.body.slice(0, 120),

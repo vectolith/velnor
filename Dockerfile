@@ -1,4 +1,4 @@
-# Multi-stage Production Dockerfile for Olli (Google Cloud Run / Docker)
+# Multi-stage Production Dockerfile for Velnor (Google Cloud Run / Docker)
 FROM node:22-alpine AS base
 
 FROM base AS deps

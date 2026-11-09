@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
       {
         error: "Google Client ID not configured yet.",
         instructions:
-          "Add your Google OAuth Client ID & Secret in Olli Settings -> Workspace OAuth, or paste an OAuth Access Token directly.",
+          "Add your Google OAuth Client ID & Secret in Velnor Settings -> Workspace OAuth, or paste an OAuth Access Token directly.",
       },
       { status: 400 }
     );

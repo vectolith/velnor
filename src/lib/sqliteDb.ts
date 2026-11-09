@@ -1,7 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import type { OlliState } from "./store";
+import type { VelnorState } from "./store";
 
 export function resolveWritableDataDir(): string {
   const localDir = path.join(process.cwd(), ".data");
@@ -14,7 +14,7 @@ export function resolveWritableDataDir(): string {
     fs.unlinkSync(testFile);
     return localDir;
   } catch {
-    const tmpDir = path.join(os.tmpdir(), "olli-data");
+    const tmpDir = path.join(os.tmpdir(), "velnor-data");
     try {
       if (!fs.existsSync(tmpDir)) {
         fs.mkdirSync(tmpDir, { recursive: true });
@@ -27,7 +27,7 @@ export function resolveWritableDataDir(): string {
 }
 
 const DATA_DIR = resolveWritableDataDir();
-const SQLITE_PATH = path.join(DATA_DIR, "olli.db");
+const SQLITE_PATH = path.join(DATA_DIR, "velnor.db");
 
 let sqliteInstance: any = null;
 let sqliteSupported: boolean | null = null;
@@ -67,14 +67,14 @@ function getSqliteDb() {
   return null;
 }
 
-export function loadStateFromSqlite(): OlliState | null {
+export function loadStateFromSqlite(): VelnorState | null {
   const db = getSqliteDb();
   if (!db) return null;
   try {
     const stmt = db.prepare("SELECT value FROM kv_state WHERE key = ?");
-    const row = stmt.get("olli_root_state") as { value?: string } | undefined;
+    const row = stmt.get("velnor_root_state") as { value?: string } | undefined;
     if (row && row.value) {
-      return JSON.parse(row.value) as OlliState;
+      return JSON.parse(row.value) as VelnorState;
     }
   } catch (err) {
     console.warn("SQLite read warning:", err);
@@ -82,7 +82,7 @@ export function loadStateFromSqlite(): OlliState | null {
   return null;
 }
 
-export function saveStateToSqlite(state: OlliState): boolean {
+export function saveStateToSqlite(state: VelnorState): boolean {
   const db = getSqliteDb();
   if (!db) return false;
   try {
@@ -92,7 +92,7 @@ export function saveStateToSqlite(state: OlliState): boolean {
       VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `);
-    upsertKv.run("olli_root_state", JSON.stringify(state), now);
+    upsertKv.run("velnor_root_state", JSON.stringify(state), now);
 
     // Sync vector_chunks table for structured inspection
     const upsertChunk = db.prepare(`
@@ -128,7 +128,7 @@ export function getDatabaseEngineStatus(): {
   const db = getSqliteDb();
   return {
     engine: db ? "node:sqlite (SQLite3 + HNSW Memory)" : "JSON + In-Memory HNSW",
-    dbPath: db ? SQLITE_PATH : path.join(DATA_DIR, "olli-store.json"),
+    dbPath: db ? SQLITE_PATH : path.join(DATA_DIR, "velnor-store.json"),
     writableDir: DATA_DIR,
   };
 }

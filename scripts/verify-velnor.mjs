@@ -1,10 +1,10 @@
 /**
- * Automated End-to-End Verification Suite for Olli
+ * Automated End-to-End Verification Suite for Velnor
  * Tests Health/Readiness, Rate-Limiting & Security Headers, Web Search, Document Vector RAG,
  * Long-Term Memory, Travel + Live Weather, iMessage/SMS TwiML & Sendblue Webhooks,
  * Slack Block Kit Webhooks, Siri Shortcut & vCard.
  */
-const BASE = process.env.OLLI_BASE_URL || "http://localhost:3000";
+const BASE = process.env.VELNOR_BASE_URL || "http://localhost:3000";
 
 async function assertEndpoint(name, fn) {
   const start = Date.now();
@@ -13,7 +13,7 @@ async function assertEndpoint(name, fn) {
 }
 
 async function main() {
-  console.log(`🚀 Running Olli Production End-to-End Verification against ${BASE}...\n`);
+  console.log(`🚀 Running Velnor Production End-to-End Verification against ${BASE}...\n`);
 
   await assertEndpoint("GET /api/health (Readiness, SQLite DB & Security Headers)", async () => {
     const res = await fetch(`${BASE}/api/health`);
@@ -32,7 +32,7 @@ async function main() {
     const res = await fetch(`${BASE}/manifest.webmanifest`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (!data.name?.includes("Olli")) throw new Error("Invalid PWA manifest");
+    if (!data.name?.includes("Velnor")) throw new Error("Invalid PWA manifest");
   });
 
   await assertEndpoint("GET /api/chat (SQLite DB + Initial State)", async () => {
@@ -53,7 +53,7 @@ async function main() {
       }),
     });
     const data = await res.json();
-    if (!data.reply?.text.includes("Saved to Olli Memory")) {
+    if (!data.reply?.text.includes("Saved to Velnor Memory")) {
       throw new Error(`Unexpected reply: ${data.reply?.text}`);
     }
   });
@@ -92,7 +92,7 @@ async function main() {
 
   await assertEndpoint("POST /api/webhooks/slack (Slack Slash Command -> Block Kit)", async () => {
     const form = new URLSearchParams({
-      command: "/olli",
+      command: "/velnor",
       text: "Check my Gmail inbox",
       user_name: "tester",
     });
@@ -100,7 +100,7 @@ async function main() {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "x-olli-simulator": "true",
+        "x-velnor-simulator": "true",
       },
       body: form.toString(),
     });
@@ -111,12 +111,12 @@ async function main() {
   await assertEndpoint("GET /api/vcard (Apple Contacts .vcf Download)", async () => {
     const res = await fetch(`${BASE}/api/vcard`);
     const vcf = await res.text();
-    if (!vcf.includes("BEGIN:VCARD") || !vcf.includes("FN:Olli AI Assistant")) {
+    if (!vcf.includes("BEGIN:VCARD") || !vcf.includes("FN:Velnor AI Assistant")) {
       throw new Error("Invalid vCard output");
     }
   });
 
-  console.log("\n🎉 All 8 Olli production end-to-end verification checks passed!");
+  console.log("\n🎉 All 8 Velnor production end-to-end verification checks passed!");
 }
 
 main().catch((err) => {

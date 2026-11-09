@@ -1,4 +1,4 @@
-name: Olli Production CI (Build, Typecheck & E2E Verification)
+name: Velnor Production CI (Build, Typecheck & E2E Verification)
 
 on:
   push:
@@ -40,5 +40,5 @@ jobs:
             fi
             sleep 1
           done
-          node scripts/verify-olli.mjs
+          node scripts/verify-velnor.mjs
           kill $SERVER_PID || true

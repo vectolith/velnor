@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStore } from "@/lib/store";
 
 /**
- * Generates an Apple iOS / macOS Contact Card (.vcf) for Olli
- * Matches olly.bot's 1-tap "Add to Contacts" onboarding experience
+ * Generates an Apple iOS / macOS Contact Card (.vcf) for Velnor
+ * Matches pluco.dev's 1-tap "Add to Contacts" onboarding experience
  */
 export async function GET(req: NextRequest) {
   const state = getStore();

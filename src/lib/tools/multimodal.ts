@@ -30,7 +30,7 @@ function createFallbackSvgDataUrl(prompt: string): string {
     <circle cx="190" cy="390" r="165" fill="hsla(${hue3}, 85%, 60%, 0.18)" />
     <path d="M 0 380 Q 210 290 410 365 T 768 320 L 768 512 L 0 512 Z" fill="hsla(${hue1}, 65%, 10%, 0.55)" />
     <rect x="44" y="42" width="148" height="34" rx="17" fill="rgba(255,255,255,0.14)" />
-    <text x="118" y="64" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" text-anchor="middle">✨ OLLI STUDIO</text>
+    <text x="118" y="64" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="600" text-anchor="middle">✨ VELNOR STUDIO</text>
     <text x="48" y="428" fill="rgba(255,255,255,0.65)" font-family="system-ui, -apple-system, sans-serif" font-size="13" font-weight="500">GENERATED VISUAL PREVIEW</text>
     <text x="48" y="458" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="700">${safePrompt}</text>
   </svg>`;
@@ -94,7 +94,7 @@ export async function generateImageWithProvider(prompt: string): Promise<{
   // 3. Instant dynamic SVG visual preview
   return {
     dataUrl: createFallbackSvgDataUrl(prompt),
-    modelUsed: "olli-svg-studio",
+    modelUsed: "velnor-svg-studio",
   };
 }
 
@@ -163,7 +163,7 @@ export async function generateSpeechWithProvider(text: string): Promise<{
             annotations: [
               {
                 type: "speech_metadata",
-                speaker: "Olli",
+                speaker: "Velnor",
                 style: "warm, concise, helpful personal assistant",
               },
             ],

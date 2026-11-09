@@ -8,8 +8,8 @@ This directory contains the multi-domain **CPU float32 LoRA training harness** f
 ## Files
 
 - [`download_base_model.py`](./download_base_model.py): Downloads `HuggingFaceTB/SmolLM2-135M-Instruct` locally to `models/smollm2-135m`.
-- [`train_pilot.py`](./train_pilot.py): Runs 2 epochs of CPU `float32` LoRA (`r=4`, `lora_alpha=8`, `q_proj`/`v_proj`) with assistant-token loss masking, evaluates held-out assistant-token loss before and after training, and records qualitative before/after held-out generations in `outputs/olli-behavior-pilot/`.
-- [`serve_adapter.py`](./serve_adapter.py): Starts a local HTTP inference endpoint at `http://127.0.0.1:8099/v1/chat` serving the base model + trained LoRA adapter, bridged to Olli's Next.js API at `/api/lora-pilot`.
+- [`train_pilot.py`](./train_pilot.py): Runs 2 epochs of CPU `float32` LoRA (`r=4`, `lora_alpha=8`, `q_proj`/`v_proj`) with assistant-token loss masking, evaluates held-out assistant-token loss before and after training, and records qualitative before/after held-out generations in `outputs/velnor-behavior-pilot/`.
+- [`serve_adapter.py`](./serve_adapter.py): Starts a local HTTP inference endpoint at `http://127.0.0.1:8099/v1/chat` serving the base model + trained LoRA adapter, bridged to Velnor's Next.js API at `/api/lora-pilot`.
 - [`pilot_report.json`](./pilot_report.json): Committed summary of the latest pilot run (loss curve, held-out loss delta, and before/after held-out generations).
 
 ## Usage (with `.venv`)

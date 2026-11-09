@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { NextResponse } from "next/server";
 
-const LORA_SERVER_URL = process.env.OLLI_LORA_PILOT_URL || "http://127.0.0.1:8099";
+const LORA_SERVER_URL = process.env.VELNOR_LORA_PILOT_URL || "http://127.0.0.1:8099";
 
 function readJsonIfExists(filePath: string) {
   try {
@@ -18,7 +18,7 @@ function readJsonIfExists(filePath: string) {
 export async function GET() {
   const trainingDir = path.join(process.cwd(), "training");
   const velnorDir = path.join(trainingDir, "outputs", "velnor-core-v1");
-  const legacyDir = path.join(trainingDir, "outputs", "olli-behavior-pilot");
+  const legacyDir = path.join(trainingDir, "outputs", "velnor-behavior-pilot");
   const activeDir = fs.existsSync(velnorDir) ? velnorDir : legacyDir;
   const committedReportPath = path.join(trainingDir, "pilot_report.json");
 
@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error:
-          "Local Olli CPU LoRA adapter server is offline. Start it with: training/.venv/Scripts/python.exe training/serve_adapter.py",
+          "Local Velnor CPU LoRA adapter server is offline. Start it with: training/.venv/Scripts/python.exe training/serve_adapter.py",
         details: err instanceof Error ? err.message : String(err),
       },
       { status: 503 }
