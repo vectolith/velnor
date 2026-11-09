@@ -1,0 +1,52 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%" fill="none">
+  <style>
+    .vectolith-icon {
+      stroke: #0A0A0A;
+      stroke-width: 20;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+    .vectolith-core {
+      fill: #0A0A0A;
+      fill-opacity: 0.12;
+    }
+    @media (prefers-color-scheme: dark) {
+      .vectolith-icon {
+        stroke: #F4F3F1;
+      }
+      .vectolith-core {
+        fill: #F4F3F1;
+        fill-opacity: 0.18;
+      }
+    }
+  </style>
+
+  <!-- Central Diamond Core subtle vector fill -->
+  <polygon class="vectolith-core" points="250,208 296,250 250,292 204,250" />
+
+  <!-- Outer Monolithic Prism Silhouette -->
+  <polygon class="vectolith-icon" points="250,28 396,96 396,404 250,472 104,404 104,96" />
+
+  <!-- Central Vertical Spine -->
+  <line class="vectolith-icon" x1="250" y1="28" x2="250" y2="472" />
+
+  <!-- Upper Vector Facets & Converging Chevron -->
+  <polyline class="vectolith-icon" points="250,28 184,136 250,208 316,136 250,28" />
+  <line class="vectolith-icon" x1="104" y1="96" x2="184" y2="136" />
+  <line class="vectolith-icon" x1="396" y1="96" x2="316" y2="136" />
+
+  <!-- Central Vector Diamond -->
+  <polygon class="vectolith-icon" points="250,208 296,250 250,292 204,250" />
+  <polyline class="vectolith-icon" points="104,96 250,250 396,96" />
+  <polyline class="vectolith-icon" points="104,404 250,250 396,404" />
+
+  <!-- Lower Vector Facets & Base Chevron -->
+  <polyline class="vectolith-icon" points="250,472 184,364 250,292 316,364 250,472" />
+  <line class="vectolith-icon" x1="104" y1="404" x2="184" y2="364" />
+  <line class="vectolith-icon" x1="396" y1="404" x2="316" y2="364" />
+
+  <!-- Lateral Framing Struts -->
+  <line class="vectolith-icon" x1="184" y1="136" x2="184" y2="364" />
+  <line class="vectolith-icon" x1="316" y1="136" x2="316" y2="364" />
+</svg>
