@@ -1,5 +1,6 @@
-import { GoogleGenAI } from "@google/genai";
-import OpenAI from "openai";
+import { runAgentLoop } from "./loop";
+import { buildProviderChain, createProvider, estimateCostUsd } from "./registry";
+import { ToolSpec, Turn, Usage, emptyUsage } from "./providers/types";
 import { getEffectiveKeys, getStore, saveStore } from "../store";
 import {
   Attachment,
@@ -223,6 +224,11 @@ export const VELNOR_FUNCTION_DECLARATIONS = [
     },
   },
 ];
+
+/** Same declarations, in the provider-neutral shape the loop consumes. */
+export const VELNOR_TOOLS: ToolSpec[] = VELNOR_FUNCTION_DECLARATIONS.map(
+  (fn) => ({ name: fn.name, description: fn.description, parameters: fn.parameters as Record<string, any> })
+);
 
 interface ToolExecutionBundle {
   toolActions: ToolActionSummary[];
@@ -487,239 +493,125 @@ export async function processUserMessage(params: {
     }
   }
 
-  // Determine which provider to run
-  const preferred = state.config.activeProvider;
-  let chosenProvider: "gemini" | "openai" | "anthropic" | "local" = "local";
-  if (preferred === "gemini" && geminiApiKey) chosenProvider = "gemini";
-  else if (preferred === "openai" && openaiApiKey) chosenProvider = "openai";
-  else if (preferred === "anthropic" && anthropicApiKey) chosenProvider = "anthropic";
-  else if (preferred === "auto") {
-    if (geminiApiKey) chosenProvider = "gemini";
-    else if (openaiApiKey) chosenProvider = "openai";
-    else if (anthropicApiKey) chosenProvider = "anthropic";
-  }
-
-  let replyText = "";
-  let modelUsed = "velnor-smart-router";
-  let interactionId: string | undefined;
-
   const memoryLines = (state.memories || [])
     .slice(0, 12)
-    .map((m) => `- [${m.category.toUpperCase()}] ${m.fact}`)
+    .map((m) => "- [" + m.category.toUpperCase() + "] " + m.fact)
     .join("\n");
   const systemPromptWithMemories = memoryLines
-    ? `${VELNOR_SYSTEM_PROMPT}\n\nKnown User Preferences & Memory Facts:\n${memoryLines}`
+    ? VELNOR_SYSTEM_PROMPT + "\n\nKnown User Preferences & Memory Facts:\n" + memoryLines
     : VELNOR_SYSTEM_PROMPT;
 
   // =========================================================================
-  // 1. GOOGLE GEMINI PROVIDER (@google/genai >= 2.3.0 Interactions API)
+  // Unified provider chain + one tool loop for every model.
+  // Providers are tried in order; a failure (bad key, timeout, 5xx) moves on
+  // instead of silently degrading to a regex handler.
   // =========================================================================
-  if (chosenProvider === "gemini" && geminiApiKey) {
+  const chain = buildProviderChain({
+    preferred: state.config.activeProvider,
+    keys: { gemini: geminiApiKey, openai: openaiApiKey, anthropic: anthropicApiKey },
+    models: {
+      gemini: state.config.geminiModel,
+      openai: state.config.openaiModel,
+      anthropic: state.config.anthropicModel,
+    },
+  });
+
+  const imageParts = (params.attachments || [])
+    .filter((a) => a.type === "image" && a.dataUrl)
+    .slice(0, 4)
+    .map((a) => ({
+      mimeType: a.mimeType || "image/png",
+      base64: (a.dataUrl as string).split(",")[1] || "",
+    }))
+    .filter((p) => p.base64.length > 0);
+
+  // Replay a bounded slice of the conversation so follow-ups ("what about
+  // tomorrow?") have context. Scoped to this channel + handle.
+  const priorTurns: Turn[] = state.messages
+    .filter(
+      (m) =>
+        m.channel === params.channel &&
+        (!params.userHandle || !m.userHandle || m.userHandle === params.userHandle) &&
+        m.id !== userMsg.id &&
+        m.text &&
+        !m.generatedImage
+    )
+    .slice(-12)
+    .map((m) =>
+      m.sender === "user"
+        ? ({ role: "user", text: m.text } as Turn)
+        : ({ role: "assistant", text: m.text } as Turn)
+    );
+
+  const messages: Turn[] = [
+    ...priorTurns,
+    {
+      role: "user",
+      text: params.text || (imageParts.length ? "What is in this image?" : ""),
+      images: imageParts.length ? imageParts : undefined,
+    },
+  ];
+
+  const tools: ToolSpec[] = VELNOR_TOOLS;
+  let replyText = "";
+  let modelUsed = "builtin-orchestrator";
+  let providerUsed: string = "builtin";
+  let usage: Usage = emptyUsage();
+  const providerFailures: string[] = [];
+
+  for (const slot of chain) {
     try {
-      const client = new GoogleGenAI({ apiKey: geminiApiKey });
-      modelUsed = state.config.geminiModel || "gemini-3.8-flash";
-      const cursorKey = `${params.channel}:${params.userHandle || "default"}`;
-      const prevId = state.conversationCursors[cursorKey];
-
-      // Build multimodal input array if attachments exist
-      const inputParts: any[] = [];
-      if (params.attachments) {
-        for (const att of params.attachments) {
-          if (att.type === "image" && att.dataUrl) {
-            const base64Data = att.dataUrl.split(",")[1] || "";
-            inputParts.push({
-              type: "image",
-              data: base64Data,
-              mime_type: att.mimeType || "image/png",
-            });
-          } else if (att.type === "document" && att.textContent) {
-            inputParts.push({
-              type: "text",
-              text: `[Attached Document "${att.name}"]:\n${att.textContent.slice(0, 12000)}`,
-            });
-          }
-        }
-      }
-      inputParts.push({
-        type: "text",
-        text: params.text || "Analyze the attached file.",
-      });
-
-      const interaction = await client.interactions.create({
-        model: modelUsed,
-        system_instruction: systemPromptWithMemories,
-        input: inputParts.length === 1 ? params.text : (inputParts as any),
-        ...(prevId ? { previous_interaction_id: prevId } : {}),
-        tools: [{ type: "google_search" }, ...VELNOR_FUNCTION_DECLARATIONS] as any,
-      });
-
-      interactionId = interaction.id;
-      if (interactionId) {
-        state.conversationCursors[cursorKey] = interactionId;
-      }
-
-      // Inspect steps for function_call or google_search_result
-      const functionResultsToReturn: any[] = [];
-      if (Array.isArray(interaction.steps)) {
-        for (const step of interaction.steps as any[]) {
-          if (step.type === "google_search_result" && Array.isArray(step.results)) {
-            for (const r of step.results) {
-              if (r.url) {
-                bundle.citations.push({
-                  title: r.title || r.url,
-                  url: r.url,
-                  snippet: r.snippet,
-                });
-              }
-            }
-          } else if (step.type === "function_call") {
-            const toolOutput = await executeToolCall(
-              step.name,
-              step.arguments || {},
-              params.channel,
-              bundle
-            );
-            functionResultsToReturn.push({
-              type: "function_result",
-              call_id: step.id,
-              name: step.name,
-              result: toolOutput,
-            });
-          }
-        }
-      }
-
-      if (functionResultsToReturn.length > 0) {
-        const followUp = await client.interactions.create({
-          model: modelUsed,
-          system_instruction: systemPromptWithMemories,
-          previous_interaction_id: interaction.id,
-          input: functionResultsToReturn as any,
-        });
-        interactionId = followUp.id || interactionId;
-        if (interactionId) {
-          state.conversationCursors[cursorKey] = interactionId;
-        }
-        replyText = followUp.output_text || "";
-      } else {
-        replyText = interaction.output_text || "";
-      }
-    } catch (err) {
-      console.warn("Gemini Interactions API error, falling back to local orchestrator:", err);
-    }
-  }
-
-  // =========================================================================
-  // 2. OPENAI PROVIDER (gpt-4o / function calling)
-  // =========================================================================
-  if (!replyText && chosenProvider === "openai" && openaiApiKey) {
-    try {
-      const openai = new OpenAI({ apiKey: openaiApiKey });
-      modelUsed = state.config.openaiModel || "gpt-4o";
-
-      const openAiTools: OpenAI.Chat.Completions.ChatCompletionTool[] =
-        VELNOR_FUNCTION_DECLARATIONS.map((fn) => ({
-          type: "function",
-          function: {
-            name: fn.name,
-            description: fn.description,
-            parameters: fn.parameters,
-          },
-        }));
-
-      const userContent: any[] = [{ type: "text", text: params.text || "Analyze this." }];
-      if (params.attachments) {
-        for (const att of params.attachments) {
-          if (att.type === "image" && att.dataUrl) {
-            userContent.push({
-              type: "image_url",
-              image_url: { url: att.dataUrl },
-            });
-          } else if (att.type === "document" && att.textContent) {
-            userContent.push({
-              type: "text",
-              text: `[Attached Document "${att.name}"]:\n${att.textContent.slice(0, 10000)}`,
-            });
-          }
-        }
-      }
-
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        { role: "system", content: systemPromptWithMemories },
-        { role: "user", content: userContent },
-      ];
-
-      const completion = await openai.chat.completions.create({
-        model: modelUsed,
+      const result = await runAgentLoop({
+        provider: createProvider(slot.id, slot.apiKey),
+        model: slot.model,
+        system: systemPromptWithMemories,
         messages,
-        tools: openAiTools,
-      });
-
-      const choice = completion.choices[0]?.message;
-      if (choice?.tool_calls && choice.tool_calls.length > 0) {
-        messages.push(choice);
-        for (const tc of choice.tool_calls) {
-          if (tc.type === "function") {
-            const parsedArgs = JSON.parse(tc.function.arguments || "{}");
-            const res = await executeToolCall(
-              tc.function.name,
-              parsedArgs,
-              params.channel,
-              bundle
-            );
-            messages.push({
-              role: "tool",
-              tool_call_id: tc.id,
-              content: JSON.stringify(res),
-            });
-          }
-        }
-        const second = await openai.chat.completions.create({
-          model: modelUsed,
-          messages,
-        });
-        replyText = second.choices[0]?.message?.content || "";
-      } else {
-        replyText = choice?.content || "";
-      }
-    } catch (err) {
-      console.warn("OpenAI provider error, falling back to local orchestrator:", err);
-    }
-  }
-
-  // =========================================================================
-  // 3. ANTHROPIC PROVIDER (Claude Messages REST API)
-  // =========================================================================
-  if (!replyText && chosenProvider === "anthropic" && anthropicApiKey) {
-    try {
-      modelUsed = state.config.anthropicModel || "claude-3-7-sonnet-latest";
-      const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": anthropicApiKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: modelUsed,
-          max_tokens: 1024,
-          system: systemPromptWithMemories,
-          messages: [{ role: "user", content: params.text }],
+        tools,
+        maxOutputTokens: Number(process.env.VELNOR_MAX_OUTPUT_TOKENS || 1400),
+        executeTool: async (name, args) => ({
+          payload: await executeToolCall(name, args, params.channel, bundle),
         }),
       });
-      if (anthropicRes.ok) {
-        const data = await anthropicRes.json();
-        replyText = data.content?.[0]?.text || "";
-      }
+      replyText = result.text;
+      modelUsed = result.model;
+      providerUsed = slot.id;
+      usage = result.usage;
+      bundle.toolActions.push({
+        tool: "agent_loop",
+        label: "Answered via " + slot.id,
+        status: "info",
+        details: result.toolCalls + " tool call(s), " + result.steps + " step(s)",
+      });
+      break;
     } catch (err) {
-      console.warn("Anthropic provider error, falling back to local orchestrator:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      providerFailures.push(slot.id + ": " + message);
+      console.warn("[velnor] provider " + slot.id + " failed, trying next:", message);
     }
   }
 
-  // =========================================================================
-  // 4. BUILT-IN SMART ORCHESTRATOR (Zero-key instant execution & tool synthesis)
-  // =========================================================================
+  const costUsd = estimateCostUsd(modelUsed, usage.inputTokens, usage.outputTokens);
+  if (usage.inputTokens || usage.outputTokens) {
+    state.usage = {
+      requests: (state.usage?.requests || 0) + 1,
+      inputTokens: (state.usage?.inputTokens || 0) + usage.inputTokens,
+      outputTokens: (state.usage?.outputTokens || 0) + usage.outputTokens,
+      costUsd: Number(((state.usage?.costUsd || 0) + costUsd).toFixed(6)),
+      lastRequestCostUsd: Number(costUsd.toFixed(6)),
+      lastProvider: providerUsed,
+      lastModel: modelUsed,
+    };
+  }
+
   if (!replyText) {
+    if (providerFailures.length > 0 && chain.length > 0) {
+      bundle.toolActions.push({
+        tool: "provider_error",
+        label: "All configured providers failed",
+        status: "error" as any,
+        details: providerFailures.join(" | ").slice(0, 300),
+      });
+    }
     replyText = await runBuiltInAgentOrchestrator(params, bundle);
   }
 
@@ -734,9 +626,8 @@ export async function processUserMessage(params: {
     sender: "velnor",
     text: replyText,
     timestamp: new Date().toISOString(),
-    providerUsed: chosenProvider,
+        providerUsed,
     modelUsed,
-    interactionId,
     generatedImage: bundle.generatedImage,
     citations: uniqueCitations.length > 0 ? uniqueCitations : undefined,
     toolActions: bundle.toolActions.length > 0 ? bundle.toolActions : undefined,
@@ -846,7 +737,10 @@ async function runBuiltInAgentOrchestrator(
     lower.startsWith("write a ") ||
     lower.startsWith("implement ");
 
-  if (isDirectLoraReasoning && !params.attachments?.length) {
+  // The local 135M adapter is opt-in: its own benchmark produced incoherent
+  // answers, so it must never silently take over a real request.
+  const localLoraEnabled = process.env.VELNOR_LOCAL_LORA === "1";
+  if (localLoraEnabled && isDirectLoraReasoning && !params.attachments?.length) {
     const loraReply = await queryLocalVelnorLora(raw, bundle);
     if (loraReply) return loraReply;
   }
@@ -856,17 +750,11 @@ async function runBuiltInAgentOrchestrator(
   if (attachedImg) {
     bundle.toolActions.push({
       tool: "vision_analysis",
-      label: `Analyzed image "${attachedImg.name}"`,
+        label: `Image attached: "${attachedImg.name}"`,
       status: "success",
       details: `${attachedImg.mimeType}`,
     });
-    return `📸 **Image Analysis (${attachedImg.name})**\n\nI inspected the image you sent${
-      raw ? ` ("${raw}")` : ""
-    }. Add a **Gemini** (` +
-      "`gemini-3.8-flash`" +
-      `) or **OpenAI** (` +
-      "`gpt-4o`" +
-      `) API key in **Settings → AI Providers** for deep pixel-level OCR & visual reasoning, or ask me to generate a variation!`;
+    return `Image received (${attachedImg.name}), but I cannot actually see it: no vision model is configured. Add a Gemini or OpenAI key in Settings and I will read it properly.`;
   }
 
   // Check if user attached a document
@@ -946,13 +834,18 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("reply to ")
   ) {
     const emailMatch = raw.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
-    const to = emailMatch ? emailMatch[0] : lower.includes("sarah") ? "sarah@acme.io" : "team@acme.io";
+    if (!emailMatch) {
+      return "I can draft or send that, but I need the recipient's address. Try: draft an email to name@domain.com saying Thursday works.";
+    }
+    const to = emailMatch[0];
     const sendImmediately = lower.includes("send ");
-    const subject = lower.includes("roadmap")
-      ? "Re: Q4 Product Roadmap"
-      : lower.includes("sync")
-      ? "Follow-up on our sync"
-      : "Quick update from Velnor";
+    const subjectized = raw
+      .replace(/^(send|draft) an email (to [^\s]+ )?(saying|about|that)?\s*/i, "")
+      .trim();
+    const subject =
+      subjectized.length > 0
+        ? subjectized.slice(0, 70)
+        : "Quick update from Velnor";
     const body = raw
       .replace(/^(send|draft) an email (to [^\s]+ )?(saying|about|that)?\s*/i, "")
       .trim() || "Hi! Following up on our thread—let me know what time works best for you.";
@@ -994,7 +887,7 @@ async function runBuiltInAgentOrchestrator(
             `• ${e.unread ? "🔵 **UNREAD**" : "⚪"} **${e.subject}** — _from ${e.from}_ (${e.date})\n  "${e.snippet}"`
         )
         .join("\n\n") +
-      `\n\n_Reply "Draft an email to sarah@acme.io saying Thursday works" or "Archive report emails" to take action._`
+      "\n\nReply \"Draft an email to name@domain.com saying Thursday works\" or \"Archive report emails\" to take action."
     );
   }
 
@@ -1016,7 +909,7 @@ async function runBuiltInAgentOrchestrator(
         title,
         date: new Date().toISOString().split("T")[0],
         startTime,
-        attendees: ["sarah@acme.io"],
+            attendees: [],
       },
       params.channel,
       bundle
@@ -1165,7 +1058,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("current ") ||
     lower.includes("today's ");
 
-  if (!wantsLiveWeb) {
+  if (!wantsLiveWeb && process.env.VELNOR_LOCAL_LORA === "1") {
     const loraReply = await queryLocalVelnorLora(raw, bundle);
     if (loraReply) return loraReply;
   }

@@ -21,7 +21,7 @@ export interface Attachment {
 export interface ToolActionSummary {
   tool: string;
   label: string;
-  status: "success" | "info";
+  status: "success" | "info" | "error";
   details?: string;
   data?: Record<string, unknown>;
 }

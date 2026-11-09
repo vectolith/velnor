@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
-import { getStore } from "@/lib/store";
+import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
 import { ChatMessage } from "@/lib/types";
 
 function verifySlackSignature(
@@ -86,11 +86,13 @@ export async function POST(req: NextRequest) {
       const commandText = params.get("text") || "Help";
       const userName = params.get("user_name") || "slack-user";
 
-      const reply = await processUserMessage({
-        channel: "slack",
-        userHandle: `@${userName}`,
-        text: commandText,
-      });
+      const reply = await withVelnorUser(resolveUserId("slack", "@" + userName), () =>
+        processUserMessage({
+          channel: "slack",
+          userHandle: "@" + userName,
+          text: commandText,
+        })
+      );
 
       return NextResponse.json({
         response_type: "in_channel",
@@ -117,14 +119,19 @@ export async function POST(req: NextRequest) {
     const userHandle = event.user ? `@${event.user}` : "@slack-user";
     const slackChannelId = event.channel;
 
-    const reply = await processUserMessage({
-      channel: "slack",
-      userHandle,
-      text: rawText || "Hello Velnor!",
+    const { reply, botToken } = await withVelnorUser(resolveUserId("slack", userHandle), async () => {
+      const reply = await processUserMessage({
+        channel: "slack",
+        userHandle,
+        text: rawText || "Hello Velnor!",
+      });
+      return {
+        reply,
+        botToken: getStore().config.slackBotToken || process.env.SLACK_BOT_TOKEN,
+      };
     });
 
     const blocks = buildSlackBlocks(reply);
-    const botToken = state.config.slackBotToken || process.env.SLACK_BOT_TOKEN;
 
     if (botToken && slackChannelId) {
       fetch("https://slack.com/api/chat.postMessage", {

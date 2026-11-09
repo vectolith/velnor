@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getDatabaseEngineStatus } from "@/lib/sqliteDb";
-import { getEffectiveKeys, getStore, saveStore } from "@/lib/store";
+import { getEffectiveKeys, getStore, resolveUserId, saveStore, withVelnorUser } from "@/lib/store";
 import { ingestDocumentOrUrl } from "@/lib/tools/documentStore";
 import { addMemoryFact, deleteMemoryFact } from "@/lib/tools/memoryStore";
 import { transcribeAudioWithProvider } from "@/lib/tools/multimodal";
@@ -13,7 +13,12 @@ import {
 } from "@/lib/tools/workspaceService";
 import { Attachment, ChannelType } from "@/lib/types";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const userId = resolveUserId("imessage", req.headers.get("x-velnor-user") || undefined);
+  return withVelnorUser(userId, () => buildSnapshot());
+}
+
+function buildSnapshot() {
   const state = getStore();
   const keys = getEffectiveKeys(state);
   const dbStatus = getDatabaseEngineStatus();
@@ -47,8 +52,21 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  let body: any;
   try {
-    const body = await req.json();
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  const userId = resolveUserId(
+    body.channel || "imessage",
+    body.userHandle || req.headers.get("x-velnor-user") || undefined
+  );
+  return withVelnorUser(userId, () => handlePost(body));
+}
+
+async function handlePost(body: any) {
+  try {
     const action = body.action || "message";
 
     if (action === "toggle_reminder") {

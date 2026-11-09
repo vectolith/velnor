@@ -9,6 +9,25 @@ const rateBuckets = new Map<string, RateBucket>();
 const WINDOW_MS = 60_000;
 const MAX_REQUESTS_PER_MINUTE = 90;
 
+// Constant-time-ish string compare (middleware runs on the edge runtime, where
+// node:crypto is unavailable).
+function safeEquals(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+// Endpoints that spend API credits, read user state, or write configuration.
+const PROTECTED: Array<{ path: string; methods: string[] }> = [
+  { path: "/api/chat", methods: ["GET", "POST"] },
+  { path: "/api/siri", methods: ["POST"] },
+  { path: "/api/settings", methods: ["POST"] },
+  { path: "/api/lora-pilot", methods: ["POST"] },
+];
+
 function getClientIp(req: NextRequest): string {
   return (
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -20,9 +39,44 @@ function getClientIp(req: NextRequest): string {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Apply rate limiting to API routes
-  if (pathname.startsWith("/api/")) {
-    const ip = getClientIp(req);
+      // Apply rate limiting to API routes
+      if (pathname.startsWith("/api/")) {
+        // Shared-secret gate. Without it these routes are world-readable and
+        // world-writable, which means anyone with the URL can read the user's
+        // mail and spend their API credits.
+        const sharedSecret =
+          process.env.VELNOR_SHARED_SECRET || process.env.VELNOR_ADMIN_TOKEN || "";
+        const allowSimulator =
+          process.env.VELNOR_ALLOW_SIMULATOR === "1" &&
+          req.headers.get("x-velnor-simulator") === "true";
+        const needsAuth = PROTECTED.some(
+          (route) => route.path === pathname && route.methods.includes(req.method)
+        );
+
+        if (needsAuth && !allowSimulator && (sharedSecret || process.env.NODE_ENV === "production")) {
+          if (!sharedSecret) {
+            return NextResponse.json(
+              {
+                error:
+                  "Server is not secured: set VELNOR_SHARED_SECRET before exposing this deployment.",
+              },
+              { status: 503 }
+            );
+          }
+          const provided =
+            req.headers.get("x-velnor-secret") ||
+            req.headers.get("x-velnor-admin-token") ||
+            req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+            "";
+          if (!safeEquals(provided, sharedSecret)) {
+            return NextResponse.json(
+              { error: "Unauthorized: valid VELNOR_SHARED_SECRET required." },
+              { status: 401 }
+            );
+          }
+        }
+
+        const ip = getClientIp(req);
     const now = Date.now();
     const existing = rateBuckets.get(ip);
 

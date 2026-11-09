@@ -4,114 +4,206 @@ export interface WebSearchOutput {
   query: string;
   summary: string;
   citations: Citation[];
+  /** True when at least one result page was actually fetched and read. */
+  grounded: boolean;
 }
 
-export async function performWebSearch(query: string): Promise<WebSearchOutput> {
-  const citations: Citation[] = [];
+export interface SearchHit {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const MAX_PAGES = 3;
+const PAGE_CHARS = 1400;
+
+const cache = new Map<string, { at: number; value: WebSearchOutput }>();
+
+function decodeEntities(input: string): string {
+  return input
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
+}
+
+function stripTags(html: string): string {
+  return decodeEntities(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+}
+
+/** Pull organic results out of DuckDuckGo's no-JS HTML endpoint. */
+export function parseDuckDuckGoHtml(html: string): SearchHit[] {
+  const hits: SearchHit[] = [];
+  const linkRe = /<a[^>]+class="[^"]*result__a[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const snippetRe = /<a[^>]+class="[^"]*result__snippet[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
   const snippets: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = snippetRe.exec(html))) snippets.push(stripTags(m[1]));
 
-  try {
-    // 1. DuckDuckGo Instant Answer API
-    const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&no_html=1`;
-    const ddgRes = await fetch(ddgUrl, { signal: AbortSignal.timeout(4000) });
-    if (ddgRes.ok) {
-      const ddgData = await ddgRes.json();
-      if (ddgData.AbstractText) {
-        snippets.push(ddgData.AbstractText);
-        citations.push({
-          title: ddgData.Heading || "DuckDuckGo Knowledge Graph",
-          url: ddgData.AbstractURL || `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
-          snippet: ddgData.AbstractText,
-        });
-      }
-      if (Array.isArray(ddgData.RelatedTopics)) {
-        for (const topic of ddgData.RelatedTopics.slice(0, 3)) {
-          if (topic.Text && topic.FirstURL) {
-            snippets.push(topic.Text);
-            citations.push({
-              title: topic.Text.split(" - ")[0]?.slice(0, 70) || "Web Result",
-              url: topic.FirstURL,
-              snippet: topic.Text,
-            });
-          }
-        }
-      }
-    }
-  } catch {
-    // Ignore timeout and continue
+  let i = 0;
+  while ((m = linkRe.exec(html)) && hits.length < 8) {
+    let href = decodeEntities(m[1]);
+    const uddg = href.match(/[?&]uddg=([^&]+)/);
+    if (uddg) href = decodeURIComponent(uddg[1]);
+    if (href.startsWith("//")) href = "https:" + href;
+    if (!/^https?:\/\//i.test(href)) continue;
+    if (/duckduckgo\.com\/y\.js/.test(href)) continue;
+    const title = stripTags(m[2]);
+    if (!title) continue;
+    hits.push({ title, url: href, snippet: snippets[i] || "" });
+    i++;
   }
+  return hits;
+}
 
+/** Crude but dependency-free readability: drop chrome, keep prose. */
+export function extractReadableText(html: string): string {
+  let body = html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(nav|header|footer|aside|form)[\s\S]*?<\/\1>/gi, " ");
+
+  const article = body.match(/<article[\s\S]*?<\/article>/i) || body.match(/<main[\s\S]*?<\/main>/i);
+  if (article) body = article[0];
+
+  const paragraphs = Array.from(body.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi))
+    .map((m) => stripTags(m[1]))
+    .filter((p) => p.length > 60);
+
+  const text = paragraphs.length >= 2 ? paragraphs.join("\n\n") : stripTags(body);
+  return text.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+async function fetchPageText(url: string): Promise<string> {
   try {
-    // 2. Wikipedia OpenSearch / REST API for encyclopedic & factual queries
-    const wikiUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(
-      query
-    )}&utf8=&format=json&srlimit=3`;
-    const wikiRes = await fetch(wikiUrl, {
-      headers: { "User-Agent": "VelnorBot/1.0 (https://pluco.dev)" },
-      signal: AbortSignal.timeout(4000),
+    const res = await fetch(url, {
+      headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml" },
+      signal: AbortSignal.timeout(7000),
     });
-    if (wikiRes.ok) {
-      const wikiData = await wikiRes.json();
-      const searchItems = wikiData?.query?.search || [];
-      for (const item of searchItems) {
-        const cleanSnippet = String(item.snippet || "").replace(/<\/?[^>]+(>|$)/g, "");
-        const pageUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(
-          item.title.replace(/ /g, "_")
-        )}`;
-        snippets.push(`${item.title}: ${cleanSnippet}`);
-        if (!citations.some((c) => c.url === pageUrl)) {
-          citations.push({
-            title: `${item.title} — Wikipedia`,
-            url: pageUrl,
-            snippet: cleanSnippet,
-          });
-        }
-      }
-    }
+    if (!res.ok) return "";
+    const type = res.headers.get("content-type") || "";
+    if (!/text\/html|text\/plain|application\/xhtml/i.test(type)) return "";
+    const html = await res.text();
+    return extractReadableText(html).slice(0, PAGE_CHARS);
   } catch {
-    // Ignore network errors
+    return "";
   }
+}
 
+async function duckDuckGo(query: string): Promise<SearchHit[]> {
   try {
-    // 3. Hacker News Algolia Live Index for real-time tech, AI & world news
-    const hnUrl = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(
-      query
-    )}&tags=story&hitsPerPage=2`;
-    const hnRes = await fetch(hnUrl, { signal: AbortSignal.timeout(3500) });
-    if (hnRes.ok) {
-      const hnData = await hnRes.json();
-      for (const hit of hnData.hits || []) {
-        if (hit.title && (hit.url || hit.objectID)) {
-          const hitUrl = hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`;
-          snippets.push(`Recent discussion: "${hit.title}" (${hit.points || 0} pts)`);
-          if (!citations.some((c) => c.url === hitUrl)) {
-            citations.push({
-              title: hit.title,
-              url: hitUrl,
-              snippet: `${hit.points || 0} points • ${hit.num_comments || 0} comments`,
-            });
-          }
-        }
-      }
-    }
+    const res = await fetch("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query), {
+      headers: { "user-agent": UA, accept: "text/html" },
+      signal: AbortSignal.timeout(7000),
+    });
+    if (!res.ok) return [];
+    return parseDuckDuckGoHtml(await res.text());
   } catch {
-    // Ignore
+    return [];
+  }
+}
+
+async function wikipedia(query: string): Promise<SearchHit[]> {
+  try {
+    const res = await fetch(
+      "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=" +
+        encodeURIComponent(query) +
+        "&utf8=&format=json&srlimit=2",
+      { headers: { "user-agent": "VelnorBot/1.0" }, signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data?.query?.search || []).map((item: any) => ({
+      title: item.title + " — Wikipedia",
+      url: "https://en.wikipedia.org/wiki/" + encodeURIComponent(String(item.title).replace(/ /g, "_")),
+      snippet: stripTags(String(item.snippet || "")),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function hackerNews(query: string): Promise<SearchHit[]> {
+  try {
+    const res = await fetch(
+      "https://hn.algolia.com/api/v1/search?query=" + encodeURIComponent(query) + "&tags=story&hitsPerPage=2",
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data?.hits || [])
+      .filter((h: any) => h.title)
+      .map((h: any) => ({
+        title: h.title,
+        url: h.url || "https://news.ycombinator.com/item?id=" + h.objectID,
+        snippet: (h.points || 0) + " points, " + (h.num_comments || 0) + " comments",
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Search the live web, then actually read the top pages. The summary is built
+ * from page text, not from search-engine snippets, so the model can cite
+ * something it has really seen.
+ */
+export async function performWebSearch(query: string): Promise<WebSearchOutput> {
+  const key = query.trim().toLowerCase();
+  const cached = cache.get(key);
+  if (cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.value;
+
+  const [ddg, wiki, hn] = await Promise.all([duckDuckGo(query), wikipedia(query), hackerNews(query)]);
+  const seen = new Set<string>();
+  const hits: SearchHit[] = [];
+  for (const hit of [...ddg, ...wiki, ...hn]) {
+    const normalized = hit.url.replace(/[#?].*$/, "").replace(/\/$/, "");
+    if (seen.has(normalized)) continue;
+    seen.add(normalized);
+    hits.push(hit);
+    if (hits.length >= 6) break;
   }
 
-  if (citations.length === 0) {
+  const pages = await Promise.all(hits.slice(0, MAX_PAGES).map((h) => fetchPageText(h.url)));
+
+  const citations: Citation[] = [];
+  const sections: string[] = [];
+  let grounded = false;
+
+  hits.slice(0, MAX_PAGES).forEach((hit, i) => {
+    const text = pages[i];
+    if (text) grounded = true;
     citations.push({
-      title: `Google Search: "${query}"`,
-      url: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
-      snippet: `Live search results for ${query}`,
+      title: hit.title,
+      url: hit.url,
+      snippet: (text || hit.snippet || "").slice(0, 300),
     });
+    if (text) {
+      sections.push("[" + (i + 1) + "] " + hit.title + " (" + hit.url + ")\n" + text);
+    } else if (hit.snippet) {
+      sections.push("[" + (i + 1) + "] " + hit.title + " (" + hit.url + ")\n" + hit.snippet);
+    }
+  });
+
+  for (const hit of hits.slice(MAX_PAGES)) {
+    citations.push({ title: hit.title, url: hit.url, snippet: hit.snippet });
   }
 
-  return {
-    query,
-    summary:
-      snippets.length > 0
-        ? snippets.slice(0, 4).join("\n\n")
-        : `Performed live search for "${query}".`,
-    citations: citations.slice(0, 5),
-  };
+  const summary =
+    sections.length > 0
+      ? sections.join("\n\n")
+      : 'No live results were reachable for "' + query + '".';
+
+  const value: WebSearchOutput = { query, summary, citations: citations.slice(0, 6), grounded };
+  cache.set(key, { at: Date.now(), value });
+  return value;
 }

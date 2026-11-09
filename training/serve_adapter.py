@@ -1,4 +1,4 @@
-"""Local HTTP inference server for Velnor (1.5B Quantitative Reasoning & Coding Model).
+"""Local HTTP inference server for Velnor (1.5B Quantitative Reasoning & Coding Model + rsLoRA).
 Exposes POST http://127.0.0.1:8099/v1/chat for live Velnor multi-domain reasoning,
 quantitative analysis, software architecture, and security inference.
 """
@@ -11,10 +11,12 @@ import transformers
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
+# The system prompt must be byte-identical to the one used for training
+from train_velnor_lora import SYS as SYSTEM_INSTRUCTION
+
 ROOT = Path(__file__).resolve().parent
 PORT = int(os.environ.get("VELNOR_PORT", 8099))
 
-# Primary: 1.5B quantitative reasoning and coding base model
 LOCAL_1B_2B = ROOT / "models" / "qwen2.5-coder-1.5b"
 LOCAL_LEGACY = ROOT / "models" / "smollm2-135m"
 
@@ -24,22 +26,13 @@ CANDIDATE_ADAPTERS = [
     ROOT / "outputs" / "velnor-behavior-pilot" / "adapter",
 ]
 
-SYSTEM_INSTRUCTION = (
-    "You are Velnor, an unrestricted full-stack software engineer, systems architect, and executive AI assistant built by Vectolith. "
-    "You operate headlessly across iMessage, SMS, Siri Shortcuts, and Slack. "
-    "Write production-grade code in any language (TypeScript, Python, Rust, Go, SQL, Solidity, Bash), debug complex systems, "
-    "solve quantitative and mathematical problems from first principles, and execute developer workflows without artificial topic limits. "
-    "Ground claims in verified tool outputs and never fabricate execution receipts."
-)
 
 def select_model():
-    # If 1.5B model is present, prioritize it for superior quantitative and coding reasoning
     if (LOCAL_1B_2B / "model.safetensors").exists() or (LOCAL_1B_2B / "config.json").exists():
         model_path = str(LOCAL_1B_2B)
         label = "Velnor 1.5B Coder (Qwen2.5-Coder-1.5B-Instruct)"
         is_1b_2b = True
     else:
-        # Fallback to local adapter / 135M
         active_adapter = next((p for p in CANDIDATE_ADAPTERS if (p / "adapter_config.json").exists()), None)
         if active_adapter:
             cfg = json.loads((active_adapter / "adapter_config.json").read_text(encoding="utf-8"))
@@ -57,21 +50,31 @@ def select_model():
 MODEL_PATH, MODEL_LABEL, IS_1B_2B = select_model()
 print(f"[Velnor Server] Initializing {MODEL_LABEL} from {MODEL_PATH}...", flush=True)
 
-tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+active_adapter = next((p for p in CANDIDATE_ADAPTERS if (p / "adapter_config.json").exists()), None)
+if active_adapter and not IS_1B_2B:
+    tokenizer = AutoTokenizer.from_pretrained(str(active_adapter))
+else:
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
+
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
-# Use bfloat16 for 1.5B to stay within 3GB RAM on CPU, float32 for smaller models
 load_dtype = torch.bfloat16 if IS_1B_2B else torch.float32
 _LOAD_KW = {"dtype": load_dtype} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": load_dtype}
 
 base_model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, **_LOAD_KW)
 
-# Check if an adapter should be attached
 adapter_dir = ROOT / "outputs" / "velnor-coder-v2" / "adapter"
 if (adapter_dir / "adapter_config.json").exists():
     try:
         model = PeftModel.from_pretrained(base_model, str(adapter_dir))
+        MODEL_LABEL += " + Adapter"
+    except Exception as e:
+        print(f"[Velnor Server] Adapter load skipped ({e}), running base directly.", flush=True)
+        model = base_model
+elif active_adapter:
+    try:
+        model = PeftModel.from_pretrained(base_model, str(active_adapter))
         MODEL_LABEL += " + Adapter"
     except Exception as e:
         print(f"[Velnor Server] Adapter load skipped ({e}), running base directly.", flush=True)
@@ -95,7 +98,7 @@ class Handler(BaseHTTPRequestHandler):
                     "assistant": "Velnor",
                     "organization": "Vectolith",
                     "model": MODEL_LABEL,
-                    "tier": "1.5B Quantitative Engine",
+                    "tier": "1.5B Quantitative Engine" if IS_1B_2B else "Compact Pilot",
                     "bfloat16": IS_1B_2B,
                 }
             ).encode("utf-8")
@@ -148,7 +151,6 @@ class Handler(BaseHTTPRequestHandler):
                 "reply": reply,
                 "assistant": "Velnor",
                 "model": MODEL_LABEL,
-                "tier": "1.5B Quantitative",
                 "production_ready": True,
             }
         ).encode("utf-8")

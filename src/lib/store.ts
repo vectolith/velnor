@@ -1,8 +1,11 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "fs";
 import path from "path";
+import { DEFAULT_MODELS } from "./ai/registry";
 import { loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
 import {
   CalendarEventItem,
+  ChannelType,
   ChatMessage,
   DocumentChunk,
   EmailItem,
@@ -21,231 +24,172 @@ export interface VelnorState {
   documentChunks: DocumentChunk[];
   memories: MemoryFact[];
   config: ProviderConfig;
-  conversationCursors: Record<string, string>; // channelKey -> last Gemini interactionId
+  conversationCursors: Record<string, string>; // channelKey -> last interactionId
+  /** Rolling token/cost accounting, surfaced on /api/health. */
+  usage?: {
+    requests: number;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+    lastRequestCostUsd?: number;
+    lastProvider?: string;
+    lastModel?: string;
+  };
 }
 
 const DATA_DIR = resolveWritableDataDir();
-const STORE_PATH = path.join(DATA_DIR, "velnor-store.json");
+const USERS_DIR = path.join(DATA_DIR, "users");
+const ROOT_USER = "default";
 
-const DEFAULT_STATE: VelnorState = {
-  messages: [
-    {
-      id: "welcome-imessage",
-      channel: "imessage",
-      sender: "velnor",
-      text: "Hey! I'm Velnor 👋 Your personal AI assistant right inside iMessage, SMS & Slack.\n\nYou can text me to:\n• Search the live web & get cited answers\n• Summarize PDFs, docs, or links (chat with your files)\n• Read, draft, or send Gmail messages & manage Google Calendar\n• Set reminders & tasks\n• Analyze photos, generate images, or transcribe voice notes\n• Plan travel itineraries, find local spots & translate on the go",
-      timestamp: new Date().toISOString(),
-      providerUsed: "system",
-      modelUsed: "gemini-3.8-flash",
-    },
-    {
-      id: "welcome-slack",
-      channel: "slack",
-      sender: "velnor",
-      text: "👋 *Velnor Bot is online in `#velnor-assistant`!* Mention `@Velnor` or use `/velnor` to search the web, summarize docs, triage Gmail & Calendar, generate visuals, or plan trips.",
-      timestamp: new Date().toISOString(),
-      providerUsed: "system",
-      modelUsed: "gemini-3.8-flash",
-    },
-  ],
-  reminders: [
-    {
-      id: "rem-1",
-      text: "Follow up with Sarah on the Q4 product roadmap deck",
-      dueAt: "Today at 4:30 PM",
-      channel: "imessage",
-      recipient: "+1 (555) 019-2834",
-      completed: false,
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "rem-2",
-      text: "Check in for flight to Tokyo (NH 105)",
-      dueAt: "Tomorrow at 9:00 AM",
-      channel: "slack",
-      recipient: "@you",
-      completed: false,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  calendarEvents: [
-    {
-      id: "evt-1",
-      title: "Product Design Sync",
-      date: new Date().toISOString().split("T")[0],
-      startTime: "10:30",
-      endTime: "11:15",
-      attendees: ["sarah@acme.io", "marcus@acme.io"],
-      location: "Google Meet",
-      description: "Review mobile messaging UX and webhook latency metrics.",
-      source: "google_calendar",
-    },
-    {
-      id: "evt-2",
-      title: "Founder Coffee w/ David",
-      date: new Date().toISOString().split("T")[0],
-      startTime: "14:00",
-      endTime: "15:00",
-      attendees: ["david@sequoia.example.com"],
-      location: "Blue Bottle Coffee, SOMA",
-      description: "Catch up on seed extension & AI agent benchmarks.",
-      source: "google_calendar",
-    },
-  ],
-  emails: [
-    {
-      id: "em-1",
-      from: "Sarah Jenkins <sarah@acme.io>",
-      to: "you@velnor.bot",
-      subject: "Q4 Architecture Review & Launch Checklist",
-      snippet: "Hey! Attached the latest metrics for the iMessage + Slack rollout. Can we confirm the webhook rate limits before Thursday?",
-      body: "Hey!\n\nAttached the latest metrics for the iMessage + Slack rollout. Can we confirm the webhook rate limits before Thursday's engineering all-hands? Also let me know if you want to move our 10:30 sync.\n\nBest,\nSarah",
-      date: "10:14 AM",
-      unread: true,
-      archived: false,
-      labels: ["Important", "Work"],
-      status: "inbox",
-    },
-    {
-      id: "em-2",
-      from: "ANA Mileage Club <flights@ana.co.jp>",
-      to: "you@velnor.bot",
-      subject: "Booking Confirmation: SFO to HND (Tokyo Haneda)",
-      snippet: "Your reservation is confirmed. Flight NH 105 departing at 12:50 PM, Seat 6A. Hotel: Hoshinoya Tokyo.",
-      body: "Dear Traveler,\n\nYour reservation is confirmed!\nFlight: ANA NH 105 (SFO -> HND)\nDeparture: 12:50 PM | Seat: 6A\nConfirmation Code: VELNOR9X\nHotel Reference: Hoshinoya Tokyo (Otemachi, Chiyoda-ku)\n\nSafe travels!",
-      date: "Yesterday",
-      unread: true,
-      archived: false,
-      labels: ["Travel", "Flights"],
-      status: "inbox",
-    },
-    {
-      id: "em-3",
-      from: "Marcus Vance <marcus@acme.io>",
-      to: "you@velnor.bot",
-      subject: "Twilio & LoopMessage throughput report",
-      snippet: "P95 latency dropped to 410ms after switching to Gemini 3.8 Flash.",
-      body: "Hi team,\n\nJust sharing the weekly report: P95 webhook latency dropped to 410ms after switching to Gemini 3.8 Flash and caching vector embeddings in-memory.\n\nCheers,\nMarcus",
-      date: "Nov 6",
-      unread: false,
-      archived: false,
-      labels: ["Engineering"],
-      status: "inbox",
-    },
-  ],
-  documents: [
-    {
-      id: "doc-seed-1",
-      name: "Velnor_Product_Brief_2026.pdf",
-      sourceType: "file",
-      summary: "Product specification for Velnor: an omnichannel personal AI assistant native to iMessage, SMS, and Slack with in-memory HNSW vector search, Google Workspace OAuth, and multi-provider LLM routing.",
-      chunkCount: 3,
-      wordCount: 165,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  documentChunks: [
-    {
-      id: "chk-1",
-      docId: "doc-seed-1",
-      docName: "Velnor_Product_Brief_2026.pdf",
-      content: "Velnor is a privacy-first personal AI assistant that lives natively inside messaging apps including Apple iMessage, SMS (via Twilio, Sendblue, and LoopMessage), and Slack.",
-      tokens: ["velnor", "privacy", "first", "personal", "ai", "assistant", "messaging", "apple", "imessage", "sms", "twilio", "sendblue", "loopmessage", "slack"],
-    },
-    {
-      id: "chk-2",
-      docId: "doc-seed-1",
-      docName: "Velnor_Product_Brief_2026.pdf",
-      content: "For document intelligence, Velnor uses an in-memory vector store with cosine similarity and Gemini embeddings to answer questions about uploaded PDFs, articles, and URLs with zero external configuration.",
-      tokens: ["document", "intelligence", "vector", "store", "cosine", "similarity", "gemini", "embeddings", "pdfs", "articles", "urls"],
-    },
-    {
-      id: "chk-3",
-      docId: "doc-seed-1",
-      docName: "Velnor_Product_Brief_2026.pdf",
-      content: "Productivity features include Gmail triage (reading, searching, summarizing, drafting, sending, and archiving emails), Google Calendar scheduling, smart text reminders, and travel itinerary planning.",
-      tokens: ["productivity", "gmail", "triage", "emails", "google", "calendar", "scheduling", "reminders", "travel", "itinerary", "planning"],
-    },
-  ],
-  memories: [
-    {
-      id: "mem-1",
-      category: "travel",
-      fact: "Home airport is SFO (San Francisco); prefers window seats (6A) and non-stop morning flights.",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "mem-2",
-      category: "contact",
-      fact: "Sarah Jenkins (sarah@acme.io) is VP of Product; Marcus Vance (marcus@acme.io) leads Infrastructure.",
-      createdAt: new Date().toISOString(),
-    },
-    {
-      id: "mem-3",
-      category: "preference",
-      fact: "Prefers concise bulleted summaries, specialty pour-over coffee spots, and 30-minute default meetings.",
-      createdAt: new Date().toISOString(),
-    },
-  ],
+export const DEFAULT_STATE: VelnorState = {
+  messages: [],
+  reminders: [],
+  calendarEvents: [],
+  emails: [],
+  documents: [],
+  documentChunks: [],
+  memories: [],
   config: {
     activeProvider: "auto",
-    geminiModel: "gemini-3.8-flash",
-    geminiImageModel: "gemini-3.1-flash-image",
-    openaiModel: "gpt-4o",
-    anthropicModel: "claude-3-7-sonnet-latest",
+    geminiModel: DEFAULT_MODELS.gemini,
+    geminiImageModel: process.env.VELNOR_IMAGE_MODEL || "gemini-2.5-flash-image",
+    openaiModel: DEFAULT_MODELS.openai,
+    anthropicModel: DEFAULT_MODELS.anthropic,
   },
   conversationCursors: {},
+  usage: { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
 };
 
 declare global {
   // eslint-disable-next-line no-var
-  var __velnorMemoryState: VelnorState | undefined;
+  var __velnorStates: Map<string, VelnorState> | undefined;
+}
+
+/**
+ * Per-request tenant scope. Every existing call site keeps using getStore() /
+ * saveStore(); they simply resolve to the user the request is bound to.
+ */
+interface StoreScope {
+  userId: string;
+  state: VelnorState;
+}
+const storage = new AsyncLocalStorage<StoreScope>();
+
+/** Stable, filesystem-safe tenant key. */
+export function sanitizeUserId(raw: string): string {
+  const cleaned = (raw || "").trim().toLowerCase().replace(/[^a-z0-9._@+-]/g, "_");
+  return cleaned.slice(0, 96) || ROOT_USER;
+}
+
+export function resolveUserId(channel: ChannelType | string, handle?: string): string {
+  if (!handle) return sanitizeUserId("anon:" + channel);
+  return sanitizeUserId(String(channel) + ":" + handle);
+}
+
+function stateFile(userId: string): string {
+  return path.join(USERS_DIR, userId + ".json");
+}
+
+function sqliteKey(userId: string): string {
+  // The legacy key stays for the default tenant so existing data is adopted.
+  return userId === ROOT_USER ? "velnor_root_state" : "state:" + userId;
+}
+
+function cache(): Map<string, VelnorState> {
+  if (!global.__velnorStates) global.__velnorStates = new Map();
+  return global.__velnorStates;
+}
+
+/** Model names that were never real; replace them on load. */
+const LEGACY_MODELS: Record<string, string> = {
+  "gemini-3.8-flash": DEFAULT_MODELS.gemini,
+  "gemini-3.1-flash-image": DEFAULT_STATE.config.geminiImageModel,
+  "claude-3-7-sonnet-latest": DEFAULT_MODELS.anthropic,
+};
+
+function migrateConfig(config: Partial<ProviderConfig> | undefined): ProviderConfig {
+  const merged = { ...DEFAULT_STATE.config, ...(config || {}) };
+  for (const key of ["geminiModel", "geminiImageModel", "openaiModel", "anthropicModel"] as const) {
+    const value = merged[key];
+    if (value && LEGACY_MODELS[value]) merged[key] = LEGACY_MODELS[value];
+  }
+  return merged;
+}
+
+function mergeState(loaded: Partial<VelnorState> | null | undefined): VelnorState {
+  return {
+    ...structuredClone(DEFAULT_STATE),
+    ...(loaded || {}),
+    config: migrateConfig(loaded?.config),
+    usage: {
+      requests: loaded?.usage?.requests ?? 0,
+      inputTokens: loaded?.usage?.inputTokens ?? 0,
+      outputTokens: loaded?.usage?.outputTokens ?? 0,
+      costUsd: loaded?.usage?.costUsd ?? 0,
+      lastRequestCostUsd: loaded?.usage?.lastRequestCostUsd,
+      lastProvider: loaded?.usage?.lastProvider,
+      lastModel: loaded?.usage?.lastModel,
+    },
+  };
+}
+
+/** Load (and cache) the state for one tenant. */
+export function loadUserState(userId: string): VelnorState {
+  const id = sanitizeUserId(userId);
+  const hit = cache().get(id);
+  if (hit) return hit;
+
+  let loaded: VelnorState | null = loadStateFromSqlite(sqliteKey(id));
+  if (!loaded) {
+    try {
+      const file = stateFile(id);
+      if (fs.existsSync(file)) {
+        loaded = JSON.parse(fs.readFileSync(file, "utf-8")) as VelnorState;
+      }
+    } catch (err) {
+      console.warn("Could not read store for " + id + ", starting fresh:", err);
+    }
+  }
+
+  const state = mergeState(loaded);
+  cache().set(id, state);
+  if (!loaded) saveStateForUser(id, state);
+  return state;
+}
+
+function saveStateForUser(userId: string, state: VelnorState): void {
+  const id = sanitizeUserId(userId);
+  cache().set(id, state);
+  saveStateToSqlite(state, sqliteKey(id));
+  try {
+    if (!fs.existsSync(USERS_DIR)) fs.mkdirSync(USERS_DIR, { recursive: true });
+    fs.writeFileSync(stateFile(id), JSON.stringify(state, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("Non-fatal: could not persist store for " + id + ":", err);
+  }
+}
+
+/** Run fn with the store bound to this user. */
+export function withVelnorUser<T>(userId: string, fn: () => T | Promise<T>): Promise<T> {
+  const id = sanitizeUserId(userId);
+  const existing = storage.getStore();
+  if (existing && existing.userId === id) return Promise.resolve(fn());
+  return storage.run({ userId: id, state: loadUserState(id) }, async () => fn());
+}
+
+export function currentUserId(): string {
+  return storage.getStore()?.userId || ROOT_USER;
 }
 
 export function getStore(): VelnorState {
-  if (global.__velnorMemoryState) {
-    return global.__velnorMemoryState;
-  }
-  const sqliteLoaded = loadStateFromSqlite();
-  if (sqliteLoaded) {
-    global.__velnorMemoryState = {
-      ...DEFAULT_STATE,
-      ...sqliteLoaded,
-      config: { ...DEFAULT_STATE.config, ...(sqliteLoaded.config || {}) },
-    };
-    return global.__velnorMemoryState;
-  }
-  try {
-    if (fs.existsSync(STORE_PATH)) {
-      const raw = fs.readFileSync(STORE_PATH, "utf-8");
-      const parsed = JSON.parse(raw) as VelnorState;
-      global.__velnorMemoryState = {
-        ...DEFAULT_STATE,
-        ...parsed,
-        config: { ...DEFAULT_STATE.config, ...(parsed.config || {}) },
-      };
-      saveStateToSqlite(global.__velnorMemoryState);
-      return global.__velnorMemoryState;
-    }
-  } catch (err) {
-    console.warn("Could not read store from disk, using in-memory default:", err);
-  }
-  global.__velnorMemoryState = structuredClone(DEFAULT_STATE);
-  saveStore(global.__velnorMemoryState);
-  return global.__velnorMemoryState;
+  const scope = storage.getStore();
+  if (scope) return scope.state;
+  return loadUserState(ROOT_USER);
 }
 
 export function saveStore(state: VelnorState): void {
-  global.__velnorMemoryState = state;
-  saveStateToSqlite(state);
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    fs.writeFileSync(STORE_PATH, JSON.stringify(state, null, 2), "utf-8");
-  } catch (err) {
-    console.warn("Non-fatal: could not persist store to disk:", err);
-  }
+  const scope = storage.getStore();
+  saveStateForUser(scope ? scope.userId : ROOT_USER, state);
 }
 
 export function getEffectiveKeys(state: VelnorState) {
@@ -256,3 +200,38 @@ export function getEffectiveKeys(state: VelnorState) {
   };
 }
 
+/** Every tenant that has state on disk or in cache. */
+export function listUserIds(): string[] {
+  const ids = new Set<string>(cache().keys());
+  try {
+    if (fs.existsSync(USERS_DIR)) {
+      for (const file of fs.readdirSync(USERS_DIR)) {
+        if (file.endsWith(".json")) ids.add(file.slice(0, -5));
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return Array.from(ids);
+}
+
+/** Sum token/cost usage across tenants for /api/health. */
+export function aggregateUsage() {
+  const total = { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, tenants: 0 };
+  for (const id of listUserIds()) {
+    const usage = loadUserState(id).usage;
+    if (!usage) continue;
+    total.requests += usage.requests || 0;
+    total.inputTokens += usage.inputTokens || 0;
+    total.outputTokens += usage.outputTokens || 0;
+    total.costUsd += usage.costUsd || 0;
+    total.tenants++;
+  }
+  total.costUsd = Number(total.costUsd.toFixed(6));
+  return total;
+}
+
+/** Test hook: drop all cached tenant state. */
+export function resetStoreCache(): void {
+  cache().clear();
+}
