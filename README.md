@@ -1,6 +1,6 @@
-# Velnor — Headless Personal AI Assistant for iMessage, SMS, Siri & Slack
+# Velnor — Headless Personal AI Assistant by Vectolith
 
-**Velnor** is a headless, messaging-only personal AI assistant powered by the fine-tuned **`velnor-core-v1`** model and multi-provider AI routing. It operates strictly through native messaging channels (**Apple iMessage, SMS, Siri Shortcuts, and Slack**) with no web chat UI or frontend application.
+**Velnor** (engineered by **[Vectolith](https://github.com/ganiyucall911)**) is a headless, messaging-only executive AI assistant powered by the fine-tuned **`velnor-core-v1`** rsLoRA model (12-domain executive intelligence curriculum) and multi-provider AI routing. It operates strictly through native messaging channels (**Apple iMessage, SMS, Siri Shortcuts, and Slack**) with no web chat UI or frontend application.
 
 ## Core Capabilities
 

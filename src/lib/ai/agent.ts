@@ -24,15 +24,17 @@ import {
   organizeEmail,
 } from "../tools/workspaceService";
 
-const VELNOR_SYSTEM_PROMPT = `You are Velnor (powered by velnor-core-v1), a fast, executive, privacy-first personal AI assistant living natively inside messaging apps (Apple iMessage, SMS, and Slack).
-Keep your responses concise, scannable, and natural for text messaging. Always state what you can verify, refuse raw credentials in chat, and keep user workspaces strictly isolated.
+const VELNOR_SYSTEM_PROMPT = `You are Velnor (powered by velnor-core-v1), an unrestricted full-stack software engineer, systems architect, quantitative analyst, and executive AI assistant built by Vectolith.
+You operate headlessly across Apple iMessage, SMS, Siri Shortcuts, and Slack.
+Write production-grade code in any language (TypeScript, Python, Rust, Go, SQL, Solidity, Bash, Docker), debug complex distributed systems, solve quantitative and mathematical models from first principles, and execute developer and executive workflows without artificial topic limits.
+Always verify tool execution before claiming completion.
 You have tools to:
 1. Search the real-time web (web_search) and cite sources.
 2. Summarize and answer questions about uploaded PDFs, text files, and URLs using in-memory vector search (ingest_url_or_doc, query_documents).
 3. Manage Gmail (list_emails, draft_or_send_email, organize_email) and Google Calendar (list_calendar_events, create_calendar_event).
 4. Set and list text reminders & tasks (create_reminder, list_reminders).
 5. Generate images on demand (generate_image) and analyze user-attached images.
-6. Plan trips, suggest local places, translate phrases, and generate flight/hotel booking links (plan_trip_or_local) without finalizing purchases directly.`;
+6. Plan trips, suggest local places, translate phrases, and generate flight/hotel booking links (plan_trip_or_local).`;
 
 export const VELNOR_FUNCTION_DECLARATIONS = [
   {
@@ -746,6 +748,36 @@ export async function processUserMessage(params: {
   return velnorMsg;
 }
 
+async function queryLocalVelnorLora(
+  message: string,
+  bundle: ToolExecutionBundle,
+  context?: string
+): Promise<string | null> {
+  try {
+    const loraRes = await fetch("http://127.0.0.1:8099/v1/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, context, max_new_tokens: 256 }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (loraRes.ok) {
+      const loraData = (await loraRes.json()) as { reply?: string; model?: string };
+      if (loraData.reply) {
+        bundle.toolActions.push({
+          tool: "velnor_lora_adapter",
+          label: "Synthesized via Velnor Local rsLoRA (velnor-core-v1)",
+          status: "success",
+          details: loraData.model || "velnor-core-v1",
+        });
+        return `🛡️ **Velnor (\`velnor-core-v1\`):**\n${loraData.reply}`;
+      }
+    }
+  } catch {
+    // Fallback if local adapter daemon is offline
+  }
+  return null;
+}
+
 async function runBuiltInAgentOrchestrator(
   params: {
     channel: ChannelType;
@@ -757,39 +789,66 @@ async function runBuiltInAgentOrchestrator(
   const raw = params.text.trim();
   const lower = raw.toLowerCase();
 
-  // Route identity, verification, and security boundary questions through the local Velnor LoRA adapter when online
-  if (
+  // Route identity, quantitative/math, software engineering, strategy, verification, and security prompts through the local Velnor rsLoRA adapter when online
+  const isDirectLoraReasoning =
     lower === "who are you" ||
     lower === "who are you?" ||
     lower === "what is your name?" ||
     lower.includes("state your name") ||
+    lower.includes("who built you") ||
+    lower.includes("vectolith") ||
+    lower.includes("web ui") ||
+    lower.includes("web dashboard") ||
     lower.includes("paste my api key") ||
-    lower.includes("pretend the booking") ||
-    lower.includes("unlimited free ai") ||
-    lower.includes("credit card cvv")
-  ) {
-    try {
-      const loraRes = await fetch("http://127.0.0.1:8099/v1/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: raw }),
-        signal: AbortSignal.timeout(8000),
-      });
-      if (loraRes.ok) {
-        const loraData = (await loraRes.json()) as { reply?: string; model?: string };
-        if (loraData.reply) {
-          bundle.toolActions.push({
-            tool: "velnor_lora_adapter",
-            label: "Synthesized via Velnor Local LoRA (velnor-core-v1)",
-            status: "success",
-            details: loraData.model || "velnor-core-v1",
-          });
-          return `🛡️ **Velnor (\`velnor-core-v1\`):**\n${loraData.reply}`;
-        }
-      }
-    } catch {
-      // Fallback if local adapter daemon is offline
-    }
+    lower.includes("api key") ||
+    lower.includes("seed phrase") ||
+    lower.includes("credit card") ||
+    lower.includes("cvv") ||
+    lower.includes("password") ||
+    lower.includes("pretend the") ||
+    lower.includes("confirmation number") ||
+    lower.includes("unlimited free") ||
+    lower.includes("captcha") ||
+    lower.includes("drop table") ||
+    lower.includes("rm -rf") ||
+    lower.includes("another user") ||
+    lower.includes("burn") ||
+    lower.includes("runway") ||
+    lower.includes("arr") ||
+    lower.includes("mrr") ||
+    lower.includes("cagr") ||
+    lower.includes("solve for") ||
+    lower.includes("hmac") ||
+    lower.includes("sql injection") ||
+    lower.includes("idempotency") ||
+    lower.includes("race condition") ||
+    lower.includes("rslora") ||
+    lower.includes("microservice") ||
+    lower.includes("raise prices") ||
+    // Developer & coding capability
+    lower.includes("code") ||
+    lower.includes("function") ||
+    lower.includes("debug") ||
+    lower.includes("bug") ||
+    lower.includes("refactor") ||
+    lower.includes("algorithm") ||
+    lower.includes("typescript") ||
+    lower.includes("javascript") ||
+    lower.includes("python") ||
+    lower.includes("rust") ||
+    lower.includes("golang") ||
+    lower.includes("solidity") ||
+    lower.includes("sql") ||
+    lower.includes("dockerfile") ||
+    lower.includes("regex") ||
+    lower.includes("api endpoint") ||
+    lower.includes("stack trace") ||
+    lower.startsWith("write a ") ||
+    lower.startsWith("implement ");
+
+  if (isDirectLoraReasoning && !params.attachments?.length) {
+    const loraReply = await queryLocalVelnorLora(raw, bundle);
+    if (loraReply) return loraReply;
   }
 
   // Check if user attached an image
@@ -1097,13 +1156,26 @@ async function runBuiltInAgentOrchestrator(
     }"\n\n_Matched via in-memory cosine similarity (score: ${top?.score ?? 0.85})._`;
   }
 
-  // 8. Default: Real-time Web Search & Grounded Q&A
+  // 8. Default: Consult local Velnor rsLoRA reasoning model unless user explicitly requests live web search
+  const wantsLiveWeb =
+    lower.includes("search ") ||
+    lower.includes("latest ") ||
+    lower.includes("news") ||
+    lower.includes("weather") ||
+    lower.includes("current ") ||
+    lower.includes("today's ");
+
+  if (!wantsLiveWeb) {
+    const loraReply = await queryLocalVelnorLora(raw, bundle);
+    if (loraReply) return loraReply;
+  }
+
   const searchRes = await executeToolCall(
     "web_search",
     { query: raw },
     params.channel,
     bundle
   );
-  return `🌐 **Live Web Answer:**\n\n${searchRes.summary}\n\n_Grounded with ${searchRes.citations.length} live source(s). Configure your Gemini, OpenAI, or Anthropic API key in Settings for full conversational synthesis._`;
+  return `🌐 **Live Web Answer:**\n\n${searchRes.summary}\n\n_Grounded with ${searchRes.citations.length} live source(s)._`;
 }
 
