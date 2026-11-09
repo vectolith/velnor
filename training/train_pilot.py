@@ -34,8 +34,11 @@ torch.manual_seed(SEED)
 torch.set_num_threads(os.cpu_count() or 4)
 
 ROOT = Path(__file__).resolve().parent
-# Code-specialised base model (pretrained on 5.5T tokens incl. 92 programming languages)
-MODEL_ID = os.environ.get("VELNOR_BASE_MODEL", "Qwen/Qwen2.5-Coder-0.5B-Instruct")
+LOCAL_BASE = ROOT / "models" / "smollm2-135m"
+# Base model: uses local model or environment override
+MODEL_ID = os.environ.get("VELNOR_BASE_MODEL")
+if not MODEL_ID:
+    MODEL_ID = str(LOCAL_BASE) if LOCAL_BASE.exists() else "HuggingFaceTB/SmolLM2-135M-Instruct"
 OUT = ROOT / "outputs" / "velnor-coder-v2"
 
 SYS = (
@@ -562,8 +565,8 @@ def main():
     steps_per_epoch = math.ceil(len(train_batches) / grad_accum)
     total_opt_steps = epochs * steps_per_epoch
     warmup_steps = max(2, int(0.08 * total_opt_steps))
-    peak_lr = 2e-4
-    min_lr = 2e-5
+    peak_lr = 4e-4
+    min_lr = 4e-5
 
     opt = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
