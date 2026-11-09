@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
     const reply = await processUserMessage({
       channel: "slack",
       userHandle,
-      text: rawText || "Hello Olli!",
+      text: rawText || "Hello Velnor!",
     });
 
     const blocks = buildSlackBlocks(reply);
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      channel: slackChannelId || "#olli-assistant",
+      channel: slackChannelId || "#velnor-assistant",
       text: reply.text,
       blocks,
       reply,

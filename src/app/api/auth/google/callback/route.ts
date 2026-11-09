@@ -9,7 +9,10 @@ export async function GET(req: NextRequest) {
   const redirectUri = `${req.nextUrl.origin}/api/auth/google/callback`;
 
   if (!code || !clientId || !clientSecret) {
-    return NextResponse.redirect(`${req.nextUrl.origin}/?oauth=missing_params`);
+    return NextResponse.json(
+      { ok: false, error: "missing_oauth_params" },
+      { status: 400 }
+    );
   }
 
   try {
@@ -42,12 +45,19 @@ export async function GET(req: NextRequest) {
       }
 
       saveStore(state);
-      return NextResponse.redirect(`${req.nextUrl.origin}/?oauth=success`);
+      return NextResponse.json({
+        ok: true,
+        status: "connected",
+        email: state.config.googleConnectedEmail,
+      });
     }
   } catch (err) {
     console.error("Google OAuth callback error:", err);
   }
 
-  return NextResponse.redirect(`${req.nextUrl.origin}/?oauth=error`);
+  return NextResponse.json(
+    { ok: false, error: "oauth_exchange_failed" },
+    { status: 500 }
+  );
 }
 

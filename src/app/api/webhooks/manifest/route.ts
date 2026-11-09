@@ -4,24 +4,24 @@ export async function GET(req: NextRequest) {
   const baseUrl =
     req.nextUrl.searchParams.get("baseUrl") ||
     req.nextUrl.origin ||
-    "https://your-olli-domain.run.app";
+    "https://your-velnor-domain.run.app";
 
   const slackManifest = {
     display_information: {
-      name: "Olli",
-      description: "Personal AI assistant for Web Search, Docs, Gmail, Calendar & Travel",
+      name: "Velnor",
+      description: "Headless Personal AI assistant for iMessage, SMS, Siri & Slack",
       background_color: "#0d111a",
     },
     features: {
       bot_user: {
-        display_name: "Olli",
+        display_name: "Velnor",
         always_online: true,
       },
       slash_commands: [
         {
-          command: "/olli",
+          command: "/velnor",
           url: `${baseUrl}/api/webhooks/slack`,
-          description: "Ask Olli anything (search, summarize docs, check Gmail/Calendar, plan trips)",
+          description: "Ask Velnor anything (search, summarize docs, check Gmail/Calendar, plan trips)",
           usage_hint: "[ask anything, e.g. summarize my unread emails]",
           should_escape: false,
         },

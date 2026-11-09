@@ -4,12 +4,12 @@ import { generateSpeechWithProvider } from "@/lib/tools/multimodal";
 
 /**
  * Apple Siri / Apple Watch / iPhone Action Button / CarPlay Endpoint
- * Allows users to invoke Olli hands-free via Apple Shortcuts ("Hey Siri, Ask Olli")
+ * Allows users to invoke Velnor hands-free via Apple Shortcuts ("Hey Siri, Ask Velnor")
  */
 export async function GET(req: NextRequest) {
   const origin = req.nextUrl.origin;
   return NextResponse.json({
-    name: "Ask Olli (Siri, Apple Watch & CarPlay Shortcut)",
+    name: "Ask Velnor (Siri, Apple Watch & CarPlay Shortcut)",
     endpoint: `${origin}/api/siri`,
     method: "POST",
     headers: {
@@ -21,8 +21,8 @@ export async function GET(req: NextRequest) {
       device: "Apple Watch Ultra / CarPlay",
     },
     appleShortcutSteps: [
-      "1. Open the Apple Shortcuts app on iPhone, Mac, or Apple Watch and tap '+' to create 'Ask Olli'.",
-      "2. Add Action: 'Ask for Input' (Prompt: 'What can Olli help with?', Input Type: Text/Dictation).",
+      "1. Open the Apple Shortcuts app on iPhone, Mac, or Apple Watch and tap '+' to create 'Ask Velnor'.",
+      "2. Add Action: 'Ask for Input' (Prompt: 'What can Velnor help with?', Input Type: Text/Dictation).",
       `3. Add Action: 'Get Contents of URL' -> URL: ${origin}/api/siri, Method: POST, Request Body: JSON { "query": [Provided Input], "voiceReply": true }.`,
       "4. Add Action: 'Get Dictionary Value' -> Key: 'spokenText' from Contents of URL.",
       "5. Add Action: 'Speak Text' (or 'Show Result') -> [Dictionary Value].",
