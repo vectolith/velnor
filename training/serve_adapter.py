@@ -10,10 +10,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
 ROOT = Path(__file__).resolve().parent
-LOCAL_BASE = ROOT / "models" / "smollm2-135m"
-MODEL_ID = str(LOCAL_BASE) if LOCAL_BASE.exists() else "HuggingFaceTB/SmolLM2-135M-Instruct"
-ADAPTER = ROOT / "outputs" / "velnor-core-v1" / "adapter"
-FALLBACK_ADAPTER = ROOT / "outputs" / "velnor-behavior-pilot" / "adapter"
+CANDIDATE_ADAPTERS = [
+    ROOT / "outputs" / "velnor-coder-v2" / "adapter",  # Qwen2.5-Coder-0.5B base
+    ROOT / "outputs" / "velnor-core-v1" / "adapter",   # SmolLM2-135M base (legacy)
+    ROOT / "outputs" / "velnor-behavior-pilot" / "adapter",
+]
 PORT = 8099
 
 # Must match the exact system prompt used during rsLoRA training in train_pilot.py
@@ -25,7 +26,14 @@ SYSTEM_INSTRUCTION = (
     "Ground claims in verified tool outputs and never fabricate execution receipts."
 )
 
-active_adapter = ADAPTER if ADAPTER.exists() else FALLBACK_ADAPTER
+active_adapter = next((p for p in CANDIDATE_ADAPTERS if (p / "adapter_config.json").exists()), None)
+if active_adapter is None:
+    raise SystemExit("No trained Velnor adapter found under training/outputs. Run train_pilot.py first.")
+# Always load the exact base model the adapter was trained on
+MODEL_ID = json.loads((active_adapter / "adapter_config.json").read_text(encoding="utf-8"))[
+    "base_model_name_or_path"
+]
+MODEL_LABEL = f"{active_adapter.parent.name} ({MODEL_ID} + rsLoRA)"
 print(f"Loading Velnor base model from {MODEL_ID} and rsLoRA adapter from {active_adapter}...", flush=True)
 tokenizer = AutoTokenizer.from_pretrained(str(active_adapter))
 if tokenizer.pad_token is None:
@@ -47,7 +55,7 @@ class Handler(BaseHTTPRequestHandler):
                     "status": "ok",
                     "assistant": "Velnor",
                     "organization": "Vectolith",
-                    "model": "velnor-core-v1 (SmolLM2-135M + rsLoRA r16)",
+                    "model": MODEL_LABEL,
                     "domains": 12,
                     "adapter": str(active_adapter),
                 }
@@ -100,7 +108,7 @@ class Handler(BaseHTTPRequestHandler):
             {
                 "reply": reply,
                 "assistant": "Velnor",
-                "model": "velnor-core-v1 (SmolLM2-135M + rsLoRA r16)",
+                "model": MODEL_LABEL,
                 "production_ready": True,
             }
         ).encode("utf-8")

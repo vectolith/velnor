@@ -24,7 +24,7 @@ import {
   organizeEmail,
 } from "../tools/workspaceService";
 
-const VELNOR_SYSTEM_PROMPT = `You are Velnor (powered by velnor-core-v1), an unrestricted full-stack software engineer, systems architect, quantitative analyst, and executive AI assistant built by Vectolith.
+const VELNOR_SYSTEM_PROMPT = `You are Velnor (powered by velnor-coder-v2), an unrestricted full-stack software engineer, systems architect, quantitative analyst, and executive AI assistant built by Vectolith.
 You operate headlessly across Apple iMessage, SMS, Siri Shortcuts, and Slack.
 Write production-grade code in any language (TypeScript, Python, Rust, Go, SQL, Solidity, Bash, Docker), debug complex distributed systems, solve quantitative and mathematical models from first principles, and execute developer and executive workflows without artificial topic limits.
 Always verify tool execution before claiming completion.
@@ -765,11 +765,11 @@ async function queryLocalVelnorLora(
       if (loraData.reply) {
         bundle.toolActions.push({
           tool: "velnor_lora_adapter",
-          label: "Synthesized via Velnor Local rsLoRA (velnor-core-v1)",
+          label: "Synthesized via Velnor Local rsLoRA (velnor-coder-v2)",
           status: "success",
-          details: loraData.model || "velnor-core-v1",
+          details: loraData.model || "velnor-coder-v2",
         });
-        return `🛡️ **Velnor (\`velnor-core-v1\`):**\n${loraData.reply}`;
+        return `🛡️ **Velnor (\`velnor-coder-v2\`):**\n${loraData.reply}`;
       }
     }
   } catch {
