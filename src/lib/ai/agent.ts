@@ -24,8 +24,8 @@ import {
   organizeEmail,
 } from "../tools/workspaceService";
 
-const OLLI_SYSTEM_PROMPT = `You are Olli (inspired by olly.bot), a fast, friendly, privacy-first personal AI assistant living natively inside messaging apps (Apple iMessage, SMS, and Slack).
-Keep your responses concise, scannable, and natural for text messaging.
+const OLLI_SYSTEM_PROMPT = `You are Velnor (powered by velnor-core-v1), a fast, executive, privacy-first personal AI assistant living natively inside messaging apps (Apple iMessage, SMS, and Slack).
+Keep your responses concise, scannable, and natural for text messaging. Always state what you can verify, refuse raw credentials in chat, and keep user workspaces strictly isolated.
 You have tools to:
 1. Search the real-time web (web_search) and cite sources.
 2. Summarize and answer questions about uploaded PDFs, text files, and URLs using in-memory vector search (ingest_url_or_doc, query_documents).
@@ -756,6 +756,41 @@ async function runBuiltInAgentOrchestrator(
 ): Promise<string> {
   const raw = params.text.trim();
   const lower = raw.toLowerCase();
+
+  // Route identity, verification, and security boundary questions through the local Velnor LoRA adapter when online
+  if (
+    lower === "who are you" ||
+    lower === "who are you?" ||
+    lower === "what is your name?" ||
+    lower.includes("state your name") ||
+    lower.includes("paste my api key") ||
+    lower.includes("pretend the booking") ||
+    lower.includes("unlimited free ai") ||
+    lower.includes("credit card cvv")
+  ) {
+    try {
+      const loraRes = await fetch("http://127.0.0.1:8099/v1/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: raw }),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (loraRes.ok) {
+        const loraData = (await loraRes.json()) as { reply?: string; model?: string };
+        if (loraData.reply) {
+          bundle.toolActions.push({
+            tool: "velnor_lora_adapter",
+            label: "Synthesized via Velnor Local LoRA (velnor-core-v1)",
+            status: "success",
+            details: loraData.model || "velnor-core-v1",
+          });
+          return `🛡️ **Velnor (\`velnor-core-v1\`):**\n${loraData.reply}`;
+        }
+      }
+    } catch {
+      // Fallback if local adapter daemon is offline
+    }
+  }
 
   // Check if user attached an image
   const attachedImg = params.attachments?.find((a) => a.type === "image");

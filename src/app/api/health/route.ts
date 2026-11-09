@@ -13,8 +13,10 @@ export async function GET() {
   return NextResponse.json(
     {
       status: "healthy",
-      service: "olli-assistant",
-      version: "1.0.0",
+      assistant: "Velnor",
+      loraModel: "velnor-core-v1",
+      service: "velnor-assistant",
+      version: "2.0.0",
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),
       database: {

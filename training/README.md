@@ -1,9 +1,9 @@
-# Olli CPU LoRA Behavior Pilot (`training/`)
+# Velnor Multi-Domain CPU LoRA Model (`training/`)
 
-This directory contains a small, self-contained **CPU float32 LoRA behavior pilot** on `HuggingFaceTB/SmolLM2-135M-Instruct`.
+This directory contains the multi-domain **CPU float32 LoRA training harness** for **Velnor (`velnor-core-v1`)** built on `HuggingFaceTB/SmolLM2-135M-Instruct`.
 
 > [!NOTE]
-> **Scope & Provenance**: This is a narrow training-mechanics and behavioral verification experiment using 20 original authored training pairs and 6 held-out validation pairs (testing honest action reporting, credential hygiene, user isolation, and refusal to fabricate tool outputs). It is **not** a production replacement for Olli's primary LLM engines (`gemini-3.8-flash`, `gpt-4o`, `claude-3-7-sonnet-latest`).
+> **Scope & Provenance**: Trains across **60 authored training examples** and **10 held-out validation examples** spanning 8 executive assistant domains (Velnor identity & persona, honest action/tool verification, credential & vault hygiene, multi-tenant workspace isolation, consequential action approvals, uncertainty/citation grounding, infrastructure limits, and practical capability workflows) using full-linear LoRA (`r=16`, `lora_alpha=32`, targeting `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`) with cosine learning-rate decay over 6 epochs (360 steps).
 
 ## Files
 

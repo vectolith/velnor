@@ -17,14 +17,16 @@ function readJsonIfExists(filePath: string) {
 
 export async function GET() {
   const trainingDir = path.join(process.cwd(), "training");
-  const outputDir = path.join(trainingDir, "outputs", "olli-behavior-pilot");
+  const velnorDir = path.join(trainingDir, "outputs", "velnor-core-v1");
+  const legacyDir = path.join(trainingDir, "outputs", "olli-behavior-pilot");
+  const activeDir = fs.existsSync(velnorDir) ? velnorDir : legacyDir;
   const committedReportPath = path.join(trainingDir, "pilot_report.json");
 
   const report =
-    readJsonIfExists(path.join(outputDir, "report.json")) ??
+    readJsonIfExists(path.join(activeDir, "report.json")) ??
     readJsonIfExists(committedReportPath);
-  const generations = readJsonIfExists(path.join(outputDir, "generations.json"));
-  const examples = readJsonIfExists(path.join(outputDir, "examples.json"));
+  const generations = readJsonIfExists(path.join(activeDir, "generations.json"));
+  const examples = readJsonIfExists(path.join(activeDir, "examples.json"));
 
   let adapterServerOnline = false;
   try {
@@ -37,6 +39,8 @@ export async function GET() {
   }
 
   return NextResponse.json({
+    assistant: "Velnor",
+    model: "velnor-core-v1",
     status: report ? "trained" : "pending",
     adapterServerOnline,
     endpoint: `${LORA_SERVER_URL}/v1/chat`,

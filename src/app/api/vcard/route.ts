@@ -13,14 +13,14 @@ export async function GET(req: NextRequest) {
   const vcard = [
     "BEGIN:VCARD",
     "VERSION:3.0",
-    "FN:Olli AI Assistant",
-    "N:Assistant;Olli;AI;;",
-    "ORG:Olli (olly.bot)",
-    "TITLE:Personal AI in iMessage, SMS & Slack",
+    "FN:Velnor AI Assistant",
+    "N:Assistant;Velnor;AI;;",
+    "ORG:Velnor AI",
+    "TITLE:Executive Personal AI in iMessage, SMS & Slack",
     `TEL;TYPE=CELL,VOICE,MSG,PREF:${phone}`,
-    "EMAIL;TYPE=INTERNET:olli@olly.bot",
+    "EMAIL;TYPE=INTERNET:velnor@pluco.dev",
     `URL:${origin}`,
-    "NOTE:Your personal AI assistant in iMessage, SMS & Slack. Text Olli to search the web, summarize PDFs, triage Gmail & Google Calendar, or plan trips.",
+    "NOTE:Velnor — your executive personal AI assistant in iMessage, SMS & Slack. Text Velnor to search the web, summarize PDFs, triage Gmail & Google Calendar, or plan trips.",
     "END:VCARD",
   ].join("\r\n");
 
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     status: 200,
     headers: {
       "Content-Type": "text/vcard; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="Olli_AI_Assistant.vcf"',
+      "Content-Disposition": 'attachment; filename="Velnor_AI_Assistant.vcf"',
     },
   });
 }

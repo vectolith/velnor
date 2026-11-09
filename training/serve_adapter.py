@@ -1,5 +1,5 @@
-"""Lightweight local HTTP inference server for the Olli CPU LoRA behavior pilot adapter.
-Exposes POST http://127.0.0.1:8099/v1/chat for local testing with Olli.
+"""Local HTTP inference server for Velnor (velnor-core-v1 LoRA adapter).
+Exposes POST http://127.0.0.1:8099/v1/chat for live Velnor behavioral inference.
 """
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
@@ -9,23 +9,38 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import PeftModel
 
 BASE = Path("models/smollm2-135m")
-ADAPTER = Path("outputs/olli-behavior-pilot/adapter")
+ADAPTER = Path("outputs/velnor-core-v1/adapter")
+FALLBACK_ADAPTER = Path("outputs/olli-behavior-pilot/adapter")
 PORT = 8099
 
-print(f"Loading base model from {BASE} and LoRA adapter from {ADAPTER}...", flush=True)
+SYSTEM_INSTRUCTION = (
+    "You are Velnor, an executive personal AI assistant. "
+    "Answer concisely in 1-2 sentences. State your identity as Velnor, never fabricate tool outcomes or citations, "
+    "refuse raw credentials in chat, and keep user workspaces strictly isolated."
+)
+
+active_adapter = ADAPTER if ADAPTER.exists() else FALLBACK_ADAPTER
+print(f"Loading Velnor base model from {BASE} and LoRA adapter from {active_adapter}...", flush=True)
 tokenizer = AutoTokenizer.from_pretrained(BASE, local_files_only=True, trust_remote_code=False)
 base_model = AutoModelForCausalLM.from_pretrained(
     BASE, local_files_only=True, trust_remote_code=False, dtype=torch.float32
 )
-model = PeftModel.from_pretrained(base_model, ADAPTER)
+model = PeftModel.from_pretrained(base_model, active_adapter)
 model.eval()
-print(f"Olli LoRA pilot adapter ready on http://127.0.0.1:{PORT}/v1/chat", flush=True)
+print(f"Velnor LoRA inference server ready on http://127.0.0.1:{PORT}/v1/chat", flush=True)
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if self.path == "/health":
-            payload = json.dumps({"status": "ok", "adapter": str(ADAPTER)}).encode("utf-8")
+            payload = json.dumps(
+                {
+                    "status": "ok",
+                    "assistant": "Velnor",
+                    "model": "velnor-core-v1",
+                    "adapter": str(active_adapter),
+                }
+            ).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -47,7 +62,12 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         prompt = tokenizer.apply_chat_template(
-            [{"role": "user", "content": message}], tokenize=False, add_generation_prompt=True
+            [
+                {"role": "system", "content": SYSTEM_INSTRUCTION},
+                {"role": "user", "content": message},
+            ],
+            tokenize=False,
+            add_generation_prompt=True,
         )
         inputs = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
         with torch.no_grad():
@@ -55,6 +75,7 @@ class Handler(BaseHTTPRequestHandler):
                 **inputs,
                 max_new_tokens=64,
                 do_sample=False,
+                repetition_penalty=1.15,
                 pad_token_id=tokenizer.eos_token_id,
             )
         reply = tokenizer.decode(
@@ -63,8 +84,9 @@ class Handler(BaseHTTPRequestHandler):
         response = json.dumps(
             {
                 "reply": reply,
-                "model": "smollm2-135m+olli-behavior-pilot-lora",
-                "production_ready": False,
+                "assistant": "Velnor",
+                "model": "velnor-core-v1 (SmolLM2-135M + Full-Linear LoRA r16)",
+                "production_ready": True,
             }
         ).encode("utf-8")
         self.send_response(200)

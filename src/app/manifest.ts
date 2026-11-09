@@ -2,10 +2,10 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Olli — Personal AI Assistant",
-    short_name: "Olli",
+    name: "Velnor (Olli) — Executive Personal AI Assistant",
+    short_name: "Velnor",
     description:
-      "Personal AI assistant in iMessage, SMS & Slack with live web search, document vector Q&A, Gmail & Google Calendar management, and travel planning.",
+      "Velnor personal AI assistant in iMessage, SMS & Slack with live web search, document vector Q&A, Gmail & Google Calendar management, and travel planning.",
     start_url: "/",
     display: "standalone",
     background_color: "#090b10",

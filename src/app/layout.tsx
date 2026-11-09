@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Olli — Personal AI Assistant for iMessage, SMS & Slack",
+  title: "Velnor — Executive Personal AI Assistant for iMessage, SMS & Slack",
   description:
-    "Personal AI assistant inspired by olly.bot: live web search, chat with PDFs & links via in-memory vector search, Gmail & Google Calendar management, multimodal vision/voice/image generation, and travel planning across iMessage, SMS, and Slack.",
+    "Velnor is an executive personal AI assistant powered by multi-provider routing and the velnor-core-v1 LoRA model: live web search, chat with PDFs & links via vector search, Gmail & Google Calendar management, multimodal vision/voice/image generation, and travel planning across iMessage, SMS, and Slack.",
 };
 
 export default function RootLayout({

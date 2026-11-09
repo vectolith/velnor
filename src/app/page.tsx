@@ -671,19 +671,19 @@ export default function OlliAppPage() {
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-blue-500 via-indigo-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-blue-500/25 font-bold text-lg text-white">
-              O
+              V
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-bold text-base sm:text-lg tracking-tight text-white">
-                  Olli
+                  Velnor
                 </h1>
                 <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                  olly.bot clone
+                  velnor-core-v1
                 </span>
               </div>
               <p className="text-xs text-slate-400 hidden sm:block">
-                Personal AI inside iMessage, SMS &amp; Slack • Multi-Provider Router
+                Executive Personal AI inside iMessage, SMS &amp; Slack • Multi-Provider &amp; LoRA Engine
               </p>
             </div>
           </div>
