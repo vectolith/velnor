@@ -4,6 +4,9 @@ node_modules/
 .env
 .env.local
 *.log
-
+.venv/
+training/.venv/
+training/models/
+training/outputs/
 
 *.tsbuildinfo
