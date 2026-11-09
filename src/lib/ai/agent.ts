@@ -846,7 +846,10 @@ async function runBuiltInAgentOrchestrator(
     lower.startsWith("write a ") ||
     lower.startsWith("implement ");
 
-  if (isDirectLoraReasoning && !params.attachments?.length) {
+  // The local 135M adapter is opt-in: its own benchmark produced incoherent
+  // answers, so it must never silently take over a real request.
+  const localLoraEnabled = process.env.VELNOR_LOCAL_LORA === "1";
+  if (localLoraEnabled && isDirectLoraReasoning && !params.attachments?.length) {
     const loraReply = await queryLocalVelnorLora(raw, bundle);
     if (loraReply) return loraReply;
   }
@@ -856,17 +859,11 @@ async function runBuiltInAgentOrchestrator(
   if (attachedImg) {
     bundle.toolActions.push({
       tool: "vision_analysis",
-      label: `Analyzed image "${attachedImg.name}"`,
+        label: `Image attached: "${attachedImg.name}"`,
       status: "success",
       details: `${attachedImg.mimeType}`,
     });
-    return `📸 **Image Analysis (${attachedImg.name})**\n\nI inspected the image you sent${
-      raw ? ` ("${raw}")` : ""
-    }. Add a **Gemini** (` +
-      "`gemini-3.8-flash`" +
-      `) or **OpenAI** (` +
-      "`gpt-4o`" +
-      `) API key in **Settings → AI Providers** for deep pixel-level OCR & visual reasoning, or ask me to generate a variation!`;
+    return `Image received (${attachedImg.name}), but I cannot actually see it: no vision model is configured. Add a Gemini or OpenAI key in Settings and I will read it properly.`;
   }
 
   // Check if user attached a document
@@ -946,13 +943,18 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("reply to ")
   ) {
     const emailMatch = raw.match(/([a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+\.[a-zA-Z0-9_-]+)/);
-    const to = emailMatch ? emailMatch[0] : lower.includes("sarah") ? "sarah@acme.io" : "team@acme.io";
+    if (!emailMatch) {
+      return "I can draft or send that, but I need the recipient's address. Try: draft an email to name@domain.com saying Thursday works.";
+    }
+    const to = emailMatch[0];
     const sendImmediately = lower.includes("send ");
-    const subject = lower.includes("roadmap")
-      ? "Re: Q4 Product Roadmap"
-      : lower.includes("sync")
-      ? "Follow-up on our sync"
-      : "Quick update from Velnor";
+    const subjectized = raw
+      .replace(/^(send|draft) an email (to [^\s]+ )?(saying|about|that)?\s*/i, "")
+      .trim();
+    const subject =
+      subjectized.length > 0
+        ? subjectized.slice(0, 70)
+        : "Quick update from Velnor";
     const body = raw
       .replace(/^(send|draft) an email (to [^\s]+ )?(saying|about|that)?\s*/i, "")
       .trim() || "Hi! Following up on our thread—let me know what time works best for you.";
@@ -994,7 +996,7 @@ async function runBuiltInAgentOrchestrator(
             `• ${e.unread ? "🔵 **UNREAD**" : "⚪"} **${e.subject}** — _from ${e.from}_ (${e.date})\n  "${e.snippet}"`
         )
         .join("\n\n") +
-      `\n\n_Reply "Draft an email to sarah@acme.io saying Thursday works" or "Archive report emails" to take action._`
+      "\n\nReply \"Draft an email to name@domain.com saying Thursday works\" or \"Archive report emails\" to take action."
     );
   }
 
@@ -1016,7 +1018,7 @@ async function runBuiltInAgentOrchestrator(
         title,
         date: new Date().toISOString().split("T")[0],
         startTime,
-        attendees: ["sarah@acme.io"],
+            attendees: [],
       },
       params.channel,
       bundle

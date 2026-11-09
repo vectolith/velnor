@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getStore } from "@/lib/store";
+import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
 
 const MAX_INPUT_CHARS = 8000;
@@ -112,10 +113,12 @@ export async function POST(req: NextRequest) {
         attachments: attachments.length > 0 ? attachments : undefined,
       });
 
-      const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Message>${escapeXml(reply.text)}</Message>
-</Response>`;
+          const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+    <Response>
+    ${splitForSms(reply.text)
+      .map((part) => `  <Message>${escapeXml(part)}</Message>`)
+      .join("\n")}
+    </Response>`;
 
       return new NextResponse(twiml, {
         status: 200,
@@ -158,7 +161,9 @@ export async function POST(req: NextRequest) {
       attachments: attachments.length > 0 ? attachments : undefined,
     });
 
-    // Optional outbound dispatch via Sendblue if configured
+        const outboundText = toPlainText(reply.text);
+
+        // Optional outbound dispatch via Sendblue if configured
     if (
       state.config.sendblueApiKey &&
       state.config.sendblueApiSecret &&
@@ -171,10 +176,10 @@ export async function POST(req: NextRequest) {
           "sb-api-secret-key": state.config.sendblueApiSecret,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          number: payload.number,
-          content: reply.text,
-        }),
+            body: JSON.stringify({
+              number: payload.number,
+              content: outboundText,
+            }),
       }).catch(() => {});
     }
 
@@ -191,10 +196,10 @@ export async function POST(req: NextRequest) {
           "Loop-Secret-Key": state.config.loopMessageSecretKey,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          recipient: payload.recipient,
-          text: reply.text,
-        }),
+            body: JSON.stringify({
+              recipient: payload.recipient,
+              text: outboundText,
+            }),
       }).catch(() => {});
     }
 
@@ -202,9 +207,9 @@ export async function POST(req: NextRequest) {
       status: "ok",
       provider: payload.recipient ? "loopmessage" : "sendblue",
       recipient: senderHandle,
-      reply: {
-        id: reply.id,
-        text: reply.text,
+          reply: {
+            id: reply.id,
+            text: outboundText,
         citations: reply.citations,
         toolActions: reply.toolActions,
         generatedImage: reply.generatedImage
