@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const slackManifest = {
     display_information: {
       name: "Velnor",
-      description: "Headless Personal AI assistant for iMessage, SMS, Siri & Slack",
+      description: "Headless Personal AI Agent for iMessage, SMS, Siri & Slack",
       background_color: "#0d111a",
     },
     features: {

@@ -41,7 +41,7 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    assistant: "Velnor",
+    agent: "Velnor",
     model: report?.model_name ?? null,
     status: weightsPresent ? "trained" : report ? "report-only" : "pending",
     weightsPresent,

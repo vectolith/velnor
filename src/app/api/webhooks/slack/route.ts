@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      channel: slackChannelId || "#velnor-assistant",
+      channel: slackChannelId || "#velnor-agent",
       text: reply.text,
       blocks,
       reply,

@@ -12,6 +12,16 @@ import path from "node:path";
  */
 const SENTINEL = "sk-plaintext-probe-0123456789abcdef";
 
+function sqliteAvailable(): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const sqlite = require("node:sqlite");
+    return Boolean(sqlite && sqlite.DatabaseSync);
+  } catch {
+    return false;
+  }
+}
+
 test("provider keys never reach SQLite, or the JSON store, in plaintext", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-seal-"));
   const env = process.env as Record<string, string | undefined>;
@@ -30,8 +40,11 @@ test("provider keys never reach SQLite, or the JSON store, in plaintext", async 
   assert.ok(!json.includes(SENTINEL), "JSON store wrote the provider key in plaintext");
   assert.ok(json.includes("v1:"), "JSON store did not seal the credential");
 
+  // The database must live on the configured volume, not beside the code, or a
+  // container restart silently drops every profile while the JSON store survives.
   const dbFile = path.join(dir, "velnor.db");
-  if (fs.existsSync(dbFile)) {
+  if (sqliteAvailable()) {
+    assert.ok(fs.existsSync(dbFile), `SQLite ignored VELNOR_DATA_DIR (nothing at ${dbFile})`);
     const raw = fs.readFileSync(dbFile, "latin1");
     assert.ok(!raw.includes(SENTINEL), "SQLite store wrote the provider key in plaintext");
   }

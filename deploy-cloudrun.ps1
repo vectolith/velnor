@@ -1,7 +1,7 @@
 param(
   [string]$ProjectId = $env:GOOGLE_CLOUD_PROJECT,
   [string]$Region = "us-central1",
-  [string]$ServiceName = "velnor-assistant",
+  [string]$ServiceName = "velnor-agent",
   [string]$DataVolume = ""
 )
 

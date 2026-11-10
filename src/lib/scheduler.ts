@@ -82,7 +82,7 @@ export async function dispatchReminderNotification(
     if (rem.channel === "slack" && slackToken) {
       const slackResult = await postSlackMessage({
         botToken: slackToken,
-        channel: rem.recipient || "#velnor-assistant",
+        channel: rem.recipient || "#velnor-agent",
         text: `🔔 *Reminder from Velnor:* ${rem.text} _(${rem.dueAt})_`,
       });
       if (slackResult.ok) channelsUsed.push("slack-bot");

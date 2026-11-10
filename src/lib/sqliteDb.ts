@@ -3,27 +3,42 @@ import os from "os";
 import path from "path";
 import type { VelnorState } from "./store";
 
-export function resolveWritableDataDir(): string {
-  const localDir = path.join(process.cwd(), ".data");
+function ensureWritable(dir: string): string | null {
   try {
-    if (!fs.existsSync(localDir)) {
-      fs.mkdirSync(localDir, { recursive: true });
-    }
-    const testFile = path.join(localDir, ".write-test");
-    fs.writeFileSync(testFile, "ok");
-    fs.unlinkSync(testFile);
-    return localDir;
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const probe = path.join(dir, ".write-test");
+    fs.writeFileSync(probe, "ok");
+    fs.unlinkSync(probe);
+    return dir;
   } catch {
-    const tmpDir = path.join(os.tmpdir(), "velnor-data");
-    try {
-      if (!fs.existsSync(tmpDir)) {
-        fs.mkdirSync(tmpDir, { recursive: true });
-      }
-    } catch {
-      // Ignore
-    }
-    return tmpDir;
+    return null;
   }
+}
+
+/**
+ * Where state lives. An explicit VELNOR_DATA_DIR must win, otherwise SQLite would
+ * write beside the code while the JSON profiles write to the mounted volume, and
+ * both would claim to be the store. Only when the configured directory cannot be
+ * written do we fall back to cwd/.data and then to a temp directory.
+ */
+export function resolveWritableDataDir(): string {
+  const configured = (process.env.VELNOR_DATA_DIR || "").trim();
+  if (configured) {
+    const resolved = ensureWritable(path.resolve(configured));
+    if (resolved) return resolved;
+    console.warn(`VELNOR_DATA_DIR=${configured} is not writable; falling back to a local data directory`);
+  }
+
+  const localDir = ensureWritable(path.join(process.cwd(), ".data"));
+  if (localDir) return localDir;
+
+  const tmpDir = path.join(os.tmpdir(), "velnor-data");
+  try {
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+  } catch {
+    // Ignore
+  }
+  return tmpDir;
 }
 
 const DATA_DIR = resolveWritableDataDir();

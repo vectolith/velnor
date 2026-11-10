@@ -69,7 +69,7 @@ export function enforceToolPolicy(toolName: string): PolicyDecision {
   return {
     allowed: false,
     reason:
-      `"${toolName}" changes something outside this assistant (it sends mail or writes to the calendar), ` +
+      `"${toolName}" changes something outside this agent (it sends mail or writes to the calendar), ` +
       `so it needs your explicit yes. Nothing was executed. Confirm and it will run once.`,
   };
 }

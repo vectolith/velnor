@@ -164,7 +164,7 @@ export async function generateSpeechWithProvider(text: string): Promise<{
               {
                 type: "speech_metadata",
                 speaker: "Velnor",
-                style: "warm, concise, helpful personal assistant",
+                style: "warm, concise, helpful personal agent",
               },
             ],
           },

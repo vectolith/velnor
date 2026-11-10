@@ -1,6 +1,6 @@
-# Velnor — Headless Personal AI Assistant by Vectolith
+# Velnor — Headless Personal AI Agent by Vectolith
 
-**Velnor** (engineered by **[Vectolith](https://github.com/vectolith)**) is a headless, messaging-only executive AI assistant powered by the fine-tuned **`velnor-core-v1`** rsLoRA model (12-domain executive intelligence curriculum) and multi-provider AI routing. It operates strictly through native messaging channels (**Apple iMessage, SMS, Siri Shortcuts, and Slack**) with no web chat UI or frontend application.
+**Velnor** (engineered by **[Vectolith](https://github.com/vectolith)**) is a headless, messaging-only executive AI agent powered by the fine-tuned **`velnor-core-v1`** rsLoRA model (12-domain executive intelligence curriculum) and multi-provider AI routing. It operates strictly through native messaging channels (**Apple iMessage, SMS, Siri Shortcuts, and Slack**) with no web chat UI or frontend application.
 
 ## Core Capabilities
 
@@ -16,7 +16,7 @@
    - **Image Understanding**: Send MMS/iMessage photos, receipts, or screenshots for analysis.
    - **Image Generation**: Generate visuals via Gemini, OpenAI, or the built-in SVG engine.
    - **Voice & Siri**: Hands-free voice invocation via `/api/siri` and `/api/tts`.
-5. **Travel & Local Assistant**
+5. **Travel & Local Agent**
    - Multi-day trip itineraries, verified local landmarks via OpenStreetMap Nominatim, quick translations, and flight/hotel booking links.
 6. **One Agent Loop, Every Provider**
    - Gemini, OpenAI and Anthropic all run through the same tool-calling loop (`src/lib/ai/loop.ts`), so every declared tool works on every model. Providers are tried in order with timeouts, bounded retries on 429/5xx, and per-request token/cost accounting surfaced on `/api/health`.

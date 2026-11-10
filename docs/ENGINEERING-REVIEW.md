@@ -1,8 +1,8 @@
 # Velnor engineering review — core fixes
 
-Reviewed the headless assistant end to end (webhooks, agent, tools, storage,
+Reviewed the headless agent end to end (webhooks, agent, tools, storage,
 training). This branch fixes the issues that blocked it from working as an
-assistant rather than as a demo.
+agent rather than as a demo.
 
 ## Fixed in this branch
 
