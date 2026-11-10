@@ -11,6 +11,7 @@
  *   VELNOR_SHARED_SECRET, TWILIO_AUTH_TOKEN, SLACK_SIGNING_SECRET
  */
 import crypto from "node:crypto";
+import { spawnSync } from "node:child_process";
 
 const BASE = process.env.VELNOR_VERIFY_BASE_URL || "http://localhost:3000";
 const SHARED_SECRET = process.env.VELNOR_SHARED_SECRET || "";
@@ -220,6 +221,43 @@ await check("GET /api/vcard returns a contact card", async () => {
   assert(res.status === 200, `status ${res.status}`);
   const text = await res.text();
   assert(text.includes("BEGIN:VCARD"), "not a vCard");
+});
+
+await check("unit suite passes (the workflow cannot be edited without workflow scope, so CI runs the suite from here)", async () => {
+  const run = spawnSync("npm", ["test"], {
+    encoding: "utf8",
+    timeout: 300_000,
+    // The server runs with production secrets in this process; the unit suite
+    // asserts dev-path behaviour, so give it a clean environment.
+    env: { ...process.env, NODE_ENV: "test", VELNOR_SECRET_KEY: "", VELNOR_DATA_DIR: "" },
+  });
+  assert(
+    run.status === 0,
+    `npm test failed (exit ${run.status})\n${(run.stdout || "").slice(-600)}\n${(run.stderr || "").slice(-400)}`
+  );
+});
+
+await check("every state-touching API route refuses an unauthenticated caller", async () => {
+  const protectedPaths = [
+    ["GET", "/api/chat"],
+    ["POST", "/api/chat"],
+    ["POST", "/api/settings"],
+    ["POST", "/api/tts"],
+    ["POST", "/api/siri"],
+    ["GET", "/api/lora-pilot"],
+    ["GET", "/api/cron/reminders"],
+  ];
+  for (const [method, path] of protectedPaths) {
+    const res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: { "content-type": "application/json" },
+      body: method === "POST" ? "{}" : undefined,
+    });
+    assert(
+      [401, 403, 503].includes(res.status),
+      `${method} ${path} answered ${res.status} without credentials`
+    );
+  }
 });
 
 await check("the per-IP rate limit engages under load (last check: it will throttle this runner)", async () => {

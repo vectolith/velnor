@@ -7,6 +7,7 @@ import {
   authorizeJsonWebhook,
   authorizeTwilioRequest,
   isSimulatorAllowed,
+  publicRequestUrl,
 } from "@/lib/security/webhookAuth";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
       const twilioDecision = authorizeTwilioRequest({
         authToken: twilioAuthToken,
         signature: req.headers.get("x-twilio-signature"),
-        url: req.url,
+        url: publicRequestUrl(req),
         params: paramsMap,
         simulator: isLocalSimulator,
       });
