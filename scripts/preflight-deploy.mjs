@@ -20,6 +20,7 @@ const RECOMMENDED = [
   ["VELNOR_DATA_DIR", "point this at a mounted volume, or state dies with the container"],
   ["TWILIO_AUTH_TOKEN", "without it the Twilio webhook returns 503"],
   ["SLACK_SIGNING_SECRET", "without it the Slack webhook returns 503"],
+  ["SLACK_BOT_TOKEN", "the bot cannot post into the channel without it"],
   ["SENDBLUE_WEBHOOK_SECRET", "required for the JSON webhook path in production"],
 ];
 
