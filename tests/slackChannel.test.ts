@@ -8,6 +8,10 @@ import {
 } from "../src/lib/store";
 import type { VelnorState } from "../src/lib/store";
 
+// The suite must not depend on how the machine running it is configured: an
+// ambient SLACK_CHANNEL would otherwise leak into the default-resolution tests.
+delete process.env.SLACK_CHANNEL;
+
 function stateWith(channel?: string): VelnorState {
   return { ...structuredClone(DEFAULT_STATE), config: { ...DEFAULT_STATE.config, slackChannel: channel } };
 }
@@ -25,6 +29,21 @@ test("a configured channel overrides the default", () => {
 test("an empty or whitespace-only override falls back instead of posting nowhere", () => {
   assert.equal(resolveSlackChannel(stateWith("")), "#velnor-agent");
   assert.equal(resolveSlackChannel(stateWith("   ")), "#velnor-agent");
+});
+
+test("the deployment can pin the channel by environment, and state still wins", () => {
+  const previous = process.env.SLACK_CHANNEL;
+  try {
+    process.env.SLACK_CHANNEL = "C0CFWLMSP9V";
+    assert.equal(resolveSlackChannel(stateWith()), "C0CFWLMSP9V");
+    assert.equal(resolveSlackChannel(stateWith("#ops-alerts")), "#ops-alerts");
+
+    process.env.SLACK_CHANNEL = "  ";
+    assert.equal(resolveSlackChannel(stateWith()), "#velnor-agent");
+  } finally {
+    if (previous === undefined) delete process.env.SLACK_CHANNEL;
+    else process.env.SLACK_CHANNEL = previous;
+  }
 });
 
 test("channel validation accepts names and ids, and rejects what Slack would reject", () => {

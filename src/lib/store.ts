@@ -62,7 +62,6 @@ export const DEFAULT_STATE: VelnorState = {
     geminiImageModel: process.env.VELNOR_IMAGE_MODEL || "gemini-2.5-flash-image",
     openaiModel: DEFAULT_MODELS.openai,
     anthropicModel: DEFAULT_MODELS.anthropic,
-    slackChannel: DEFAULT_SLACK_CHANNEL,
   },
   conversationCursors: {},
   usage: { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
@@ -232,7 +231,11 @@ export function saveStore(state: VelnorState): void {
  */
 export function resolveSlackChannel(state: VelnorState): string {
   const configured = (state.config?.slackChannel || "").trim();
-  return configured || DEFAULT_SLACK_CHANNEL;
+  if (configured) return configured;
+  // Lets a deployment pin the channel (a stable channel id survives a rename)
+  // without writing state, which matters when the volume is replaced on deploy.
+  const fromEnv = (process.env.SLACK_CHANNEL || "").trim();
+  return fromEnv || DEFAULT_SLACK_CHANNEL;
 }
 
 /**

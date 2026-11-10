@@ -54,7 +54,9 @@ After Slack issues the app:
 2. Copy the signing secret into `slackSigningSecret` (or `SLACK_SIGNING_SECRET`), which
    the webhook verifies before it will answer.
 3. Put the app in the channel you want replies in, and either name that channel
-   `#velnor-agent` or set `slackChannel` in settings to it.
+   `#velnor-agent` or set `slackChannel` in settings (or `SLACK_CHANNEL` on the
+   deployment) to it. A channel id such as `C0CFWLMSP9V` is preferable there,
+   because a channel rename would not break it.
 
 Creating the app itself needs either that paste step or an app configuration token
 (api.slack.com/apps → *Your App Configuration Tokens*) for `apps.manifest.create`;
