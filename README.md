@@ -38,6 +38,28 @@
 - **Contact Card (vCard)**: `GET /api/vcard`
 - **Health Check**: `GET /api/health`
 
+## Creating the Slack app
+
+The repository serves a complete Slack app manifest from
+`GET /api/webhooks/manifest?only=manifest&baseUrl=https://your-deployment`, which is
+paste-ready for [api.slack.com/apps](https://api.slack.com/apps) → *Create New App* →
+*From an app manifest*. It carries the bot scopes the code actually calls, the two
+events the agent handles (`app_mention`, `message.im`), and a `/velnor` slash command,
+all pointed at `/api/webhooks/slack` on that base URL.
+
+After Slack issues the app:
+
+1. Install it to the workspace and copy the `xoxb-` bot token into `slackBotToken`
+   via `POST /api/settings` (or `SLACK_BOT_TOKEN`).
+2. Copy the signing secret into `slackSigningSecret` (or `SLACK_SIGNING_SECRET`), which
+   the webhook verifies before it will answer.
+3. Put the app in the channel you want replies in, and either name that channel
+   `#velnor-agent` or set `slackChannel` in settings to it.
+
+Creating the app itself needs either that paste step or an app configuration token
+(api.slack.com/apps → *Your App Configuration Tokens*) for `apps.manifest.create`;
+an ordinary user or bot token cannot create apps.
+
 ## Running Headless
 
 ```bash

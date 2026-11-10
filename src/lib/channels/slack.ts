@@ -1,5 +1,6 @@
 import { ChatMessage } from "../types";
 import { readFailure, SendResult } from "./types";
+import { explainSlackError } from "./slackManifest";
 
 /** Slack Block Kit rendering for a Velnor reply. */
 export function buildSlackBlocks(reply: ChatMessage): Record<string, any>[] {
@@ -68,7 +69,7 @@ export async function postSlackMessage(params: {
     // Slack answers 200 with {ok:false,error:"..."} for most failures.
     const payload = (await response.json().catch(() => ({}))) as { ok?: boolean; error?: string };
     if (payload.ok === false) {
-      return { provider: "slack", ok: false, status: response.status, detail: payload.error || "slack api error" };
+      return { provider: "slack", ok: false, status: response.status, detail: explainSlackError(payload.error) };
     }
     return { provider: "slack", ok: true, status: response.status };
   } catch (err) {

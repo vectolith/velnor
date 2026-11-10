@@ -74,6 +74,8 @@ test("slack treats {ok:false} on a 200 as a failure", async () => {
     const result = await postSlackMessage({ botToken: "xoxb", channel: "C1", text: "hi" });
     assert.equal(result.ok, false);
     assert.match(String(result.detail), /channel_not_found/);
+    // the log line should tell an operator what to do, not just echo Slack's code
+    assert.match(String(result.detail), /invite|slackChannel/i);
   } finally {
     restore();
   }
