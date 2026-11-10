@@ -3,10 +3,10 @@ import test from "node:test";
 import {
   buildSlackScaffoldManifest, buildSlackManifest, explainSlackError, normalizeBaseUrl, SLACK_BOT_SCOPES } from "../src/lib/channels/slackManifest";
 
-test("the manifest names the product Velnor Agent and points every surface at one webhook", () => {
+test("the manifest names the app velnor and points every surface at one webhook", () => {
   const m = buildSlackManifest("https://velnor.example.com/");
-  assert.equal(m.display_information.name, "Velnor Agent");
-  assert.equal(m.features.bot_user.display_name, "Velnor Agent");
+  assert.equal(m.display_information.name, "velnor");
+  assert.equal(m.features.bot_user.display_name, "velnor");
   assert.equal(m.settings.event_subscriptions.request_url, "https://velnor.example.com/api/webhooks/slack");
   assert.equal(m.features.slash_commands[0].url, "https://velnor.example.com/api/webhooks/slack");
   assert.deepEqual(m.settings.event_subscriptions.bot_events, ["app_mention", "message.im"]);
@@ -36,7 +36,7 @@ test("the errors an operator actually hits are explained, not echoed raw", () =>
 
 test("the scaffold manifest leaves out what Slack verifies at creation", () => {
   const scaffold = buildSlackScaffoldManifest();
-  assert.equal(scaffold.display_information.name, "Velnor Agent");
+  assert.equal(scaffold.display_information.name, "velnor");
   assert.deepEqual(scaffold.oauth_config.scopes.bot.length > 5, true);
   assert.equal("event_subscriptions" in scaffold.settings, false);
   assert.equal("slash_commands" in scaffold.features, false);

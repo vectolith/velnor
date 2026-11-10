@@ -1,5 +1,5 @@
 /**
- * The Slack app a workspace needs in order to talk to Velnor Agent.
+ * The Slack app a workspace needs in order to talk to velnor.
  *
  * Kept in one place so the manifest served to an operator and the scopes the code
  * assumes cannot drift apart: the webhook route needs signing verification, the
@@ -31,20 +31,20 @@ export function buildSlackManifest(baseUrl: string) {
 
   return {
     display_information: {
-      name: "Velnor Agent",
+      name: "velnor",
       description: "Headless personal AI agent for iMessage, SMS, Siri and Slack",
       background_color: "#0d111a",
     },
     features: {
       bot_user: {
-        display_name: "Velnor Agent",
+        display_name: "velnor",
         always_online: true,
       },
       slash_commands: [
         {
           command: "/velnor",
           url: webhook,
-          description: "Ask Velnor Agent anything: web search, documents, Gmail, Calendar, trips",
+          description: "Ask velnor anything: web search, documents, Gmail, Calendar, trips",
           usage_hint: "[ask anything, e.g. summarize my unread emails]",
           should_escape: false,
         },
@@ -76,7 +76,7 @@ export function explainSlackError(error: string | undefined): string {
     case "channel_not_found":
       return "channel_not_found: create the channel, invite the app to it, or set slackChannel in /api/settings to one that exists";
     case "not_in_channel":
-      return "not_in_channel: invite the Velnor Agent app to that channel with /invite @Velnor Agent";
+      return "not_in_channel: invite the velnor app to that channel with /invite @velnor";
     case "invalid_auth":
     case "not_authed":
       return "Slack rejected the bot token; reinstall the app and copy the fresh xoxb- token into settings";

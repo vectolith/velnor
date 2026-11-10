@@ -10,6 +10,9 @@
  *   SLACK_CONFIG_TOKEN=xoxe... node --import tsx scripts/create-slack-app.mjs \
  *     --base-url https://velnor-xyz-uc.a.run.app
  *
+ * Add --app-id A0CGA6K20UE to apply the manifest to an app that already exists,
+ * and --defer-endpoints to leave out the parts that need a live URL.
+ *
  * Slack calls the manifest's request URL while creating the app, so the base URL
  * must be the live deployment, not a placeholder.
  */
@@ -21,20 +24,22 @@ function fail(message) {
 }
 
 function readArgs(argv) {
-  const args = { dryRun: false, validateOnly: false, deferEndpoints: false, baseUrl: "" };
+  const args = { dryRun: false, validateOnly: false, deferEndpoints: false, appId: "", baseUrl: "" };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--base-url") args.baseUrl = argv[++i] || "";
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--validate-only") args.validateOnly = true;
     else if (arg === "--defer-endpoints") args.deferEndpoints = true;
+    else if (arg === "--app-id") args.appId = argv[++i] || "";
     else fail(`unknown argument ${arg}`);
   }
   return args;
 }
 
-async function callSlack(method, token, manifest) {
+async function callSlack(method, token, manifest, appId) {
   const body = new URLSearchParams({ token, manifest: JSON.stringify(manifest) });
+  if (appId) body.set("app_id", appId);
   const response = await fetch(`https://slack.com/api/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -53,6 +58,8 @@ function explain(payload) {
 }
 
 const args = readArgs(process.argv.slice(2));
+if (args.appId && !/^A[A-Z0-9]{6,}$/.test(args.appId)) fail(`app id looks wrong: ${args.appId}`);
+if (args.appId && args.validateOnly) fail("--app-id updates an existing app; drop --validate-only");
 const baseUrl = normalizeBaseUrl(args.baseUrl || process.env.VELNOR_BASE_URL || "");
 if (!args.deferEndpoints) {
   if (!baseUrl) fail("pass --base-url https://your-deployment (or VELNOR_BASE_URL)");
@@ -70,8 +77,8 @@ if (args.dryRun) {
 }
 
 const token = process.env.SLACK_CONFIG_TOKEN;
-const method = args.validateOnly ? "apps.manifest.validate" : "apps.manifest.create";
-const { payload } = await callSlack(method, token, manifest);
+const method = args.validateOnly ? "apps.manifest.validate" : args.appId ? "apps.manifest.update" : "apps.manifest.create";
+const { payload } = await callSlack(method, token, manifest, args.appId);
 
 if (payload.ok !== true) fail(`${method} was refused: ${explain(payload)}`);
 
@@ -81,7 +88,7 @@ if (args.validateOnly) {
 }
 
 const credentials = payload.credentials || {};
-console.log(`created app ${payload.app_id}${args.deferEndpoints ? " (endpoints deferred until the deployment URL is known)" : ` for ${baseUrl}`}`);
+console.log(`${args.appId ? "updated" : "created"} app ${payload.app_id}${args.deferEndpoints ? " (endpoints deferred until the deployment URL is known)" : ` for ${baseUrl}`}`);
 if (credentials.client_id) {
   const scopes = manifest.oauth_config.scopes.bot.join(",");
   console.log(`install: https://slack.com/oauth/v2/authorize?client_id=${credentials.client_id}&scope=${encodeURIComponent(scopes)}`);
