@@ -25,8 +25,26 @@ const PROTECTED: Array<{ path: string; methods: string[] }> = [
   { path: "/api/chat", methods: ["GET", "POST"] },
   { path: "/api/siri", methods: ["POST"] },
   { path: "/api/settings", methods: ["POST"] },
-  { path: "/api/lora-pilot", methods: ["POST"] },
+  { path: "/api/lora-pilot", methods: ["GET", "POST"] },
 ];
+
+function isValidPilotUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "169.254.169.254" ||
+      host === "metadata.google.internal" ||
+      host === "metadata.internal"
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function getClientIp(req: NextRequest): string {
   return (
@@ -53,6 +71,14 @@ export function middleware(req: NextRequest) {
           (route) => route.path === pathname && route.methods.includes(req.method)
         );
 
+        const pilotUrl = process.env.VELNOR_LORA_PILOT_URL;
+        if (pilotUrl && !isValidPilotUrl(pilotUrl)) {
+          return NextResponse.json(
+            { error: "Configuration error: VELNOR_LORA_PILOT_URL is malformed or invalid." },
+            { status: 500 }
+          );
+        }
+
         if (needsAuth && !allowSimulator && (sharedSecret || process.env.NODE_ENV === "production")) {
           if (!sharedSecret) {
             return NextResponse.json(
@@ -66,6 +92,7 @@ export function middleware(req: NextRequest) {
           const provided =
             req.headers.get("x-velnor-secret") ||
             req.headers.get("x-velnor-admin-token") ||
+            req.headers.get("x-velnor-key") ||
             req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
             "";
           if (!safeEquals(provided, sharedSecret)) {
@@ -73,6 +100,59 @@ export function middleware(req: NextRequest) {
               { error: "Unauthorized: valid VELNOR_SHARED_SECRET required." },
               { status: 401 }
             );
+          }
+        }
+
+        // Webhook signature and credential sanitation
+        if (!allowSimulator) {
+          if (pathname === "/api/webhooks/imessage") {
+            const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+            const isTwilioForm = req.headers.get("content-type")?.includes("application/x-www-form-urlencoded");
+            if (twilioAuthToken && isTwilioForm) {
+              const sig = req.headers.get("x-twilio-signature");
+              if (!sig) {
+                return NextResponse.json(
+                  { error: "Unauthorized: missing required X-Twilio-Signature." },
+                  { status: 401 }
+                );
+              }
+            }
+
+            const bluebubblesPassword = process.env.BLUEBUBBLES_PASSWORD;
+            if (bluebubblesPassword && !isTwilioForm) {
+              const providedPassword =
+                req.headers.get("x-bluebubbles-password") ||
+                req.nextUrl.searchParams.get("password") ||
+                req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+                "";
+              if (!safeEquals(providedPassword, bluebubblesPassword)) {
+                return NextResponse.json(
+                  { error: "Unauthorized: valid BLUEBUBBLES_PASSWORD required." },
+                  { status: 401 }
+                );
+              }
+            }
+          }
+
+          if (pathname === "/api/webhooks/slack") {
+            const slackSecret = process.env.SLACK_SIGNING_SECRET;
+            if (slackSecret) {
+              const sig = req.headers.get("x-slack-signature");
+              const ts = req.headers.get("x-slack-request-timestamp");
+              if (!sig || !ts) {
+                return NextResponse.json(
+                  { error: "Unauthorized: missing required Slack signature headers." },
+                  { status: 401 }
+                );
+              }
+              const tsNum = parseInt(ts, 10);
+              if (isNaN(tsNum) || Math.abs(Date.now() / 1000 - tsNum) > 300) {
+                return NextResponse.json(
+                  { error: "Unauthorized: Slack request timestamp expired or invalid." },
+                  { status: 401 }
+                );
+              }
+            }
           }
         }
 

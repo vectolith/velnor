@@ -15,6 +15,7 @@ import { addMemoryFact, listMemoryFacts } from "../tools/memoryStore";
 import { generateImageWithProvider } from "../tools/multimodal";
 import { buildTravelPlan } from "../tools/travelService";
 import { performWebSearch } from "../tools/webSearch";
+import { delegateBrowserTaskToBlud } from "../tools/bludBridge";
 import {
   createCalendarEvent,
   createReminder,
@@ -35,9 +36,23 @@ You have tools to:
 3. Manage Gmail (list_emails, draft_or_send_email, organize_email) and Google Calendar (list_calendar_events, create_calendar_event).
 4. Set and list text reminders & tasks (create_reminder, list_reminders).
 5. Generate images on demand (generate_image) and analyze user-attached images.
-6. Plan trips, suggest local places, translate phrases, and generate flight/hotel booking links (plan_trip_or_local).`;
+6. Plan trips, suggest local places, translate phrases, and generate flight/hotel booking links (plan_trip_or_local).
+7. Delegate complex browser automation, multi-step web scraping, and interactive navigation to Blud's Kernel coordinator (delegate_browser_task).`;
 
 export const VELNOR_FUNCTION_DECLARATIONS = [
+  {
+    type: "function" as const,
+    name: "delegate_browser_task",
+    description: "Delegate a multi-step browser automation or web interaction task to Blud's Kernel coordinator (form submission, interactive scraping, button clicking, multi-page workflows).",
+    parameters: {
+      type: "object",
+      properties: {
+        task: { type: "string", description: "Clear instructions of what to perform in the browser" },
+        startUrl: { type: "string", description: "Initial URL to navigate to" },
+      },
+      required: ["task"],
+    },
+  },
   {
     type: "function" as const,
     name: "web_search",
@@ -442,6 +457,18 @@ async function executeToolCall(
         status: "info",
       });
       return { memories };
+    }
+    case "delegate_browser_task": {
+      const task = String(args.task || "");
+      const startUrl = args.startUrl ? String(args.startUrl) : undefined;
+      const res = await delegateBrowserTaskToBlud({ task, startUrl });
+      bundle.toolActions.push({
+        tool: "delegate_browser_task",
+        label: `Blud Browser Task: ${res.status.toUpperCase()}`,
+        status: res.status === "success" ? "success" : res.status === "offline" ? "info" : "error",
+        details: res.summary,
+      });
+      return { browserResult: res };
     }
     default:
       return { error: `Unknown tool ${name}` };
