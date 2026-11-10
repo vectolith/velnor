@@ -88,3 +88,23 @@ against a booted production server. The unit suite (`npm test`) and the secrets 
 verify step needs are supplied by `docs/ci-unit-tests.patch`, because the token that
 produced this branch had no `workflow` scope. Apply it with
 `git apply docs/ci-unit-tests.patch`.
+
+## Deploying
+
+`deploy-cloudrun.ps1` runs `scripts/preflight-deploy.mjs` first and refuses to
+continue when a required secret is missing, because Velnor fails closed: a deploy
+without `VELNOR_SHARED_SECRET` produces a service that answers 503 everywhere and
+looks broken rather than unsecured. Pass `-DataVolume <bucket>` to mount Cloud
+Storage at `/app/.data`; without a mount, chats, reminders and sealed credentials
+die with the container revision.
+
+Preflight checks: `VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY` (32+ characters) and
+`CRON_SECRET` are required; `VELNOR_DATA_DIR`, `TWILIO_AUTH_TOKEN`,
+`SLACK_SIGNING_SECRET` and `SENDBLUE_WEBHOOK_SECRET` warn when absent;
+`VELNOR_EMAIL_ALLOWLIST` is rejected if an entry is not an address or @domain.
+
+Run it locally before any rollout:
+
+```
+VELNOR_SHARED_SECRET=... VELNOR_SECRET_KEY=... CRON_SECRET=... node scripts/preflight-deploy.mjs
+```
