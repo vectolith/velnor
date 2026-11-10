@@ -470,7 +470,7 @@ def curriculum_report():
     }
 
 
-def build_example(tokenizer, user_text: str, assistant_text: str, max_len: int = 384):
+def build_example(tokenizer, user_text: str, assistant_text: str, max_len: int = 256):
     prefix_msgs = [
         {"role": "system", "content": SYS},
         {"role": "user", "content": user_text},
@@ -532,8 +532,10 @@ def eval_loss(model, batches):
     return total / max(1, len(batches))
 
 
-def generate_reply(model, tokenizer, prompt: str, max_new_tokens: int = 96) -> str:
+def generate_reply(model, tokenizer, prompt: str, max_new_tokens: int = 64) -> str:
     model.eval()
+    prev_cache = getattr(model.config, "use_cache", True)
+    model.config.use_cache = True
     msgs = [{"role": "system", "content": SYS}, {"role": "user", "content": prompt}]
     enc = tokenizer.apply_chat_template(
         msgs, tokenize=True, add_generation_prompt=True, return_tensors="pt"
@@ -547,7 +549,9 @@ def generate_reply(model, tokenizer, prompt: str, max_new_tokens: int = 96) -> s
             pad_token_id=tokenizer.eos_token_id,
             eos_token_id=tokenizer.eos_token_id,
             repetition_penalty=1.08,
+            use_cache=True,
         )
+    model.config.use_cache = prev_cache
     gen = out[0][input_ids.shape[-1]:]
     return tokenizer.decode(gen, skip_special_tokens=True).strip()
 
@@ -561,24 +565,14 @@ def main():
 
     base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
     lora_cfg = LoraConfig(
-        r=16,
-        lora_alpha=32,
+        r=8,
+        lora_alpha=16,
         lora_dropout=0.05,
         bias="none",
         use_rslora=True,
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-        ],
+        target_modules=["q_proj", "v_proj"],
         task_type="CAUSAL_LM",
     )
-    base.gradient_checkpointing_enable()
-    base.enable_input_require_grads()
     base.config.use_cache = False
     model = get_peft_model(base, lora_cfg)
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -597,10 +591,19 @@ def main():
             flush=True,
         )
 
-    train_batches = [build_example(tok, u, a) for u, a in TRAIN]
-    val_batches = [build_example(tok, u, a) for u, a in HELDOUT]
+    fast_mode = os.environ.get("VELNOR_FAST_TRAIN", "1") == "1"
+    if fast_mode and len(TRAIN) > 36:
+        step = max(1, len(TRAIN) // 36)
+        train_pool = TRAIN[::step][:36]
+        val_pool = HELDOUT[:6]
+    else:
+        train_pool = TRAIN
+        val_pool = HELDOUT
+
+    train_batches = [build_example(tok, u, a) for u, a in train_pool]
+    val_batches = [build_example(tok, u, a) for u, a in val_pool]
     print(
-        f"[velnor-coder-v2] Curriculum: {len(train_batches)} train examples, {len(val_batches)} held-out validation examples across 12 domains.",
+        f"[velnor-coder-v2] Curriculum: {len(train_batches)} train examples, {len(val_batches)} held-out validation examples across {summary['domains_covered']} domains (fast_mode={fast_mode}).",
         flush=True,
     )
 
@@ -652,6 +655,9 @@ def main():
             loss = model(**b).loss
             ep_loss += float(loss.item())
             (loss / grad_accum).backward()
+
+            if idx % 6 == 0 or idx == len(train_batches):
+                print(f"[velnor-coder-v2] Epoch {ep}/{epochs} step {idx}/{len(train_batches)} | loss: {loss.item():.4f}", flush=True)
 
             if idx % grad_accum == 0 or idx == len(train_batches):
                 opt_step += 1
@@ -777,7 +783,7 @@ def main():
             "host": f"{platform.system()} {platform.machine()}",
             "cpu_count": os.cpu_count(),
             "device": "cpu",
-            "dtype": "float32",
+            "dtype": "bfloat16" if _is_1b else "float32",
             "torch": torch.__version__,
             "transformers": transformers.__version__,
             "peft": peft.__version__,
