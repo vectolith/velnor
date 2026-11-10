@@ -91,3 +91,28 @@ test("a normal page is returned bounded and intact", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("an upstream error status is surfaced, not swallowed", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => new Response("nope", { status: 502 })) as typeof fetch;
+    await assert.rejects(
+      () => safeFetchText("https://example.com/down", { resolve: publicResolver }),
+      /Upstream returned 502/
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("a transport failure propagates as an error", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = (async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    await assert.rejects(() => safeFetchText("https://example.com/boom", { resolve: publicResolver }), /ECONNREFUSED/);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

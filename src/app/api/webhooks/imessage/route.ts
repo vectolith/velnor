@@ -132,7 +132,13 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     // 2. SENDBLUE / LOOPMESSAGE iMESSAGE JSON WEBHOOK
     // =========================================================================
-    const payload = await req.json();
+    let payload: any;
+    try {
+      payload = await req.json();
+    } catch {
+      // A malformed body is the caller's error, not a server fault.
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
     const senderHandle = String(
       payload.number ||
         payload.from_number ||

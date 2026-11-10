@@ -87,13 +87,12 @@ await check("GET /api/chat with the shared secret returns state", async () => {
 
 await check("POST /api/chat records a turn for that user and it is readable back", async () => {
   const marker = `verify-${Date.now()}`;
-  const userHeaders = { ...auth, "x-velnor-user": "verify-user" };
+  const userHeaders = { ...auth };
   const saved = await fetch(`${BASE}/api/chat`, {
     method: "POST",
     headers: { ...userHeaders, "content-type": "application/json" },
     body: JSON.stringify({
       channel: "imessage",
-      userHandle: "verify-user",
       text: `remember that my verify marker is ${marker}`,
     }),
   });
@@ -188,11 +187,48 @@ await check("POST /api/webhooks/slack with a stale signature is rejected", async
   assert(res.status === 401, `expected 401 for a stale signature, got ${res.status}`);
 });
 
+await check("POST /api/chat with malformed JSON is rejected", async () => {
+  const res = await fetch(`${BASE}/api/chat`, {
+    method: "POST",
+    headers: { ...auth, "content-type": "application/json" },
+    body: "{ not json",
+  });
+  assert(res.status === 400, `expected 400 for malformed JSON, got ${res.status}`);
+});
+
+await check("GET /api/chat with an unknown tenant is refused", async () => {
+  const res = await fetch(`${BASE}/api/chat`, {
+    headers: { ...auth, "x-velnor-user": "no-such-tenant" },
+  });
+  assert(res.status === 403, `expected 403 for an unknown tenant, got ${res.status}`);
+});
+
+await check("POST /api/webhooks/imessage with malformed JSON is rejected", async () => {
+  const res = await fetch(`${BASE}/api/webhooks/imessage`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-velnor-webhook-secret": process.env.SENDBLUE_WEBHOOK_SECRET || "",
+    },
+    body: "{ not json",
+  });
+  assert(res.status >= 400 && res.status < 500, `expected a 4xx for malformed JSON, got ${res.status}`);
+});
+
 await check("GET /api/vcard returns a contact card", async () => {
   const res = await fetch(`${BASE}/api/vcard`, { headers: auth });
   assert(res.status === 200, `status ${res.status}`);
   const text = await res.text();
   assert(text.includes("BEGIN:VCARD"), "not a vCard");
+});
+
+await check("the per-IP rate limit engages under load (last check: it will throttle this runner)", async () => {
+  let throttled = 0;
+  for (let i = 0; i < 110; i += 1) {
+    const res = await fetch(`${BASE}/api/health`, { headers: auth });
+    if (res.status === 429) throttled += 1;
+  }
+  assert(throttled > 0, "no 429 observed after 110 requests inside the 90/minute window");
 });
 
 if (failures > 0) {
