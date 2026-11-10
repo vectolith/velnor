@@ -39,7 +39,9 @@ export interface VelnorState {
   };
 }
 
-const DATA_DIR = resolveWritableDataDir();
+const DATA_DIR =
+  (process.env.VELNOR_DATA_DIR && process.env.VELNOR_DATA_DIR.trim()) ||
+  resolveWritableDataDir();
 const USERS_DIR = path.join(DATA_DIR, "users");
 const ROOT_USER = "default";
 
@@ -183,14 +185,14 @@ export function loadUserState(userId: string): VelnorState {
 
 function saveStateForUser(userId: string, state: VelnorState): void {
   const id = sanitizeUserId(userId);
+  const persisted = { ...state, schemaVersion: STATE_SCHEMA_VERSION };
+  if (persisted.config && typeof persisted.config === "object") {
+    persisted.config = sealRecord(persisted.config as unknown as Record<string, unknown>) as unknown as typeof persisted.config;
+  }
   cache().set(id, state);
-  saveStateToSqlite(state, sqliteKey(id));
+  saveStateToSqlite(persisted, sqliteKey(id));
   try {
     if (!fs.existsSync(USERS_DIR)) fs.mkdirSync(USERS_DIR, { recursive: true });
-    const persisted = { ...state, schemaVersion: STATE_SCHEMA_VERSION };
-    if (persisted.config && typeof persisted.config === "object") {
-      persisted.config = sealRecord(persisted.config as unknown as Record<string, unknown>) as unknown as typeof persisted.config;
-    }
     fs.writeFileSync(stateFile(id), JSON.stringify(persisted, null, 2), "utf-8");
   } catch (err) {
     console.warn("Non-fatal: could not persist store for " + id + ":", err);
