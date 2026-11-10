@@ -1,30 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
   <!--
-    Velnor mark. Same family as vectolith-icon: monochrome, stroked, faceted,
-    centred, and it inverts with the colour scheme. Deliberately not that mark:
-    no enclosing polygon, no inscribed diamond, no four pillars. The form is a
-    double chevron, an outer bevel and an inner echo sharing one apex line, which
-    reads as a V on its own and as stacked strata at small sizes.
+    Velnor mark: an aperture of four glass blades with a mint aurora bloom.
+    No letterform, no enclosing polygon. The blades are arcs of two radii twisted
+    against their own sweep, so the mark reads as light bending through glass,
+    which is the Carbon Glass idea rather than a monogram.
   -->
-  <style>
-    .velnor-stroke {
-      stroke: #0A0A0A;
-      fill: none;
-      stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-    .velnor-muted { stroke-opacity: 0.42; }
-    @media (prefers-color-scheme: dark) {
-      .velnor-stroke { stroke: #F4F3F1; }
-    }
-  </style>
-
-  <!-- Outer chevron: the mass of the mark -->
-  <polyline class="velnor-stroke" stroke-width="30" points="96,128 256,392 416,128" />
-
-  <!-- Inner echo, shorter and lighter, so the mark has depth without a core shape -->
-  <polyline class="velnor-stroke velnor-muted" stroke-width="22" points="168,128 256,262 344,128" />
-
-  <!-- Apex facet: a short bevel that cuts the outer join and stops the eye -->
-  <polyline class="velnor-stroke" stroke-width="12" stroke-opacity="0.55" points="226,338 256,392 286,338" />
+  <defs>
+    <linearGradient id="aurora" gradientUnits="userSpaceOnUse" x1="104" y1="120" x2="408" y2="404">
+      <stop offset="0%" stop-color="#8BFFDD" />
+      <stop offset="42%" stop-color="#00FF7F" />
+      <stop offset="100%" stop-color="#00B8A6" />
+    </linearGradient>
+    <radialGradient id="bloom" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00FF7F" stop-opacity="0.42" />
+      <stop offset="60%" stop-color="#00FF7F" stop-opacity="0.10" />
+      <stop offset="100%" stop-color="#00FF7F" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+  <circle cx="256" cy="256" r="122" fill="url(#bloom)" />
+  <path d="M 433.02 274.61 A 178 178 0 0 1 274.61 433.02 L 291.00 316.62 A 70 70 0 0 0 322.57 234.37 Z" fill="url(#aurora)" fill-opacity="1" />
+  <path d="M 237.39 433.02 A 178 178 0 0 1 78.98 274.61 L 195.38 291.00 A 70 70 0 0 0 277.63 322.57 Z" fill="url(#aurora)" fill-opacity="0.84" />
+  <path d="M 78.98 237.39 A 178 178 0 0 1 237.39 78.98 L 221.00 195.38 A 70 70 0 0 0 189.43 277.63 Z" fill="url(#aurora)" fill-opacity="0.94" />
+  <path d="M 274.61 78.98 A 178 178 0 0 1 433.02 237.39 L 316.62 221.00 A 70 70 0 0 0 234.37 189.43 Z" fill="url(#aurora)" fill-opacity="0.78" />
+  <!-- aperture core -->
+  <circle cx="256" cy="256" r="26" fill="url(#aurora)" opacity="0.95" />
+  <circle cx="256" cy="256" r="198" fill="none" stroke="#0A0A0A" stroke-opacity="0.14" stroke-width="2" />
 </svg>
