@@ -17,7 +17,7 @@ die()  { printf '\033[31m%s\033[0m\n' "$*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "run this with sudo: sudo ./setup-vm.sh"
 
-say "1/5 Installing Docker"
+say "1/6 Installing Docker"
 if ! command -v docker >/dev/null 2>&1; then
   if command -v apt-get >/dev/null 2>&1; then
     apt-get update -qq
@@ -35,7 +35,7 @@ fi
 systemctl enable --now docker >/dev/null 2>&1 || true
 docker compose version >/dev/null 2>&1 || die "docker compose plugin missing; re-run after installing docker-compose-plugin"
 
-say "2/5 Opening ports 80 and 443 in the host firewall"
+say "2/6 Opening ports 80 and 443 in the host firewall"
 # Oracle's images ship an iptables ruleset that REJECTs everything but SSH even
 # when firewalld is inactive, so the security list alone is not enough.
 if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
@@ -65,7 +65,7 @@ else
   echo "no active host firewall found; nothing to open here"
 fi
 
-say "3/5 Preparing .env"
+say "3/6 Preparing .env"
 [[ -f .env ]] || cp .env.example .env
 chmod 600 .env
 
@@ -103,10 +103,10 @@ if (( ${#missing[@]} )); then
   warn "Fill them in and re-run this script. The websocket-facing routes stay dark until both are set."
 fi
 
-say "4/5 Building and starting the stack (first build takes a few minutes on ARM)"
+say "4/6 Building and starting the stack (first build takes a few minutes on ARM)"
 docker compose up -d --build
 
-say "5/5 Waiting for the app to answer"
+say "5/6 Waiting for the app to answer"
 healthy=""
 for _ in $(seq 1 40); do
   if curl -fsS --max-time 3 http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
@@ -134,3 +134,38 @@ if [[ "$host" != "localhost" && -n "$host" ]]; then
   warn "https is not answering yet. Check ports 80/443 in the OCI security list, then: docker compose logs caddy"
 fi
 printf '\nStack is running. Public URL once TLS is issued: https://%s\n' "$host"
+
+say "6/6 Scheduling the reminder sweep"
+# vercel.json used to fire /api/cron/reminders every 15 minutes. Nothing does that
+# on a plain VM, so reminders would sit in state and never be delivered.
+cat > /etc/systemd/system/velnor-reminders.service <<UNIT
+[Unit]
+Description=Velnor reminder sweep
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env bash ${here}/run-reminders.sh
+UNIT
+
+cat > /etc/systemd/system/velnor-reminders.timer <<'UNIT'
+[Unit]
+Description=Run the Velnor reminder sweep every 15 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=15min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now velnor-reminders.timer >/dev/null
+systemctl start velnor-reminders.service \
+  && echo "reminder sweep works; timer runs every 15 minutes" \
+  || warn "the first reminder sweep failed: journalctl -u velnor-reminders.service"
+
+printf '\nDone. Logs: docker compose logs -f velnor | Sweeps: journalctl -u velnor-reminders\n'

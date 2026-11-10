@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-const script = readFileSync(new URL("../deploy-cloudrun.ps1", import.meta.url), "utf8");
+const script = readFileSync(new URL("../deploy/cloudrun/deploy-cloudrun.ps1", import.meta.url), "utf8");
 const preflight = readFileSync(new URL("../scripts/preflight-deploy.mjs", import.meta.url), "utf8");
 
 /** Names in the REQUIRED and RECOMMENDED tables: the operator's checklist. */
@@ -22,7 +22,7 @@ test("every variable the preflight asks for is forwarded by the deploy script", 
   // Required secrets ride in as $envPairs entries ("NAME=$env:NAME"), the rest through
   // the optional loop, so match the name rather than one particular spelling.
   const missing = wanted.filter((name) => !new RegExp(`\\b${name}\\b`).test(script));
-  assert.deepEqual(missing, [], `deploy-cloudrun.ps1 never passes: ${missing.join(", ")}`);
+  assert.deepEqual(missing, [], `deploy/cloudrun/deploy-cloudrun.ps1 never passes: ${missing.join(", ")}`);
 });
 
 test("the Slack credentials that make the installed app work are both forwarded", () => {
@@ -80,4 +80,24 @@ test("the VM env template can satisfy the preflight", () => {
   const missing = wanted.filter((name) => !new RegExp(`^${name}=`, "m").test(template));
   assert.deepEqual(missing, [], `.env.example never mentions: ${missing.join(", ")}`);
   assert.match(template, /^SLACK_CHANNEL=C0CFWLMSP9V$/m);
+});
+
+// The VM has no platform scheduler, so the reminder sweep is the deployment's job.
+const ociScript = (name: string) =>
+  readFileSync(new URL(`../deploy/oci/${name}`, import.meta.url), "utf8");
+
+test("the VM runs the reminder sweep that vercel.json used to schedule", () => {
+  const setup = ociScript("setup-vm.sh");
+  assert.match(setup, /velnor-reminders\.timer/, "no timer is installed");
+  assert.match(setup, /OnUnitActiveSec=15min/, "the sweep cadence changed without review");
+  assert.match(setup, /systemctl enable --now velnor-reminders\.timer/, "the timer is not enabled");
+});
+
+test("the sweep authenticates exactly the way the middleware demands", () => {
+  const sweep = ociScript("run-reminders.sh");
+  const middleware = readFileSync(new URL("../src/middleware.ts", import.meta.url), "utf8");
+  assert.match(middleware, /Bearer \$\{cronSecret\}/, "middleware no longer expects a bearer secret");
+  assert.match(sweep, /Authorization: Bearer \$\{secret\}/, "the sweep does not send the bearer secret");
+  assert.match(sweep, /\/api\/cron\/reminders/, "the sweep targets the wrong route");
+  assert.match(sweep, /CRON_SECRET/, "the secret is not read from the environment");
 });

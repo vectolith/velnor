@@ -80,3 +80,20 @@ an ordinary user or bot token cannot create apps.
 npm install
 npm run dev
 ```
+
+## Repository layout
+
+```
+src/app/            Next.js routes: chat, settings, health, webhooks, cron
+src/lib/            agent loop, store and state sealing, channels, tools
+tests/              unit, E2E and deployment-contract suites
+scripts/            operator tools: preflight, Slack app manifest, verify suite
+deploy/oci/         production: compose stack, Caddyfile, VM setup, reminder timer
+deploy/cloudrun/    alternative: PowerShell deploy script for Cloud Run
+deploy/vercel/      parked cron config from the Vercel era
+docs/               operations runbook, engineering review, maintainer patches
+training/           LoRA training and evaluation scripts (not part of the service)
+public/             static assets served by the app
+```
+
+`deploy/oci/docker-compose.yml` is the only deployment that runs in production today.

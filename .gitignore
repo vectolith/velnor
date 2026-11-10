@@ -10,3 +10,8 @@ training/models/
 training/outputs/
 
 *.tsbuildinfo
+
+# editor and interpreter state belongs to whoever is editing, not to the repo
+.antigravity/
+__pycache__/
+*.py[cod]

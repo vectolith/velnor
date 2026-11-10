@@ -91,7 +91,7 @@ produced this branch had no `workflow` scope. Apply it with
 
 ## Deploying
 
-`deploy-cloudrun.ps1` runs `scripts/preflight-deploy.mjs` first and refuses to
+`deploy/cloudrun/deploy-cloudrun.ps1` runs `scripts/preflight-deploy.mjs` first and refuses to
 continue when a required secret is missing, because Velnor fails closed: a deploy
 without `VELNOR_SHARED_SECRET` produces a service that answers 503 everywhere and
 looks broken rather than unsecured. Pass `-DataVolume <bucket>` to mount Cloud
@@ -108,3 +108,13 @@ Run it locally before any rollout:
 ```
 VELNOR_SHARED_SECRET=... VELNOR_SECRET_KEY=... CRON_SECRET=... node scripts/preflight-deploy.mjs
 ```
+
+## Where things run
+
+Production is a single Oracle Cloud VM (`deploy/oci/`), documented in
+`deploy/oci/README.md`. `deploy/cloudrun/` is the Cloud Run alternative, kept for as
+long as it works; it is not the deployment of record. `deploy/vercel/vercel.json` is
+parked the same way: its `crons` block was the only thing firing
+`/api/cron/reminders`, so on the VM that job belongs to `velnor-reminders.timer`,
+which `deploy/oci/setup-vm.sh` installs. If you deploy anywhere else, wire that route
+to a scheduler first or reminders will never be delivered.
