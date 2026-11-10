@@ -1,25 +1,9 @@
-import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { authorizeSlackRequest, isSimulatorAllowed } from "@/lib/security/webhookAuth";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
 import { ChatMessage } from "@/lib/types";
 
-function verifySlackSignature(
-  rawBody: string,
-  timestamp: string | null,
-  signature: string | null,
-  signingSecret: string
-): boolean {
-  if (!timestamp || !signature) return false;
-  const baseString = `v0:${timestamp}:${rawBody}`;
-  const hmac = crypto.createHmac("sha256", signingSecret).update(baseString).digest("hex");
-  const computed = `v0=${hmac}`;
-  try {
-    return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature));
-  } catch {
-    return false;
-  }
-}
 
 function buildSlackBlocks(reply: ChatMessage) {
   const blocks: Record<string, any>[] = [
@@ -69,14 +53,20 @@ export async function POST(req: NextRequest) {
 
   const signingSecret =
     state.config.slackSigningSecret || process.env.SLACK_SIGNING_SECRET || "";
-  const isLocalSimulator = req.headers.get("x-velnor-simulator") === "true";
+  const isLocalSimulator = isSimulatorAllowed(req.headers.get("x-velnor-simulator"));
 
-  if (signingSecret && !isLocalSimulator) {
-    const ts = req.headers.get("x-slack-request-timestamp");
-    const sig = req.headers.get("x-slack-signature");
-    if (!verifySlackSignature(rawBody, ts, sig, signingSecret)) {
-      return NextResponse.json({ error: "Invalid Slack signature" }, { status: 401 });
-    }
+  const slackDecision = authorizeSlackRequest({
+    signingSecret,
+    rawBody,
+    timestamp: req.headers.get("x-slack-request-timestamp"),
+    signature: req.headers.get("x-slack-signature"),
+    simulator: isLocalSimulator,
+  });
+  if (!slackDecision.ok) {
+    return NextResponse.json(
+      { error: slackDecision.error },
+      { status: slackDecision.status ?? 401 }
+    );
   }
 
   try {

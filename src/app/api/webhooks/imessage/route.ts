@@ -1,5 +1,10 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import {
+  authorizeJsonWebhook,
+  authorizeTwilioRequest,
+  isSimulatorAllowed,
+} from "@/lib/security/webhookAuth";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
 import { splitForSms, toPlainText } from "@/lib/format";
@@ -16,30 +21,6 @@ function escapeXml(unsafe: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function verifyTwilioSignature(
-  authToken: string,
-  twilioSignature: string,
-  url: string,
-  params: Record<string, string>
-): boolean {
-  const sortedKeys = Object.keys(params).sort();
-  let data = url;
-  for (const k of sortedKeys) {
-    data += k + params[k];
-  }
-  const computed = crypto
-    .createHmac("sha1", authToken)
-    .update(Buffer.from(data, "utf-8"))
-    .digest("base64");
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(computed),
-      Buffer.from(twilioSignature)
-    );
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Unified SMS & Apple iMessage Webhook Endpoint
@@ -51,9 +32,23 @@ function verifyTwilioSignature(
 export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type") || "";
   const state = getStore();
-  const isLocalSimulator = req.headers.get("x-velnor-simulator") === "true";
+  const isLocalSimulator = isSimulatorAllowed(req.headers.get("x-velnor-simulator"));
 
   try {
+    if (contentType.includes("application/json")) {
+      const jsonDecision = authorizeJsonWebhook({
+        secrets: [process.env.SENDBLUE_WEBHOOK_SECRET, process.env.LOOPMESSAGE_WEBHOOK_SECRET],
+        provided: req.headers.get("x-velnor-webhook-secret"),
+        simulator: isLocalSimulator,
+      });
+      if (!jsonDecision.ok) {
+        return NextResponse.json(
+          { error: jsonDecision.error },
+          { status: jsonDecision.status ?? 401 }
+        );
+      }
+    }
+
     // =========================================================================
     // 1. TWILIO SMS / MMS WEBHOOK (application/x-www-form-urlencoded)
     // =========================================================================
@@ -66,21 +61,18 @@ export async function POST(req: NextRequest) {
 
       const twilioAuthToken =
         state.config.twilioAuthToken || process.env.TWILIO_AUTH_TOKEN;
-      const twilioSig = req.headers.get("x-twilio-signature");
-
-      if (twilioAuthToken && twilioSig && !isLocalSimulator) {
-        const valid = verifyTwilioSignature(
-          twilioAuthToken,
-          twilioSig,
-          req.url,
-          paramsMap
+      const twilioDecision = authorizeTwilioRequest({
+        authToken: twilioAuthToken,
+        signature: req.headers.get("x-twilio-signature"),
+        url: req.url,
+        params: paramsMap,
+        simulator: isLocalSimulator,
+      });
+      if (!twilioDecision.ok) {
+        return NextResponse.json(
+          { error: twilioDecision.error },
+          { status: twilioDecision.status ?? 401 }
         );
-        if (!valid) {
-          return NextResponse.json(
-            { error: "Invalid X-Twilio-Signature" },
-            { status: 401 }
-          );
-        }
       }
 
       const from = String(formData.get("From") || "+15550192834").slice(0, 64);

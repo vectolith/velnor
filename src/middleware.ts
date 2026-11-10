@@ -26,6 +26,7 @@ const PROTECTED: Array<{ path: string; methods: string[] }> = [
   { path: "/api/siri", methods: ["POST"] },
   { path: "/api/settings", methods: ["POST"] },
   { path: "/api/lora-pilot", methods: ["GET", "POST"] },
+  { path: "/api/tts", methods: ["POST"] },
 ];
 
 function isValidPilotUrl(urlStr: string): boolean {
@@ -200,7 +201,15 @@ export function middleware(req: NextRequest) {
 
     // Optional Cron Secret gate for /api/cron/reminders in production
     const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret && pathname.startsWith("/api/cron/")) {
+    if (pathname.startsWith("/api/cron/")) {
+      if (!cronSecret) {
+        // Fail closed: an unauthenticated reminder sweep spends credits and
+        // sends messages on the owner's behalf.
+        return NextResponse.json(
+          { error: "Cron is not configured: set CRON_SECRET." },
+          { status: 503 }
+        );
+      }
       const authHeader = req.headers.get("authorization");
       if (authHeader !== `Bearer ${cronSecret}`) {
         return NextResponse.json(

@@ -1,0 +1,24 @@
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -27,10 +27,21 @@
+       - name: TypeScript typecheck
+         run: npx tsc --noEmit
+ 
++      - name: Unit tests (webhook auth, providers, store, formatting)
++        run: npm test
++
+       - name: Build production Next.js standalone bundle
+         run: npm run build
+ 
+       - name: Run End-to-End Verification Suite against production server
++        env:
++          NODE_ENV: production
++          VELNOR_SHARED_SECRET: ci-shared-secret
++          VELNOR_ADMIN_TOKEN: ci-shared-secret
++          TWILIO_AUTH_TOKEN: ci-twilio-token
++          SLACK_SIGNING_SECRET: ci-slack-signing-secret
++          SENDBLUE_WEBHOOK_SECRET: ci-sendblue-secret
++          CRON_SECRET: ci-cron-secret
+         run: |
+           nohup npm run start > server.log 2>&1 &
+           SERVER_PID=$!
