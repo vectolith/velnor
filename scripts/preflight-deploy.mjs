@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+/**
+ * Deployment preflight.
+ *
+ * Velnor fails closed, so a deployment missing a secret does not "mostly work":
+ * every state-touching route answers 503 and credentials cannot be sealed. This
+ * checks the environment before anything is shipped.
+ *
+ * Usage: node scripts/preflight-deploy.mjs
+ * Exit 1 with a list of problems, exit 0 when the configuration is deployable.
+ */
+
+const REQUIRED = [
+  ["VELNOR_SHARED_SECRET", "protects /api/chat, /api/settings, /api/tts, /api/siri, /api/lora-pilot"],
+  ["VELNOR_SECRET_KEY", "seals provider keys at rest; without it keys are never written"],
+  ["CRON_SECRET", "authorises /api/cron/reminders"],
+];
+
+const RECOMMENDED = [
+  ["VELNOR_DATA_DIR", "point this at a mounted volume, or state dies with the container"],
+  ["TWILIO_AUTH_TOKEN", "without it the Twilio webhook returns 503"],
+  ["SLACK_SIGNING_SECRET", "without it the Slack webhook returns 503"],
+  ["SENDBLUE_WEBHOOK_SECRET", "required for the JSON webhook path in production"],
+];
+
+const problems = [];
+const warnings = [];
+
+for (const [name, why] of REQUIRED) {
+  const value = (process.env[name] || "").trim();
+  if (!value) problems.push(`${name} is missing — ${why}`);
+  else if (name === "VELNOR_SECRET_KEY" && value.length < 16) {
+    problems.push(`VELNOR_SECRET_KEY is only ${value.length} characters; use 32+ random characters`);
+  }
+}
+
+for (const [name, why] of RECOMMENDED) {
+  if (!(process.env[name] || "").trim()) warnings.push(`${name} is not set — ${why}`);
+}
+
+const allowlist = (process.env.VELNOR_EMAIL_ALLOWLIST || "").trim();
+if (allowlist) {
+  const bad = allowlist.split(",").map((e) => e.trim()).filter((e) => e && !/^@?[^\s@]+(\.|\@)/.test(e));
+  if (bad.length) problems.push(`VELNOR_EMAIL_ALLOWLIST has unusable entries: ${bad.join(", ")}`);
+}
+
+if (process.env.NODE_ENV && process.env.NODE_ENV !== "production") {
+  warnings.push(`NODE_ENV is "${process.env.NODE_ENV}", not production`);
+}
+
+for (const warning of warnings) console.warn(`warn   ${warning}`);
+
+if (problems.length) {
+  for (const problem of problems) console.error(`fail   ${problem}`);
+  console.error(`\n${problems.length} problem(s). Refusing to continue.`);
+  process.exit(1);
+}
+
+console.log("ok     deployment environment is complete");
