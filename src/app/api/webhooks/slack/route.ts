@@ -1,44 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeSlackRequest, isSimulatorAllowed } from "@/lib/security/webhookAuth";
 import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
+import { buildSlackBlocks, postSlackMessage } from "@/lib/channels/slack";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
 import { ChatMessage } from "@/lib/types";
 
 
-function buildSlackBlocks(reply: ChatMessage) {
-  const blocks: Record<string, any>[] = [
-    {
-      type: "section",
-      text: {
-        type: "mrkdwn",
-        text: reply.text.replace(/\*\*(.*?)\*\*/g, "*$1*"),
-      },
-    },
-  ];
-
-  if (reply.toolActions && reply.toolActions.length > 0) {
-    blocks.push({
-      type: "context",
-      elements: reply.toolActions.map((t) => ({
-        type: "mrkdwn",
-        text: `⚡ *${t.label}* (${t.details || t.tool})`,
-      })),
-    });
-  }
-
-  if (reply.citations && reply.citations.length > 0) {
-    blocks.push({
-      type: "context",
-      elements: reply.citations.slice(0, 4).map((c) => ({
-        type: "mrkdwn",
-        text: `🔗 <${c.url}|${c.title}>`,
-      })),
-    });
-  }
-
-  return blocks;
-}
 
 /**
  * Slack Bot Webhook Endpoint
@@ -131,19 +99,13 @@ export async function POST(req: NextRequest) {
     const blocks = buildSlackBlocks(reply);
 
     if (botToken && slackChannelId) {
-      fetch("https://slack.com/api/chat.postMessage", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${botToken}`,
-          "Content-Type": "application/json; charset=utf-8",
-        },
-        body: JSON.stringify({
-          channel: slackChannelId,
-          text: reply.text,
-          blocks,
-          thread_ts: event.thread_ts || event.ts,
-        }),
-      }).catch(() => {});
+      void postSlackMessage({
+        botToken,
+        channel: slackChannelId,
+        text: reply.text,
+        blocks,
+        threadTs: event.thread_ts || event.ts,
+      });
     }
 
     return NextResponse.json({

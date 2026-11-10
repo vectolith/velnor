@@ -1,6 +1,8 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
+import { sendSendblueMessage } from "@/lib/channels/sendblue";
+import { sendLoopMessage } from "@/lib/channels/loopmessage";
 import {
   authorizeJsonWebhook,
   authorizeTwilioRequest,
@@ -175,34 +177,28 @@ export async function POST(req: NextRequest) {
         const outboundText = toPlainText(reply.text);
         const scoped = getStore();
 
-        // Optional outbound dispatch via Sendblue if configured
+        // Outbound dispatch via Sendblue if configured
         if (scoped.config.sendblueApiKey && scoped.config.sendblueApiSecret && payload.number) {
-          fetch("https://api.sendblue.co/api/send-message", {
-            method: "POST",
-            headers: {
-              "sb-api-key-id": scoped.config.sendblueApiKey,
-              "sb-api-secret-key": scoped.config.sendblueApiSecret,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ number: payload.number, content: outboundText }),
-          }).catch(() => {});
+          void sendSendblueMessage({
+            apiKeyId: scoped.config.sendblueApiKey,
+            apiSecretKey: scoped.config.sendblueApiSecret,
+            number: payload.number,
+            content: outboundText,
+          });
         }
 
-        // Optional outbound dispatch via LoopMessage if configured
+        // Outbound dispatch via LoopMessage if configured
         if (
           scoped.config.loopMessageAuthKey &&
           scoped.config.loopMessageSecretKey &&
           payload.recipient
         ) {
-          fetch("https://server.loopmessage.com/api/v1/message/send/", {
-            method: "POST",
-            headers: {
-              Authorization: scoped.config.loopMessageAuthKey,
-              "Loop-Secret-Key": scoped.config.loopMessageSecretKey,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ recipient: payload.recipient, text: outboundText }),
-          }).catch(() => {});
+          void sendLoopMessage({
+            authKey: scoped.config.loopMessageAuthKey,
+            secretKey: scoped.config.loopMessageSecretKey,
+            recipient: payload.recipient,
+            text: outboundText,
+          });
         }
 
         return { reply, outboundText };
