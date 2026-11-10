@@ -3,6 +3,8 @@ import fs from "fs";
 import path from "path";
 import { DEFAULT_MODELS } from "./ai/registry";
 import { loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
+import { coerceState, migrateState, STATE_SCHEMA_VERSION } from "./security/stateSchema";
+import { isCredentialField, isSealed, openRecord, sealRecord, secretsEnabled } from "./security/secretBox";
 import {
   CalendarEventItem,
   ChannelType,
@@ -144,10 +146,32 @@ export function loadUserState(userId: string): VelnorState {
     try {
       const file = stateFile(id);
       if (fs.existsSync(file)) {
-        loaded = JSON.parse(fs.readFileSync(file, "utf-8")) as VelnorState;
+        const parsed = JSON.parse(fs.readFileSync(file, "utf-8"));
+        const migrated = migrateState(parsed).value;
+        const coerced = coerceState(migrated);
+        if (coerced.issues.length > 0) {
+          console.warn(`State for ${id} was repaired on load: ${coerced.issues.join("; ")}`);
+        }
+        const config = coerced.value.config;
+        if (config && typeof config === "object") {
+          coerced.value.config = openRecord(config as Record<string, unknown>);
+        }
+        loaded = coerced.value as unknown as VelnorState;
       }
     } catch (err) {
+      // Recovery: keep the broken file for inspection instead of silently
+      // overwriting it, then start from a clean state.
       console.warn("Could not read store for " + id + ", starting fresh:", err);
+      try {
+        const file = stateFile(id);
+        if (fs.existsSync(file)) {
+          const quarantine = `${file}.corrupt-${Date.now()}`;
+          fs.renameSync(file, quarantine);
+          console.warn(`Quarantined unreadable state at ${quarantine}`);
+        }
+      } catch (renameErr) {
+        console.warn("Could not quarantine corrupt state:", renameErr);
+      }
     }
   }
 
@@ -163,7 +187,11 @@ function saveStateForUser(userId: string, state: VelnorState): void {
   saveStateToSqlite(state, sqliteKey(id));
   try {
     if (!fs.existsSync(USERS_DIR)) fs.mkdirSync(USERS_DIR, { recursive: true });
-    fs.writeFileSync(stateFile(id), JSON.stringify(state, null, 2), "utf-8");
+    const persisted = { ...state, schemaVersion: STATE_SCHEMA_VERSION };
+    if (persisted.config && typeof persisted.config === "object") {
+      persisted.config = sealRecord(persisted.config as unknown as Record<string, unknown>) as unknown as typeof persisted.config;
+    }
+    fs.writeFileSync(stateFile(id), JSON.stringify(persisted, null, 2), "utf-8");
   } catch (err) {
     console.warn("Non-fatal: could not persist store for " + id + ":", err);
   }

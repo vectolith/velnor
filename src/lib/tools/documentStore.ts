@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { resolveAndAssert } from "@/lib/security/outboundUrl";
 import { getEffectiveKeys, getStore, saveStore } from "../store";
 import { DocumentChunk, IndexedDocument } from "../types";
 import { extractTextFromPdfBuffer } from "./pdfParser";
@@ -69,7 +70,10 @@ export async function ingestDocumentOrUrl(params: {
   }
   if (params.url && !rawText) {
     try {
-      const response = await fetch(params.url, {
+      // SSRF guard: a texted-in URL must not reach loopback or cloud metadata.
+      const guardedUrl = await resolveAndAssert(String(params.url));
+      const response = await fetch(guardedUrl.toString(), {
+        redirect: "manual",
         headers: { "User-Agent": "VelnorBot/1.0 (+https://pluco.dev)" },
         signal: AbortSignal.timeout(6000),
       });

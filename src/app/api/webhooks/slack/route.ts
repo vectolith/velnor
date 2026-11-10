@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authorizeSlackRequest, isSimulatorAllowed } from "@/lib/security/webhookAuth";
+import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
 import { ChatMessage } from "@/lib/types";
@@ -103,6 +104,12 @@ export async function POST(req: NextRequest) {
     // Ignore bot's own messages to prevent loops
     if (event.bot_id || event.subtype === "bot_message") {
       return NextResponse.json({ ok: true, ignored: "bot_message" });
+    }
+
+    // Slack redelivers when its 3s ack is missed; drop the repeat.
+    const slackDedupeKey = String(event.client_msg_id || event.event_ts || event.ts || payload.event_id || "");
+    if (slackDedupeKey && !inboundWebhookCache.seen(inboundKey(["slack", slackDedupeKey]))) {
+      return NextResponse.json({ ok: true, duplicate: true });
     }
 
     const rawText = String(event.text || "").replace(/<@[A-Z0-9]+>\s*/g, "").trim();

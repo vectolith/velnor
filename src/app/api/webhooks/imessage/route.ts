@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
 import {
   authorizeJsonWebhook,
   authorizeTwilioRequest,
@@ -76,6 +77,14 @@ export async function POST(req: NextRequest) {
       }
 
       const from = String(formData.get("From") || "+15550192834").slice(0, 64);
+      // Twilio retries on slow responses; do not run the agent twice for one SMS.
+      const twilioMessageId = String(formData.get("MessageSid") || formData.get("SmsSid") || "");
+      if (twilioMessageId && !inboundWebhookCache.seen(inboundKey(["twilio", twilioMessageId]))) {
+        return new NextResponse("<Response></Response>", {
+          status: 200,
+          headers: { "content-type": "text/xml" },
+        });
+      }
       const body = String(formData.get("Body") || "")
         .trim()
         .slice(0, MAX_INPUT_CHARS);

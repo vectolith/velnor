@@ -1,4 +1,5 @@
 import { Citation } from "../types";
+import { resolveAndAssert } from "@/lib/security/outboundUrl";
 
 export interface WebSearchOutput {
   query: string;
@@ -85,7 +86,10 @@ export function extractReadableText(html: string): string {
 
 async function fetchPageText(url: string): Promise<string> {
   try {
+    // SSRF guard: search results and user links are untrusted input.
+    await resolveAndAssert(url);
     const res = await fetch(url, {
+      redirect: "manual",
       headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml" },
       signal: AbortSignal.timeout(7000),
     });

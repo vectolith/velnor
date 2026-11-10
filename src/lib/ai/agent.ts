@@ -2,6 +2,7 @@ import { runAgentLoop } from "./loop";
 import { buildProviderChain, createProvider, estimateCostUsd } from "./registry";
 import { ToolSpec, Turn, Usage, emptyUsage } from "./providers/types";
 import { getEffectiveKeys, getStore, saveStore } from "../store";
+import { enforceToolPolicy, noteUserMessage } from "../security/toolPolicy";
 import {
   Attachment,
   ChannelType,
@@ -258,6 +259,22 @@ async function executeToolCall(
   channel: ChannelType,
   bundle: ToolExecutionBundle
 ): Promise<Record<string, any>> {
+  const policy = enforceToolPolicy(name);
+  if (!policy.allowed) {
+    bundle.toolActions.push({
+      tool: name,
+      label: "Awaiting confirmation",
+      status: "pending",
+      details: policy.reason,
+    });
+    return {
+      requiresConfirmation: true,
+      tool: name,
+      reason: policy.reason,
+      instruction: "Ask the owner to confirm in their next message; do not retry in this turn.",
+    };
+  }
+
   switch (name) {
     case "web_search": {
       const q = String(args.query || "");
@@ -481,6 +498,7 @@ export async function processUserMessage(params: {
   userHandle?: string;
   attachments?: Attachment[];
 }): Promise<ChatMessage> {
+  noteUserMessage(params.text);
   const state = getStore();
   const { geminiApiKey, openaiApiKey, anthropicApiKey } = getEffectiveKeys(state);
 

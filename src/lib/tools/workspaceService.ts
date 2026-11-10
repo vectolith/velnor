@@ -91,14 +91,20 @@ export async function draftOrSendEmail(params: {
         .replace(/\//g, "_")
         .replace(/=+$/, "");
 
-      await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      const sendResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${state.config.googleAccessToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ raw }),
+        signal: AbortSignal.timeout(15000),
       });
+      // Do not report a send that Gmail rejected: surface the failure instead.
+      if (!sendResponse.ok) {
+        const detail = await sendResponse.text().catch(() => "");
+        throw new Error(`Gmail rejected the send (${sendResponse.status}): ${detail.slice(0, 200)}`);
+      }
     } catch {
       // Continue and record in local state
     }
