@@ -16,7 +16,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-let BASE = process.env.VELNOR_VERIFY_BASE_URL || "";
+let BASE = process.env.VELNOR_VERIFY_BASE_URL || "http://localhost:3000";
 let SHARED_SECRET = process.env.VELNOR_SHARED_SECRET || "";
 let TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 let SLACK_SECRET = process.env.SLACK_SIGNING_SECRET || "";
