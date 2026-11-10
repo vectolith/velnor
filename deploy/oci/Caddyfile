@@ -1,0 +1,19 @@
+# Automatic HTTPS. No domain is required: sslip.io resolves <public-ip>.sslip.io
+# back to that IP, so Let's Encrypt will issue a certificate for it. Replace
+# VELNOR_HOST with a real domain whenever you have one, and nothing else changes.
+{$VELNOR_HOST:localhost} {
+	encode zstd gzip
+
+	reverse_proxy velnor:8080 {
+		# Slack retries a delivery for 3 seconds; give the agent room to answer.
+		transport http {
+			response_header_timeout 120s
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}

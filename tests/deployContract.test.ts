@@ -38,3 +38,46 @@ test("the deploy fails closed before it builds anything", () => {
   assert.ok(preflightCall < deploy, "the preflight must run before gcloud deploy");
   assert.match(script, /exit 1/, "a failed preflight has to stop the deploy");
 });
+
+// The Oracle Cloud bundle is the deployment these files describe, so it has to
+// honour the same contract as the Cloud Run script rather than drift from it.
+const oci = (name: string) =>
+  readFileSync(new URL(`../deploy/oci/${name}`, import.meta.url), "utf8");
+
+/** One service's block, so an assertion cannot accidentally read a neighbour's keys. */
+function serviceBlock(compose: string, name: string): string {
+  const lines = compose.split("\n");
+  const start = lines.findIndex((line) => line.trim() === `${name}:`);
+  assert.ok(start >= 0, `${name} is not a service in the compose file`);
+  const after = lines.slice(start + 1).findIndex((line) => /^  [a-z]/.test(line));
+  return lines.slice(start, after < 0 ? undefined : start + 1 + after).join("\n");
+}
+
+test("the OCI stack keeps the app off the public internet", () => {
+  const compose = oci("docker-compose.yml");
+  const published = compose.split("\n").filter((line) => line.includes("8080:8080"));
+  assert.equal(published.length, 1, "the app port is published more than once");
+  assert.match(published[0], /127\.0\.0\.1:8080:8080/, "the app port must bind to loopback");
+  assert.match(compose, /velnor-data:\/app\/\.data/, "state needs the named volume");
+  assert.match(compose, /"80:80"/);
+  assert.match(compose, /"443:443"/);
+});
+
+test("Caddy fronts the app and only learns the hostname", () => {
+  const caddyfile = oci("Caddyfile");
+  const compose = oci("docker-compose.yml");
+  assert.match(caddyfile, /reverse_proxy velnor:8080/);
+  assert.match(caddyfile, /Strict-Transport-Security/);
+  // secrets belong to the app, not to the proxy
+  const caddyService = serviceBlock(compose, "caddy");
+  assert.doesNotMatch(caddyService, /env_file/, "Caddy must not load the whole .env");
+  assert.match(caddyService, /VELNOR_HOST/);
+});
+
+test("the VM env template can satisfy the preflight", () => {
+  const template = oci(".env.example");
+  const wanted = contractVariables(preflight);
+  const missing = wanted.filter((name) => !new RegExp(`^${name}=`, "m").test(template));
+  assert.deepEqual(missing, [], `.env.example never mentions: ${missing.join(", ")}`);
+  assert.match(template, /^SLACK_CHANNEL=C0CFWLMSP9V$/m);
+});
