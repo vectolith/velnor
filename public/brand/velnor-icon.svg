@@ -1,28 +1,34 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%" fill="none">
   <!--
-    Velnor mark: an aperture of four glass blades with a mint aurora bloom.
-    No letterform, no enclosing polygon. The blades are arcs of two radii twisted
-    against their own sweep, so the mark reads as light bending through glass,
-    which is the Carbon Glass idea rather than a monogram.
+    Velnor mark, in vectolith-icon.svg's drafting language: 500 grid, stroked facets
+    with round joins, two colours only, and the same prefers-color-scheme swap.
+    Not the same monument. Vectolith is a hexagonal prism with a spine and a diamond
+    core; Velnor is a rotor, three blades turning around a diamond void. Restraint
+    and vocabulary are shared, the figure is not.
   -->
-  <defs>
-    <linearGradient id="aurora" gradientUnits="userSpaceOnUse" x1="104" y1="120" x2="408" y2="404">
-      <stop offset="0%" stop-color="#8BFFDD" />
-      <stop offset="42%" stop-color="#00FF7F" />
-      <stop offset="100%" stop-color="#00B8A6" />
-    </linearGradient>
-    <radialGradient id="bloom" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#00FF7F" stop-opacity="0.42" />
-      <stop offset="60%" stop-color="#00FF7F" stop-opacity="0.10" />
-      <stop offset="100%" stop-color="#00FF7F" stop-opacity="0" />
-    </radialGradient>
-  </defs>
-  <circle cx="256" cy="256" r="122" fill="url(#bloom)" />
-  <path d="M 433.02 274.61 A 178 178 0 0 1 274.61 433.02 L 291.00 316.62 A 70 70 0 0 0 322.57 234.37 Z" fill="url(#aurora)" fill-opacity="1" />
-  <path d="M 237.39 433.02 A 178 178 0 0 1 78.98 274.61 L 195.38 291.00 A 70 70 0 0 0 277.63 322.57 Z" fill="url(#aurora)" fill-opacity="0.84" />
-  <path d="M 78.98 237.39 A 178 178 0 0 1 237.39 78.98 L 221.00 195.38 A 70 70 0 0 0 189.43 277.63 Z" fill="url(#aurora)" fill-opacity="0.94" />
-  <path d="M 274.61 78.98 A 178 178 0 0 1 433.02 237.39 L 316.62 221.00 A 70 70 0 0 0 234.37 189.43 Z" fill="url(#aurora)" fill-opacity="0.78" />
-  <!-- aperture core -->
-  <circle cx="256" cy="256" r="26" fill="url(#aurora)" opacity="0.95" />
-  <circle cx="256" cy="256" r="198" fill="none" stroke="#0A0A0A" stroke-opacity="0.14" stroke-width="2" />
+  <style>
+    .velnor-line {
+      stroke: #0A0A0A;
+      stroke-width: 18;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+    }
+    .velnor-core { fill: #0A0A0A; fill-opacity: 0.12; }
+    @media (prefers-color-scheme: dark) {
+      .velnor-line { stroke: #F4F3F1; }
+      .velnor-core { fill: #F4F3F1; fill-opacity: 0.18; }
+    }
+  </style>
+
+  <!-- Diamond void the blades turn around -->
+  <polygon class="velnor-line" points="250,164 336,250 250,336 164,250" />
+
+  <!-- Three faceted blades, each twisted against its own sweep -->
+  <polygon class="velnor-line" points="152.0,80.3 348.0,80.3 258.8,166.5 182.0,200.6" />
+  <polygon class="velnor-line" points="446.0,250.0 348.0,419.7 318.0,299.4 326.7,215.8" />
+  <polygon class="velnor-line" points="152.0,419.7 54.0,250.0 173.3,284.2 241.2,333.5" />
+
+  <!-- Core, echoing the small filled diamond at the heart of the Vectolith mark -->
+  <polygon class="velnor-core" points="250,222 278,250 250,278 222,250" />
 </svg>

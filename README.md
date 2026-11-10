@@ -106,6 +106,9 @@ than needing two files. `public/brand/velnor-logo.svg` is the same mark on the
 obsidian tile for app icons and avatars. Both are hand-authored SVG: no raster
 master, nothing to regenerate at size.
 
-The form is an aperture of four glass blades, arcs of two radii twisted against
-their own sweep, with a mint aurora bloom behind them: Carbon Glass rather than a
-monogram. No letterform, and nothing borrowed from Vectolith's silhouette.
+The form follows `vectolith/vectolith`'s drafting language exactly: a 500 grid, facets
+stroked at width 20 with round joins, two colours, and the same
+`prefers-color-scheme` swap so one file serves both themes. It is deliberately not the
+same monument: where Vectolith is a static hexagonal prism with a spine, Velnor is a
+rotor, six twisted blades turning around a diamond void with indexing struts outside.
+Circulation rather than monolith.
