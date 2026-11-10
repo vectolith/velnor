@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!--
+    Velnor mark. Same family as vectolith-icon: monochrome, stroked, faceted,
+    centred, and it inverts with the colour scheme. Deliberately not that mark:
+    no enclosing polygon, no inscribed diamond, no four pillars. The form is a
+    double chevron, an outer bevel and an inner echo sharing one apex line, which
+    reads as a V on its own and as stacked strata at small sizes.
+  -->
+  <style>
+    .velnor-stroke {
+      stroke: #0A0A0A;
+      fill: none;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .velnor-muted { stroke-opacity: 0.42; }
+    @media (prefers-color-scheme: dark) {
+      .velnor-stroke { stroke: #F4F3F1; }
+    }
+  </style>
+
+  <!-- Outer chevron: the mass of the mark -->
+  <polyline class="velnor-stroke" stroke-width="30" points="96,128 256,392 416,128" />
+
+  <!-- Inner echo, shorter and lighter, so the mark has depth without a core shape -->
+  <polyline class="velnor-stroke velnor-muted" stroke-width="22" points="168,128 256,262 344,128" />
+
+  <!-- Apex facet: a short bevel that cuts the outer join and stops the eye -->
+  <polyline class="velnor-stroke" stroke-width="12" stroke-opacity="0.55" points="226,338 256,392 286,338" />
+</svg>

@@ -97,3 +97,15 @@ public/             static assets served by the app
 ```
 
 `deploy/oci/docker-compose.yml` is the only deployment that runs in production today.
+
+## Brand assets
+
+`public/brand/velnor-icon.svg` is the mark on its own, transparent and monochrome; it
+follows `prefers-color-scheme` the way `vectolith-icon.svg` does, so it inverts rather
+than needing two files. `public/brand/velnor-logo.svg` is the same mark on the
+obsidian tile for app icons and avatars. Both are hand-authored SVG: no raster
+master, nothing to regenerate at size.
+
+The form is a double chevron with a bevel at the apex. It shares Vectolith's
+vocabulary, monochrome stroked geometry with facet detail, without borrowing its
+silhouette (enclosing polygon, inscribed diamond, four pillars).

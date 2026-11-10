@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Velnor application tile: the mark on the same obsidian field Vectolith uses. -->
+  <defs>
+    <linearGradient id="velnor-field" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0A0A0A" />
+      <stop offset="100%" stop-color="#050505" />
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="116" fill="url(#velnor-field)" />
+
+  <g fill="none" stroke="#F4F3F1" stroke-linecap="round" stroke-linejoin="round">
+    <polyline stroke-width="30" points="96,128 256,392 416,128" />
+    <polyline stroke-width="22" stroke-opacity="0.42" points="168,128 256,262 344,128" />
+    <polyline stroke-width="12" stroke-opacity="0.55" points="226,338 256,392 286,338" />
+  </g>
+</svg>
