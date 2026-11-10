@@ -58,6 +58,18 @@ After Slack issues the app:
    deployment) to it. A channel id such as `C0CFWLMSP9V` is preferable there,
    because a channel rename would not break it.
 
+That paste step can be scripted instead, once you have an app configuration token:
+
+```bash
+SLACK_CONFIG_TOKEN=xoxe-... node --import tsx scripts/create-slack-app.mjs \
+  --base-url https://your-deployment
+```
+
+It validates the manifest against Slack, creates the app, and prints the install
+URL. Add `--dry-run` to see the manifest it would send, or `--validate-only` to check
+it without creating anything. Slack calls the request URL during creation, so the
+base URL has to be the live deployment.
+
 Creating the app itself needs either that paste step or an app configuration token
 (api.slack.com/apps → *Your App Configuration Tokens*) for `apps.manifest.create`;
 an ordinary user or bot token cannot create apps.
