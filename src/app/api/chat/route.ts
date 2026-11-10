@@ -12,10 +12,14 @@ import {
   toggleReminder,
 } from "@/lib/tools/workspaceService";
 import { Attachment, ChannelType } from "@/lib/types";
+import { authorizeChatTenant } from "@/lib/security/tenant";
 
 export async function GET(req: NextRequest) {
-  const userId = resolveUserId("imessage", req.headers.get("x-velnor-user") || undefined);
-  return withVelnorUser(userId, () => buildSnapshot());
+  const tenant = authorizeChatTenant(req.headers.get("x-velnor-user"));
+  if (!tenant.ok) {
+    return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 403 });
+  }
+  return withVelnorUser(resolveUserId("imessage", tenant.userId), () => buildSnapshot());
 }
 
 function buildSnapshot() {
@@ -58,9 +62,15 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  const tenant = authorizeChatTenant(
+    body.userHandle || req.headers.get("x-velnor-user")
+  );
+  if (!tenant.ok) {
+    return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 403 });
+  }
   const userId = resolveUserId(
     body.channel || "imessage",
-    body.userHandle || req.headers.get("x-velnor-user") || undefined
+    tenant.userId
   );
   return withVelnorUser(userId, () => handlePost(body));
 }

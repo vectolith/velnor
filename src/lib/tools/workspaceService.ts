@@ -1,4 +1,5 @@
 import { getStore, saveStore } from "../store";
+import { assertRecipientAllowed, parseAllowlist } from "@/lib/security/recipients";
 import { CalendarEventItem, ChannelType, EmailItem, ReminderItem } from "../types";
 
 export async function listEmails(query?: string, maxResults = 6): Promise<EmailItem[]> {
@@ -76,6 +77,11 @@ export async function draftOrSendEmail(params: {
   const state = getStore();
 
   // If live Google OAuth token is configured and sendImmediately is true, send via Gmail API
+  if (params.sendImmediately) {
+    // Opt-in recipient policy: refuse addresses the owner has not allowed.
+    assertRecipientAllowed(params.to, parseAllowlist(process.env.VELNOR_EMAIL_ALLOWLIST));
+  }
+
   if (state.config.googleAccessToken && params.sendImmediately) {
     try {
       const mimeMessage = [
@@ -91,14 +97,20 @@ export async function draftOrSendEmail(params: {
         .replace(/\//g, "_")
         .replace(/=+$/, "");
 
-      await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      const sendResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${state.config.googleAccessToken}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ raw }),
+        signal: AbortSignal.timeout(15000),
       });
+      // Do not report a send that Gmail rejected: surface the failure instead.
+      if (!sendResponse.ok) {
+        const detail = await sendResponse.text().catch(() => "");
+        throw new Error(`Gmail rejected the send (${sendResponse.status}): ${detail.slice(0, 200)}`);
+      }
     } catch {
       // Continue and record in local state
     }
@@ -220,7 +232,7 @@ export async function createCalendarEvent(params: {
 
   if (state.config.googleAccessToken) {
     try {
-      await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+      const calendarResponse = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${state.config.googleAccessToken}`,
@@ -235,6 +247,10 @@ export async function createCalendarEvent(params: {
           attendees: (params.attendees || []).map((email) => ({ email })),
         }),
       });
+      if (!calendarResponse.ok) {
+        const detail = await calendarResponse.text().catch(() => "");
+        throw new Error(`Google Calendar rejected the event (${calendarResponse.status}): ${detail.slice(0, 200)}`);
+      }
     } catch {
       // Continue and store locally
     }

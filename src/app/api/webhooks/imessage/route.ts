@@ -1,5 +1,13 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
+import { sendSendblueMessage } from "@/lib/channels/sendblue";
+import { sendLoopMessage } from "@/lib/channels/loopmessage";
+import {
+  authorizeJsonWebhook,
+  authorizeTwilioRequest,
+  isSimulatorAllowed,
+} from "@/lib/security/webhookAuth";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
 import { splitForSms, toPlainText } from "@/lib/format";
@@ -16,30 +24,6 @@ function escapeXml(unsafe: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function verifyTwilioSignature(
-  authToken: string,
-  twilioSignature: string,
-  url: string,
-  params: Record<string, string>
-): boolean {
-  const sortedKeys = Object.keys(params).sort();
-  let data = url;
-  for (const k of sortedKeys) {
-    data += k + params[k];
-  }
-  const computed = crypto
-    .createHmac("sha1", authToken)
-    .update(Buffer.from(data, "utf-8"))
-    .digest("base64");
-  try {
-    return crypto.timingSafeEqual(
-      Buffer.from(computed),
-      Buffer.from(twilioSignature)
-    );
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Unified SMS & Apple iMessage Webhook Endpoint
@@ -51,9 +35,23 @@ function verifyTwilioSignature(
 export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type") || "";
   const state = getStore();
-  const isLocalSimulator = req.headers.get("x-velnor-simulator") === "true";
+  const isLocalSimulator = isSimulatorAllowed(req.headers.get("x-velnor-simulator"));
 
   try {
+    if (contentType.includes("application/json")) {
+      const jsonDecision = authorizeJsonWebhook({
+        secrets: [process.env.SENDBLUE_WEBHOOK_SECRET, process.env.LOOPMESSAGE_WEBHOOK_SECRET],
+        provided: req.headers.get("x-velnor-webhook-secret"),
+        simulator: isLocalSimulator,
+      });
+      if (!jsonDecision.ok) {
+        return NextResponse.json(
+          { error: jsonDecision.error },
+          { status: jsonDecision.status ?? 401 }
+        );
+      }
+    }
+
     // =========================================================================
     // 1. TWILIO SMS / MMS WEBHOOK (application/x-www-form-urlencoded)
     // =========================================================================
@@ -66,24 +64,29 @@ export async function POST(req: NextRequest) {
 
       const twilioAuthToken =
         state.config.twilioAuthToken || process.env.TWILIO_AUTH_TOKEN;
-      const twilioSig = req.headers.get("x-twilio-signature");
-
-      if (twilioAuthToken && twilioSig && !isLocalSimulator) {
-        const valid = verifyTwilioSignature(
-          twilioAuthToken,
-          twilioSig,
-          req.url,
-          paramsMap
+      const twilioDecision = authorizeTwilioRequest({
+        authToken: twilioAuthToken,
+        signature: req.headers.get("x-twilio-signature"),
+        url: req.url,
+        params: paramsMap,
+        simulator: isLocalSimulator,
+      });
+      if (!twilioDecision.ok) {
+        return NextResponse.json(
+          { error: twilioDecision.error },
+          { status: twilioDecision.status ?? 401 }
         );
-        if (!valid) {
-          return NextResponse.json(
-            { error: "Invalid X-Twilio-Signature" },
-            { status: 401 }
-          );
-        }
       }
 
       const from = String(formData.get("From") || "+15550192834").slice(0, 64);
+      // Twilio retries on slow responses; do not run the agent twice for one SMS.
+      const twilioMessageId = String(formData.get("MessageSid") || formData.get("SmsSid") || "");
+      if (twilioMessageId && !inboundWebhookCache.seen(inboundKey(["twilio", twilioMessageId]))) {
+        return new NextResponse("<Response></Response>", {
+          status: 200,
+          headers: { "content-type": "text/xml" },
+        });
+      }
       const body = String(formData.get("Body") || "")
         .trim()
         .slice(0, MAX_INPUT_CHARS);
@@ -131,7 +134,13 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     // 2. SENDBLUE / LOOPMESSAGE iMESSAGE JSON WEBHOOK
     // =========================================================================
-    const payload = await req.json();
+    let payload: any;
+    try {
+      payload = await req.json();
+    } catch {
+      // A malformed body is the caller's error, not a server fault.
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
     const senderHandle = String(
       payload.number ||
         payload.from_number ||
@@ -168,34 +177,28 @@ export async function POST(req: NextRequest) {
         const outboundText = toPlainText(reply.text);
         const scoped = getStore();
 
-        // Optional outbound dispatch via Sendblue if configured
+        // Outbound dispatch via Sendblue if configured
         if (scoped.config.sendblueApiKey && scoped.config.sendblueApiSecret && payload.number) {
-          fetch("https://api.sendblue.co/api/send-message", {
-            method: "POST",
-            headers: {
-              "sb-api-key-id": scoped.config.sendblueApiKey,
-              "sb-api-secret-key": scoped.config.sendblueApiSecret,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ number: payload.number, content: outboundText }),
-          }).catch(() => {});
+          void sendSendblueMessage({
+            apiKeyId: scoped.config.sendblueApiKey,
+            apiSecretKey: scoped.config.sendblueApiSecret,
+            number: payload.number,
+            content: outboundText,
+          });
         }
 
-        // Optional outbound dispatch via LoopMessage if configured
+        // Outbound dispatch via LoopMessage if configured
         if (
           scoped.config.loopMessageAuthKey &&
           scoped.config.loopMessageSecretKey &&
           payload.recipient
         ) {
-          fetch("https://server.loopmessage.com/api/v1/message/send/", {
-            method: "POST",
-            headers: {
-              Authorization: scoped.config.loopMessageAuthKey,
-              "Loop-Secret-Key": scoped.config.loopMessageSecretKey,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ recipient: payload.recipient, text: outboundText }),
-          }).catch(() => {});
+          void sendLoopMessage({
+            authKey: scoped.config.loopMessageAuthKey,
+            secretKey: scoped.config.loopMessageSecretKey,
+            recipient: payload.recipient,
+            text: outboundText,
+          });
         }
 
         return { reply, outboundText };

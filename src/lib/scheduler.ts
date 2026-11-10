@@ -1,4 +1,7 @@
 import { getStore, saveStore } from "./store";
+import { sendSendblueMessage } from "./channels/sendblue";
+import { sendLoopMessage } from "./channels/loopmessage";
+import { postSlackMessage } from "./channels/slack";
 import { ChatMessage, ReminderItem } from "./types";
 
 export interface DispatchedReminderResult {
@@ -47,23 +50,14 @@ export async function dispatchReminderNotification(
       state.config.sendblueApiSecret &&
       rem.recipient
     ) {
-      try {
-        await fetch("https://api.sendblue.co/api/send-message", {
-          method: "POST",
-          headers: {
-            "sb-api-key-id": state.config.sendblueApiKey,
-            "sb-api-secret-key": state.config.sendblueApiSecret,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            number: rem.recipient,
-            content: `🔔 Reminder from Velnor: ${rem.text}`,
-          }),
-        });
-        channelsUsed.push("sendblue-imessage");
-      } catch {
-        // Ignore network errors
-      }
+      const sendblueResult = await sendSendblueMessage({
+        apiKeyId: state.config.sendblueApiKey,
+        apiSecretKey: state.config.sendblueApiSecret,
+        number: rem.recipient,
+        content: `🔔 Reminder from Velnor: ${rem.text}`,
+      });
+      if (sendblueResult.ok) channelsUsed.push("sendblue-imessage");
+      else console.warn(`Sendblue reminder failed: ${sendblueResult.detail}`);
     }
 
     // 3. Outbound LoopMessage iMessage dispatch if configured
@@ -73,44 +67,26 @@ export async function dispatchReminderNotification(
       state.config.loopMessageSecretKey &&
       rem.recipient
     ) {
-      try {
-        await fetch("https://server.loopmessage.com/api/v1/message/send/", {
-          method: "POST",
-          headers: {
-            Authorization: state.config.loopMessageAuthKey,
-            "Loop-Secret-Key": state.config.loopMessageSecretKey,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            recipient: rem.recipient,
-            text: `🔔 Reminder from Velnor: ${rem.text}`,
-          }),
-        });
-        channelsUsed.push("loopmessage-imessage");
-      } catch {
-        // Ignore
-      }
+      const loopResult = await sendLoopMessage({
+        authKey: state.config.loopMessageAuthKey,
+        secretKey: state.config.loopMessageSecretKey,
+        recipient: rem.recipient,
+        text: `🔔 Reminder from Velnor: ${rem.text}`,
+      });
+      if (loopResult.ok) channelsUsed.push("loopmessage-imessage");
+      else console.warn(`LoopMessage reminder failed: ${loopResult.detail}`);
     }
 
     // 4. Outbound Slack notification if configured
     const slackToken = state.config.slackBotToken || process.env.SLACK_BOT_TOKEN;
     if (rem.channel === "slack" && slackToken) {
-      try {
-        await fetch("https://slack.com/api/chat.postMessage", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${slackToken}`,
-            "Content-Type": "application/json; charset=utf-8",
-          },
-          body: JSON.stringify({
-            channel: rem.recipient || "#velnor-assistant",
-            text: `🔔 *Reminder from Velnor:* ${rem.text} _(${rem.dueAt})_`,
-          }),
-        });
-        channelsUsed.push("slack-bot");
-      } catch {
-        // Ignore
-      }
+      const slackResult = await postSlackMessage({
+        botToken: slackToken,
+        channel: rem.recipient || "#velnor-assistant",
+        text: `🔔 *Reminder from Velnor:* ${rem.text} _(${rem.dueAt})_`,
+      });
+      if (slackResult.ok) channelsUsed.push("slack-bot");
+      else console.warn(`Slack reminder failed: ${slackResult.detail}`);
     }
 
     rem.completed = true;
