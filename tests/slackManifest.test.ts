@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSlackManifest, explainSlackError, normalizeBaseUrl, SLACK_BOT_SCOPES } from "../src/lib/channels/slackManifest";
+import {
+  buildSlackScaffoldManifest, buildSlackManifest, explainSlackError, normalizeBaseUrl, SLACK_BOT_SCOPES } from "../src/lib/channels/slackManifest";
 
 test("the manifest names the product Velnor Agent and points every surface at one webhook", () => {
   const m = buildSlackManifest("https://velnor.example.com/");
@@ -31,4 +32,14 @@ test("the errors an operator actually hits are explained, not echoed raw", () =>
   assert.match(explainSlackError("not_in_channel"), /invite/i);
   assert.match(explainSlackError("invalid_auth"), /bot token/i);
   assert.equal(explainSlackError(undefined), "Slack returned no error code");
+});
+
+test("the scaffold manifest leaves out what Slack verifies at creation", () => {
+  const scaffold = buildSlackScaffoldManifest();
+  assert.equal(scaffold.display_information.name, "Velnor Agent");
+  assert.deepEqual(scaffold.oauth_config.scopes.bot.length > 5, true);
+  assert.equal("event_subscriptions" in scaffold.settings, false);
+  assert.equal("slash_commands" in scaffold.features, false);
+  // the pieces that need no endpoint stay intact
+  assert.equal(scaffold.features.bot_user.always_online, true);
 });

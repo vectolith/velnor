@@ -86,3 +86,21 @@ export function explainSlackError(error: string | undefined): string {
       return error || "Slack returned no error code";
   }
 }
+
+/**
+ * The app without its endpoint wiring: no event subscription and no slash command.
+ * Slack calls request_url while the app is created, so an app cannot be created
+ * before its deployment is reachable. Create with this, install it, then add the
+ * endpoints with apps.manifest.update once the deployment URL is known.
+ */
+export function buildSlackScaffoldManifest() {
+  const full = buildSlackManifest("https://pending.example.com");
+  const { event_subscriptions, ...settings } = full.settings;
+  const { slash_commands, ...features } = full.features;
+  return {
+    display_information: full.display_information,
+    features,
+    oauth_config: full.oauth_config,
+    settings,
+  };
+}

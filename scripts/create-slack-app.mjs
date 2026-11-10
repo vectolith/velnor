@@ -13,7 +13,7 @@
  * Slack calls the manifest's request URL while creating the app, so the base URL
  * must be the live deployment, not a placeholder.
  */
-import { buildSlackManifest, normalizeBaseUrl } from "../src/lib/channels/slackManifest.ts";
+import { buildSlackManifest, buildSlackScaffoldManifest, normalizeBaseUrl } from "../src/lib/channels/slackManifest.ts";
 
 function fail(message) {
   console.error(`error: ${message}`);
@@ -21,12 +21,13 @@ function fail(message) {
 }
 
 function readArgs(argv) {
-  const args = { dryRun: false, validateOnly: false, baseUrl: "" };
+  const args = { dryRun: false, validateOnly: false, deferEndpoints: false, baseUrl: "" };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--base-url") args.baseUrl = argv[++i] || "";
     else if (arg === "--dry-run") args.dryRun = true;
     else if (arg === "--validate-only") args.validateOnly = true;
+    else if (arg === "--defer-endpoints") args.deferEndpoints = true;
     else fail(`unknown argument ${arg}`);
   }
   return args;
@@ -53,13 +54,15 @@ function explain(payload) {
 
 const args = readArgs(process.argv.slice(2));
 const baseUrl = normalizeBaseUrl(args.baseUrl || process.env.VELNOR_BASE_URL || "");
-if (!baseUrl) fail("pass --base-url https://your-deployment (or VELNOR_BASE_URL)");
-if (!/^https:\/\//.test(baseUrl)) fail(`base url must be https, got ${baseUrl}`);
+if (!args.deferEndpoints) {
+  if (!baseUrl) fail("pass --base-url https://your-deployment (or VELNOR_BASE_URL)");
+  if (!/^https:\/\//.test(baseUrl)) fail(`base url must be https, got ${baseUrl}`);
+}
 if (!args.dryRun && !args.validateOnly && !process.env.SLACK_CONFIG_TOKEN) {
   fail("SLACK_CONFIG_TOKEN is not set; generate an app configuration token at api.slack.com/apps");
 }
 
-const manifest = buildSlackManifest(baseUrl);
+const manifest = args.deferEndpoints ? buildSlackScaffoldManifest() : buildSlackManifest(baseUrl);
 
 if (args.dryRun) {
   console.log(JSON.stringify(manifest, null, 2));
@@ -73,12 +76,12 @@ const { payload } = await callSlack(method, token, manifest);
 if (payload.ok !== true) fail(`${method} was refused: ${explain(payload)}`);
 
 if (args.validateOnly) {
-  console.log(`manifest is valid for ${baseUrl}`);
+  console.log(`manifest is valid${args.deferEndpoints ? " (endpoints deferred)" : ` for ${baseUrl}`}`);
   process.exit(0);
 }
 
 const credentials = payload.credentials || {};
-console.log(`created app ${payload.app_id} for ${baseUrl}`);
+console.log(`created app ${payload.app_id}${args.deferEndpoints ? " (endpoints deferred until the deployment URL is known)" : ` for ${baseUrl}`}`);
 if (credentials.client_id) {
   const scopes = manifest.oauth_config.scopes.bot.join(",");
   console.log(`install: https://slack.com/oauth/v2/authorize?client_id=${credentials.client_id}&scope=${encodeURIComponent(scopes)}`);
