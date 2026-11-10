@@ -142,6 +142,7 @@ class Handler(BaseHTTPRequestHandler):
                 repetition_penalty=1.08,
                 pad_token_id=tokenizer.eos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
+                use_cache=True,
             )
         reply = tokenizer.decode(
             gen_ids[0][input_ids.shape[-1]:], skip_special_tokens=True
