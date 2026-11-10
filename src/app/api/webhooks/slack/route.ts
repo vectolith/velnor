@@ -3,7 +3,7 @@ import { authorizeSlackRequest, isSimulatorAllowed } from "@/lib/security/webhoo
 import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
 import { buildSlackBlocks, postSlackMessage } from "@/lib/channels/slack";
 import { processUserMessage } from "@/lib/ai/agent";
-import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
+import { getStore, resolveUserId, withVelnorUser, resolveSlackChannel } from "@/lib/store";
 import { ChatMessage } from "@/lib/types";
 
 
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      channel: slackChannelId || "#velnor-agent",
+      channel: slackChannelId || resolveSlackChannel(state),
       text: reply.text,
       blocks,
       reply,

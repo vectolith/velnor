@@ -1,4 +1,4 @@
-import { getStore, saveStore } from "./store";
+import { getStore, saveStore, resolveSlackChannel } from "./store";
 import { sendSendblueMessage } from "./channels/sendblue";
 import { sendLoopMessage } from "./channels/loopmessage";
 import { postSlackMessage } from "./channels/slack";
@@ -82,7 +82,7 @@ export async function dispatchReminderNotification(
     if (rem.channel === "slack" && slackToken) {
       const slackResult = await postSlackMessage({
         botToken: slackToken,
-        channel: rem.recipient || "#velnor-agent",
+        channel: rem.recipient || resolveSlackChannel(state),
         text: `🔔 *Reminder from Velnor:* ${rem.text} _(${rem.dueAt})_`,
       });
       if (slackResult.ok) channelsUsed.push("slack-bot");

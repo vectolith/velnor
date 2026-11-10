@@ -45,6 +45,9 @@ const DATA_DIR =
 const USERS_DIR = path.join(DATA_DIR, "users");
 const ROOT_USER = "default";
 
+/** Where Slack replies and reminders land when a profile has not overridden it. */
+export const DEFAULT_SLACK_CHANNEL = "#velnor-agent";
+
 export const DEFAULT_STATE: VelnorState = {
   messages: [],
   reminders: [],
@@ -59,6 +62,7 @@ export const DEFAULT_STATE: VelnorState = {
     geminiImageModel: process.env.VELNOR_IMAGE_MODEL || "gemini-2.5-flash-image",
     openaiModel: DEFAULT_MODELS.openai,
     anthropicModel: DEFAULT_MODELS.anthropic,
+    slackChannel: DEFAULT_SLACK_CHANNEL,
   },
   conversationCursors: {},
   usage: { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
@@ -220,6 +224,24 @@ export function getStore(): VelnorState {
 export function saveStore(state: VelnorState): void {
   const scope = storage.getStore();
   saveStateForUser(scope ? scope.userId : ROOT_USER, state);
+}
+
+/**
+ * The Slack channel to post into. A configured value wins, so the deployment can
+ * point at whichever channel actually exists without a code change.
+ */
+export function resolveSlackChannel(state: VelnorState): string {
+  const configured = (state.config?.slackChannel || "").trim();
+  return configured || DEFAULT_SLACK_CHANNEL;
+}
+
+/**
+ * Slack accepts either a channel name (#general) or an id (C0123456789). Anything
+ * else would be rejected by the API later, so refuse it at the edge.
+ */
+export function isValidSlackChannel(value: string): boolean {
+  const trimmed = value.trim();
+  return /^#[a-z0-9][a-z0-9._-]{0,79}$/i.test(trimmed) || /^[CG][A-Z0-9]{6,}$/.test(trimmed);
 }
 
 export function getEffectiveKeys(state: VelnorState) {

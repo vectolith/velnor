@@ -1,7 +1,9 @@
 param(
   [string]$ProjectId = $env:GOOGLE_CLOUD_PROJECT,
   [string]$Region = "us-central1",
-  [string]$ServiceName = "velnor-agent",
+  # Keeps the existing Cloud Run service (and its URL) that the deployment already owns.
+  # The product is called Velnor Agent; the service name is infrastructure, not branding.
+  [string]$ServiceName = "velnor-assistant",
   [string]$DataVolume = ""
 )
 

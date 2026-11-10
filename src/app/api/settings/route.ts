@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEffectiveKeys, getStore, saveStore } from "@/lib/store";
+import { getEffectiveKeys, getStore, saveStore, resolveSlackChannel, isValidSlackChannel } from "@/lib/store";
 
 export async function GET() {
   const state = getStore();
@@ -19,6 +19,7 @@ export async function GET() {
     hasSendblue: Boolean(state.config.sendblueApiKey),
     hasLoopMessage: Boolean(state.config.loopMessageAuthKey),
     hasSlack: Boolean(state.config.slackBotToken || process.env.SLACK_BOT_TOKEN),
+    slackChannel: resolveSlackChannel(state),
     googleConnectedEmail: state.config.googleConnectedEmail || "",
     hasGoogleOAuth: Boolean(state.config.googleClientId && state.config.googleClientSecret),
   });
@@ -54,6 +55,16 @@ export async function POST(req: NextRequest) {
   if (typeof body.loopMessageSecretKey === "string") state.config.loopMessageSecretKey = body.loopMessageSecretKey.trim();
   if (typeof body.slackBotToken === "string") state.config.slackBotToken = body.slackBotToken.trim();
   if (typeof body.slackSigningSecret === "string") state.config.slackSigningSecret = body.slackSigningSecret.trim();
+  if (body.slackChannel !== undefined) {
+    const channel = String(body.slackChannel).trim();
+    if (!isValidSlackChannel(channel)) {
+      return NextResponse.json(
+        { ok: false, error: "slackChannel must look like #channel-name or a channel id such as C0123456789" },
+        { status: 400 }
+      );
+    }
+    state.config.slackChannel = channel;
+  }
   if (typeof body.googleClientId === "string") state.config.googleClientId = body.googleClientId.trim();
   if (typeof body.googleClientSecret === "string") state.config.googleClientSecret = body.googleClientSecret.trim();
   if (typeof body.googleAccessToken === "string") state.config.googleAccessToken = body.googleAccessToken.trim();

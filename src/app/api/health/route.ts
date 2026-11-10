@@ -15,7 +15,7 @@ export async function GET() {
       status: "healthy",
       agent: "Velnor",
       loraModel: "velnor-core-v1",
-      service: "velnor-agent",
+      service: process.env.K_SERVICE || "velnor-assistant",
       version: "2.0.0",
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.floor((Date.now() - startedAt) / 1000),

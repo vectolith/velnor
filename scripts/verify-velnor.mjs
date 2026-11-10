@@ -248,6 +248,19 @@ if (process.env.SENDBLUE_WEBHOOK_SECRET) await check("POST /api/webhooks/imessag
   assert([400, 413, 415, 422, 503].includes(res.status), `expected a rejection for malformed JSON, got ${res.status}`);
 });
 
+if (SHARED_SECRET) await check("POST /api/settings stores a Slack channel override and refuses a malformed one", async () => {
+  const headers = { "content-type": "application/json", "x-velnor-secret": SHARED_SECRET };
+  const bad = await fetch(`${BASE}/api/settings`, { method: "POST", headers, body: JSON.stringify({ slackChannel: "not a channel" }) });
+  assert(bad.status === 400, `expected 400 for a malformed channel, got ${bad.status}`);
+
+  const good = await fetch(`${BASE}/api/settings`, { method: "POST", headers, body: JSON.stringify({ slackChannel: "#velnor-agent" }) });
+  assert(good.status === 200, `expected 200 for a valid channel, got ${good.status}`);
+
+  const read = await fetch(`${BASE}/api/settings`, { headers: { "x-velnor-secret": SHARED_SECRET } });
+  const payload = await read.json();
+  assert(payload.slackChannel === "#velnor-agent", `settings reported ${payload.slackChannel}`);
+});
+
 await check("GET /api/vcard returns a contact card", async () => {
   const res = await fetch(`${BASE}/api/vcard`, { headers: auth });
   assert(res.status === 200, `status ${res.status}`);

@@ -135,6 +135,8 @@ export interface ProviderConfig {
   loopMessageSecretKey?: string;
   slackBotToken?: string;
   slackSigningSecret?: string;
+  /** Default Slack channel for replies and reminders; override here instead of in code. */
+  slackChannel?: string;
   googleClientId?: string;
   googleClientSecret?: string;
   googleAccessToken?: string;
