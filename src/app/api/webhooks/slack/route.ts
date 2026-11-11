@@ -43,9 +43,12 @@ export async function POST(req: NextRequest) {
     if (contentType.includes("application/x-www-form-urlencoded")) {
       const params = new URLSearchParams(rawBody);
       const commandText = params.get("text") || "Help";
-      const userName = params.get("user_name") || "slack-user";
+      const slackUserId = params.get("user_id") || "";
+      const workspaceId = params.get("team_id") || "";
+      if (!slackUserId || !workspaceId) return NextResponse.json({ error: "Missing stable Slack user/workspace identity." }, { status: 400 });
+      const userName = params.get("user_name") || slackUserId;
 
-      const reply = await withVelnorUser(resolveUserId("slack", "@" + userName), () =>
+      const reply = await withVelnorUser(resolveUserId("slack", workspaceId + ":" + slackUserId), () =>
         processUserMessage({
           channel: "slack",
           userHandle: "@" + userName,
@@ -81,10 +84,13 @@ export async function POST(req: NextRequest) {
     }
 
     const rawText = String(event.text || "").replace(/<@[A-Z0-9]+>\s*/g, "").trim();
-    const userHandle = event.user ? `@${event.user}` : "@slack-user";
+    const slackUserId = String(event.user || "");
+    const workspaceId = String(payload.team_id || event.team || "");
+    if (!slackUserId || !workspaceId) return NextResponse.json({ error: "Missing stable Slack user/workspace identity." }, { status: 400 });
+    const userHandle = "@" + slackUserId;
     const slackChannelId = event.channel;
 
-    const { reply, botToken } = await withVelnorUser(resolveUserId("slack", userHandle), async () => {
+    const { reply, botToken } = await withVelnorUser(resolveUserId("slack", workspaceId + ":" + slackUserId), async () => {
       const reply = await processUserMessage({
         channel: "slack",
         userHandle,
