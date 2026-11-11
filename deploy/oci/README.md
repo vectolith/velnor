@@ -43,7 +43,7 @@ If the repository is private, clone it with a token
 `scp -r`. The script assumes the repo already exists on the VM.
 
 The script installs Docker, opens 80/443 in the host firewall, generates
-`VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY`, `VELNOR_TENANT_TOKEN_SECRET` and `CRON_SECRET` into `.env`, sets
+`VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY`, `VELNOR_TENANT_TOKEN_SECRET`, `VELNOR_PROVISIONING_SECRET` and `CRON_SECRET` into `.env`, sets
 `VELNOR_HOST` to `<public-ip>.sslip.io`, builds the image and waits for
 `/api/health`. Configure a trusted identity gateway before calling the chat, settings, Siri, or TTS APIs; the repository verifies identity tokens but does not issue them.
 
