@@ -229,7 +229,7 @@ export default {
         upstreamOrigin.pathname !== "/" ||
         upstreamOrigin.search ||
         upstreamOrigin.hash ||
-        upstreamOrigin.host === incoming.host
+        upstreamOrigin.hostname === incoming.hostname
       ) {
         return jsonError("Velnor origin must be a separate origin that does not route back through this Worker.", 503);
       }
