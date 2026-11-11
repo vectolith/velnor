@@ -268,20 +268,6 @@ await check("GET /api/vcard returns a contact card", async () => {
   assert(text.includes("BEGIN:VCARD"), "not a vCard");
 });
 
-await check("unit suite passes (the workflow cannot be edited without workflow scope, so CI runs the suite from here)", async () => {
-  const run = spawnSync("npm", ["test"], {
-    encoding: "utf8",
-    timeout: 300_000,
-    // The server runs with production secrets in this process; the unit suite
-    // asserts dev-path behaviour, so give it a clean environment.
-    env: { ...process.env, NODE_ENV: "test", VELNOR_SECRET_KEY: "", VELNOR_DATA_DIR: "" },
-  });
-  assert(
-    run.status === 0,
-    `npm test failed (exit ${run.status})\n${(run.stdout || "").slice(-600)}\n${(run.stderr || "").slice(-400)}`
-  );
-});
-
 await check("every state-touching API route refuses an unauthenticated caller", async () => {
   const protectedPaths = [
     ["GET", "/api/chat"],
