@@ -13,6 +13,7 @@
 const REQUIRED = [
   ["VELNOR_SHARED_SECRET", "protects state-changing control-plane routes"],
   ["VELNOR_TENANT_TOKEN_SECRET", "verifies short-lived per-user identity tokens"],
+  ["VELNOR_PROVISIONING_SECRET", "authorises first-time tenant provisioning by the identity gateway"],
   ["VELNOR_SECRET_KEY", "seals provider keys at rest; without it keys are never written"],
   ["CRON_SECRET", "authorises /api/cron/reminders"],
 ];
