@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
 import { sendSendblueMessage } from "@/lib/channels/sendblue";
 import { sendLoopMessage } from "@/lib/channels/loopmessage";
@@ -168,60 +168,58 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { reply, outboundText, deliveryResults } = await withVelnorUser(
-      resolveUserId("imessage", provider + ":" + providerAccount + ":" + senderHandle),
-      async () => {
-        const reply = await processUserMessage({
-          channel: "imessage",
-          userHandle: senderHandle,
-          text: messageText,
-          attachments: attachments.length > 0 ? attachments : undefined,
+    after(async () => {
+      try {
+            const { reply, outboundText, deliveryResults } = await withVelnorUser(
+              resolveUserId("imessage", provider + ":" + providerAccount + ":" + senderHandle),
+              async () => {
+                const reply = await processUserMessage({
+                  channel: "imessage",
+                  userHandle: senderHandle,
+                  text: messageText,
+                  attachments: attachments.length > 0 ? attachments : undefined,
+                });
+                const outboundText = toPlainText(reply.text);
+                const scoped = getStore();
+                const deliveryResults = [] as Array<{ provider: string; ok: boolean; status?: number; detail?: string }>; 
+        
+                // Outbound dispatch via Sendblue if configured
+                if (scoped.config.sendblueApiKey && scoped.config.sendblueApiSecret && payload.number) {
+                  deliveryResults.push(await sendSendblueMessage({
+                    apiKeyId: scoped.config.sendblueApiKey,
+                    apiSecretKey: scoped.config.sendblueApiSecret,
+                    number: payload.number,
+                    fromNumber: scoped.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
+                    content: outboundText,
+                  }));
+                }
+        
+                // Outbound dispatch via LoopMessage if configured
+                if (
+                  scoped.config.loopMessageAuthKey &&
+                  payload.contact
+                ) {
+                  deliveryResults.push(await sendLoopMessage({
+                    authKey: scoped.config.loopMessageAuthKey,
+                    recipient: payload.contact,
+                    text: outboundText,
+                  }));
+                }
+        
+                return { reply, outboundText, deliveryResults };
+              }
+            );
+        console.info("iMessage JSON webhook processed", {
+          provider,
+          webhookId,
+          delivery: deliveryResults.map((result) => ({ provider: result.provider, ok: result.ok, status: result.status })),
         });
-        const outboundText = toPlainText(reply.text);
-        const scoped = getStore();
-        const deliveryResults = [] as Array<{ provider: string; ok: boolean; status?: number; detail?: string }>; 
-
-        // Outbound dispatch via Sendblue if configured
-        if (scoped.config.sendblueApiKey && scoped.config.sendblueApiSecret && payload.number) {
-          deliveryResults.push(await sendSendblueMessage({
-            apiKeyId: scoped.config.sendblueApiKey,
-            apiSecretKey: scoped.config.sendblueApiSecret,
-            number: payload.number,
-            fromNumber: scoped.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
-            content: outboundText,
-          }));
-        }
-
-        // Outbound dispatch via LoopMessage if configured
-        if (
-          scoped.config.loopMessageAuthKey &&
-          payload.contact
-        ) {
-          deliveryResults.push(await sendLoopMessage({
-            authKey: scoped.config.loopMessageAuthKey,
-            recipient: payload.contact,
-            text: outboundText,
-          }));
-        }
-
-        return { reply, outboundText, deliveryResults };
+      } catch (error) {
+        console.error("iMessage JSON webhook processing failed:", error);
       }
-    );
-
-    return NextResponse.json({
-      status: deliveryResults.length === 0 ? "not_configured" : deliveryResults.every((result) => result.ok) ? "ok" : "delivery_failed",
-      delivery: deliveryResults,
-      recipient: senderHandle,
-          reply: {
-            id: reply.id,
-            text: outboundText,
-        citations: reply.citations,
-        toolActions: reply.toolActions,
-        generatedImage: reply.generatedImage
-          ? { prompt: reply.generatedImage.prompt }
-          : undefined,
-      },
     });
+
+    return NextResponse.json({ status: "accepted", provider, webhookId });
   } catch (err) {
     console.error("iMessage/SMS webhook error:", err);
     return NextResponse.json(
