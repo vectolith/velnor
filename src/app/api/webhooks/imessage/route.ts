@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { reply, outboundText } = await withVelnorUser(
+    const { reply, outboundText, deliveryResults } = await withVelnorUser(
       resolveUserId("imessage", senderHandle),
       async () => {
         const reply = await processUserMessage({
@@ -173,15 +173,16 @@ export async function POST(req: NextRequest) {
         });
         const outboundText = toPlainText(reply.text);
         const scoped = getStore();
+        const deliveryResults = [] as Array<{ provider: string; ok: boolean; status?: number; detail?: string }>; 
 
         // Outbound dispatch via Sendblue if configured
         if (scoped.config.sendblueApiKey && scoped.config.sendblueApiSecret && payload.number) {
-          void sendSendblueMessage({
+          deliveryResults.push(await sendSendblueMessage({
             apiKeyId: scoped.config.sendblueApiKey,
             apiSecretKey: scoped.config.sendblueApiSecret,
             number: payload.number,
             content: outboundText,
-          });
+          }));
         }
 
         // Outbound dispatch via LoopMessage if configured
@@ -190,21 +191,21 @@ export async function POST(req: NextRequest) {
           scoped.config.loopMessageSecretKey &&
           payload.recipient
         ) {
-          void sendLoopMessage({
+          deliveryResults.push(await sendLoopMessage({
             authKey: scoped.config.loopMessageAuthKey,
             secretKey: scoped.config.loopMessageSecretKey,
             recipient: payload.recipient,
             text: outboundText,
-          });
+          }));
         }
 
-        return { reply, outboundText };
+        return { reply, outboundText, deliveryResults };
       }
     );
 
     return NextResponse.json({
-      status: "ok",
-      provider: payload.recipient ? "loopmessage" : "sendblue",
+      status: deliveryResults.every((result) => result.ok) ? "ok" : "delivery_failed",
+      delivery: deliveryResults,
       recipient: senderHandle,
           reply: {
             id: reply.id,
