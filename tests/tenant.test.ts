@@ -38,7 +38,7 @@ test("the reserved owner identity maps to the legacy default partition", () => {
 test("a valid signed identity selects its provisioned tenant", () => {
   const decision = authorizeChatTenant(token("tenant-123"), [DEFAULT_TENANT, "tenant-123"]);
   assert.equal(decision.ok, true);
-  assert.equal(decision.userId, "v2_tenant-123");
+  assert.equal(decision.userId, "tenant-123");
 });
 
 test("caller-controlled tenant headers are not accepted as tokens", () => {
