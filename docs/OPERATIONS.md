@@ -6,13 +6,11 @@ Everything here matches the code in this repository. Where a step is manual, it 
 
 Per-user state is written by `src/lib/store.ts` to `resolveWritableDataDir()`:
 
-- `<cwd>/.data/velnor.sqlite` when `node:sqlite` is available (Node 22+)
+- `<cwd>/.data/velnor.db` when `node:sqlite` is available (Node 22+)
 - `<cwd>/.data/users/<userId>.json` as the always-written fallback
-- `<cwd>/.data/` otherwise, or `/tmp/.data` when the working directory is read-only
+- `<cwd>/.data/` in development only when no explicit data directory is configured; production fails closed if no durable writable directory exists
 
-A user id is derived by `resolveUserId(channel, handle)` and sanitised by
-`sanitizeUserId`, so it is filesystem-safe. One user's profile never shares a file
-with another's.
+A webhook user id is derived from the provider channel and stable sender identity. Slack identities include both workspace and user IDs. Control-plane requests use a short-lived signed tenant token; caller-provided tenant headers are not accepted.
 
 ## Durability, backups and retention
 
@@ -56,7 +54,8 @@ Provider credentials entered through `POST /api/settings` are sealed with AES-25
 | `POST /api/webhooks/imessage` (Twilio form) | `X-Twilio-Signature`, fail closed |
 | `POST /api/webhooks/imessage` (Sendblue/LoopMessage JSON) | `x-velnor-webhook-secret` |
 | `POST /api/webhooks/slack` | v0 signature + 300s freshness |
-| `GET/POST /api/chat`, `POST /api/settings`, `POST /api/tts`, `/api/lora-pilot` | `VELNOR_SHARED_SECRET` |
+| `GET/POST /api/chat`, `GET/POST /api/settings`, `POST /api/siri` | signed tenant bearer token; shared deployment secret is an outer gate where enabled |
+| `POST /api/tts`, `/api/lora-pilot` | `VELNOR_SHARED_SECRET` |
 | `/api/cron/*` | `Authorization: Bearer $CRON_SECRET` |
 | `GET /api/health`, `GET /api/vcard`, `GET /api/webhooks/manifest` | public |
 
@@ -83,11 +82,9 @@ front (Redis/Upstash) or terminate rate limiting at the platform edge.
 
 ## CI
 
-`.github/workflows/ci.yml` runs install, typecheck, build and an end-to-end suite
-against a booted production server. The unit suite (`npm test`) and the secrets the
-verify step needs are supplied by `docs/ci-unit-tests.patch`, because the token that
-produced this branch had no `workflow` scope. Apply it with
-`git apply docs/ci-unit-tests.patch`.
+`.github/workflows/ci.yml` runs `npm ci`, `npm test`, `npm run typecheck`,
+`npm run build`, and `scripts/verify-velnor.mjs` against a booted production server.
+The repository's current workflow is the source of truth; no manual patch is needed.
 
 ## Deploying
 
@@ -99,7 +96,7 @@ Storage at `/app/.data`; without a mount, chats, reminders and sealed credential
 die with the container revision.
 
 Preflight checks: `VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY` (32+ characters) and
-`CRON_SECRET` are required; `VELNOR_DATA_DIR`, `TWILIO_AUTH_TOKEN`,
+`CRON_SECRET` are required; `VELNOR_DATA_DIR`, `VELNOR_TENANT_TOKEN_SECRET`, `TWILIO_AUTH_TOKEN`,
 `SLACK_SIGNING_SECRET` and `SENDBLUE_WEBHOOK_SECRET` warn when absent;
 `VELNOR_EMAIL_ALLOWLIST` is rejected if an entry is not an address or @domain.
 
