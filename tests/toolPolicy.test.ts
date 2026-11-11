@@ -50,5 +50,30 @@ test("affirmation detection is strict", () => {
 });
 
 test("the sensitive set is exactly the tools that leave the machine", () => {
-  assert.deepEqual([...SENSITIVE_TOOLS].sort(), ["create_calendar_event", "draft_or_send_email", "organize_email"]);
+  assert.deepEqual([...SENSITIVE_TOOLS].sort(), ["create_calendar_event", "delegate_browser_task", "draft_or_send_email", "organize_email"]);
+});
+
+test("confirmation is bound to exact arguments", () => {
+  resetToolPolicy();
+  noteUserMessage("send the draft to a@example.com");
+  assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com", subject: "A", body: "B" }).allowed, false);
+  noteUserMessage("yes");
+  assert.equal(enforceToolPolicy("draft_or_send_email", { to: "b@example.com", subject: "A", body: "B" }).allowed, false);
+  assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com", subject: "A", body: "B" }).allowed, true);
+});
+
+test("one tenant cannot confirm another tenant's pending action", async () => {
+  resetToolPolicy();
+  await withVelnorUser("policy-tenant-a", () => {
+    noteUserMessage("send the approved message");
+    assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com" }).allowed, false);
+  });
+  await withVelnorUser("policy-tenant-b", () => {
+    noteUserMessage("yes");
+    assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com" }).allowed, false);
+  });
+  await withVelnorUser("policy-tenant-a", () => {
+    noteUserMessage("yes");
+    assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com" }).allowed, true);
+  });
 });
