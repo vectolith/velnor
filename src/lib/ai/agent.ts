@@ -455,7 +455,8 @@ async function runBuiltInAgentOrchestrator(
       params.channel,
       bundle
     );
-    return `✉️ **Gmail ${email.status === "sent" ? "Sent" : "Draft Saved"}**\n• **To:** ${email.to}\n• **Subject:** ${email.subject}\n• **Body:** "${email.body}"`;
+    if (!email) return "This email action requires confirmation or a connected Gmail account. Nothing was sent.";
+    return `✉️ **Gmail ${email.status === "sent" ? "Sent" : "Draft Saved"}\n• **To:** ${email.to}\n• **Subject:** ${email.subject}\n• **Body:** "${email.body}"`;
   }
 
   if (
@@ -468,7 +469,8 @@ async function runBuiltInAgentOrchestrator(
       params.channel,
       bundle
     );
-    return `📥 **Inbox Organized:** Archived ${res.updatedCount || 1} email thread(s).`;
+    if (res.requiresConfirmation) return String(res.reason || "Email organization requires confirmation. Nothing was changed.");
+    return `📥 **Inbox Organized:** Updated ${res.updatedCount || 0} email thread(s).`;
   }
 
   if (
@@ -513,6 +515,7 @@ async function runBuiltInAgentOrchestrator(
       params.channel,
       bundle
     );
+    if (!event) return "Creating this calendar event requires confirmation or a connected Google Calendar account. Nothing was scheduled.";
     return `📅 **Added to Google Calendar:**\n• **Event:** ${event.title}\n• **When:** ${event.date} at ${event.startTime}–${event.endTime}\n• **Location:** ${event.location}`;
   }
 
@@ -532,7 +535,7 @@ async function runBuiltInAgentOrchestrator(
             `• **${ev.startTime}–${ev.endTime}** — **${ev.title}** (${ev.location || "Google Meet"})\n  _Attendees: ${ev.attendees.join(", ") || "Just you"}_`
         )
         .join("\n\n") +
-      `\n\n✨ **Availability:** You are open between **11:15 AM – 2:00 PM** and after **3:00 PM**.`
+      `\n\nAvailability has not been calculated; this is an event listing, not a free/busy check.`
     );
   }
 
@@ -645,7 +648,7 @@ async function runBuiltInAgentOrchestrator(
     const top = matches[0];
     return `📚 **From Your Uploaded Docs (${top?.docName || "Knowledge Base"}):**\n\n"${
       top?.content || "No matching chunks found."
-    }"\n\n_Matched via in-memory cosine similarity (score: ${top?.score ?? 0.85})._`;
+    }"\n\n_Matched via in-memory cosine similarity (score: ${top?.score ?? 0})._`;
   }
 
   // 8. Default: Consult local Velnor rsLoRA reasoning model unless user explicitly requests live web search
