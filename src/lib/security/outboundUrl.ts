@@ -50,6 +50,10 @@ function isPrivateIpv4(address: string): boolean {
   if (a === 169 && b === 254) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
   if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a === 198 && b === 51 && parts[2] === 100) return true;
+  if (a === 203 && b === 0 && parts[2] === 113) return true;
   if (a === 100 && b >= 64 && b <= 127) return true;
   if (a >= 224) return true;
   return false;
@@ -59,8 +63,10 @@ function isPrivateIpv6(address: string): boolean {
   const value = address.toLowerCase();
   if (value === "::1" || value === "::") return true;
   if (value.startsWith("fe80") || value.startsWith("fc") || value.startsWith("fd")) return true;
-  const mapped = value.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateIpv4(mapped[1]);
+  const firstHextet = Number.parseInt(value.split(":")[0] || "0", 16);
+  if ((firstHextet & 0xe000) !== 0x2000) return true;
+  if (value.startsWith("2001:db8:") || value.startsWith("2001:0:") || value.startsWith("2002:")) return true;
+  if (value.includes(".")) return true;
   return false;
 }
 
