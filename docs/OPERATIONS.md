@@ -107,7 +107,7 @@ Preflight checks: `VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY` (32+ characters),
 Run it locally before any rollout:
 
 ```
-VELNOR_SHARED_SECRET=... VELNOR_SECRET_KEY=... VELNOR_TENANT_TOKEN_SECRET=... CRON_SECRET=... node scripts/preflight-deploy.mjs
+VELNOR_SHARED_SECRET=... VELNOR_SECRET_KEY=... VELNOR_TENANT_TOKEN_SECRET=... VELNOR_PROVISIONING_SECRET=... CRON_SECRET=... node scripts/preflight-deploy.mjs
 ```
 
 ## Where things run
