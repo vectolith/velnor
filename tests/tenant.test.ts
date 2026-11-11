@@ -41,6 +41,11 @@ test("a valid signed identity selects its provisioned tenant", () => {
   assert.equal(decision.userId, "tenant-123");
 });
 
+test("internal storage key prefixes cannot be used as external tenant subjects", () => {
+  assert.equal(authorizeChatTenant(token("v2_tenant-123"), [DEFAULT_TENANT]).ok, false);
+  assert.equal(authorizeChatTenant(token("v2h_" + "a".repeat(64)), [DEFAULT_TENANT]).ok, false);
+});
+
 test("caller-controlled tenant headers are not accepted as tokens", () => {
   const decision = authorizeChatTenant("tenant-123", [DEFAULT_TENANT, "tenant-123"]);
   assert.equal(decision.ok, false);
