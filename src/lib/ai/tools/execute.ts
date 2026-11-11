@@ -36,7 +36,7 @@ export async function executeToolCall(
   channel: ChannelType,
   bundle: ToolExecutionBundle
 ): Promise<Record<string, any>> {
-  const policy = enforceToolPolicy(name);
+  const policy = enforceToolPolicy(name, args);
   if (!policy.allowed) {
     bundle.toolActions.push({
       tool: name,
