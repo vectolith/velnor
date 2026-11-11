@@ -80,7 +80,7 @@ export function enforceToolPolicy(
     allowed: false,
     reason:
       `"${toolName}" affects an external account or performs a delegated action. ` +
-      "Nothing was executed. Confirm this exact operation in your next message.",
+      "Nothing was executed. Explicit confirmation is required for this exact operation in your next message.",
   };
 }
 
