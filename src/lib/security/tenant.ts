@@ -90,12 +90,18 @@ export function authorizeChatTenant(
     return denied("Identity token subject is invalid.");
   }
 
-  const requested = sanitizeUserId(claims.sub);
-  const known = (knownUsers ?? safeListUsers()).map((id) => sanitizeUserId(id));
-  if (requested !== sanitizeUserId(DEFAULT_TENANT) && !known.includes(requested)) {
+  // A trusted gateway may map an authenticated account subject to an existing
+  // webhook-created tenant partition using the signed tenant_id claim.
+  const tenantClaim = typeof claims.tenant_id === "string" ? claims.tenant_id : claims.sub;
+  if (tenantClaim.length > 96 || !/^[A-Za-z0-9._@+-]+$/.test(tenantClaim) && !/^v2_(?:[A-Za-z0-9.@+-]|_x[0-9a-f]{2}_)*$/.test(tenantClaim) && !/^v2h_[a-f0-9]{64}$/.test(tenantClaim)) {
+    return denied("Identity token tenant mapping is invalid.");
+  }
+  const requested = sanitizeUserId(tenantClaim);
+  const known = new Set((knownUsers ?? safeListUsers()).map((id) => sanitizeUserId(id)));
+  if (requested !== sanitizeUserId(DEFAULT_TENANT) && !known.has(requested)) {
     return denied("Identity is not provisioned for this Velnor deployment.", 403);
   }
-  return { ok: true, userId: requested === sanitizeUserId(DEFAULT_TENANT) ? "default" : claims.sub as string };
+  return { ok: true, userId: requested === sanitizeUserId(DEFAULT_TENANT) ? "default" : tenantClaim };
 }
 
 function safeListUsers(): string[] {
