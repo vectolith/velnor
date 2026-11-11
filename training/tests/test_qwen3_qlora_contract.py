@@ -52,5 +52,22 @@ class Qwen3QLoRAContractTests(unittest.TestCase):
         self.assertIn("raise RuntimeError", self.source)
 
 
+    def test_gpu_requirements_keep_runtime_torch_and_add_bitsandbytes(self):
+        req = (ROOT / "requirements-qwen3-qlora.txt").read_text(encoding="utf-8")
+        self.assertIn("-r requirements-gpu.txt", req)
+        self.assertIn("bitsandbytes", req)
+        self.assertNotRegex(req, r"(?m)^\\s*torch([<=>!~]|\\s|$)")
+
+    def test_colab_notebook_is_valid_and_uses_isolated_branch(self):
+        path = ROOT / "Velnor_Qwen3_8B_QLoRA_Colab.ipynb"
+        notebook = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(notebook["nbformat"], 4)
+        source = " ".join("".join(c.get("source", [])) for c in notebook["cells"])
+        self.assertIn("feat/qwen3-8b-qlora", source)
+        self.assertIn("requirements-qwen3-qlora.txt", source)
+        self.assertIn("VELNOR_QWEN3_OUTPUT", source)
+        self.assertNotIn("reset --hard", source)
+
+
 if __name__ == "__main__":
     unittest.main()
