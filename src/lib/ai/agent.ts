@@ -400,10 +400,10 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("set a reminder") ||
     lower.includes("add a task")
   ) {
-    const timeMatch = raw.match(/\\b(tomorrow[^,.]*|today[^,.]*|in \\d+\\s*(?:minutes?|hours?|days?)|at \\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?)/i);
+    const timeMatch = raw.match(/\b(tomorrow[^,.]*|today[^,.]*|in \d+\s*(?:minutes?|hours?|days?)|at \d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
     const timeExpression = timeMatch?.[0] || "";
     const dueDate = new Date();
-    const relative = timeExpression.match(/^in (\\d+)\\s*(minutes?|hours?|days?)/i);
+    const relative = timeExpression.match(/^in (\d+)\s*(minutes?|hours?|days?)/i);
     if (relative) {
       const amount = Number(relative[1]);
       const unit = relative[2].toLowerCase();
@@ -412,7 +412,7 @@ async function runBuiltInAgentOrchestrator(
       else dueDate.setDate(dueDate.getDate() + amount);
     } else {
       if (/tomorrow/i.test(timeExpression)) dueDate.setDate(dueDate.getDate() + 1);
-      const clock = timeExpression.match(/(?:at )?(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?/i);
+      const clock = timeExpression.match(/(?:at )?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
       if (clock) {
         let hour = Number(clock[1]);
         const minute = Number(clock[2] || 0);
