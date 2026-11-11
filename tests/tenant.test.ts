@@ -46,6 +46,15 @@ test("internal storage key prefixes cannot be used as external tenant subjects",
   assert.equal(authorizeChatTenant(token("v2h_" + "a".repeat(64)), [DEFAULT_TENANT]).ok, false);
 });
 
+test("a trusted gateway can map an authenticated subject to an existing provider tenant", () => {
+  const decision = authorizeChatTenant(
+    token("gateway-user-uuid", { tenant_id: "v2_tenant-123" }),
+    [DEFAULT_TENANT, "tenant-123"]
+  );
+  assert.equal(decision.ok, true);
+  assert.equal(decision.userId, "v2_tenant-123");
+});
+
 test("caller-controlled tenant headers are not accepted as tokens", () => {
   const decision = authorizeChatTenant("tenant-123", [DEFAULT_TENANT, "tenant-123"]);
   assert.equal(decision.ok, false);
