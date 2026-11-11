@@ -180,6 +180,13 @@ export function loadUserState(userId: string): VelnorState {
     }
   }
 
+  // SQLite is the primary store in Node 22 deployments. Its values are sealed
+  // on write just like the JSON backup, so hydrate credentials for either source
+  // before exposing the state to providers.
+  if (loaded?.config && typeof loaded.config === "object") {
+    loaded.config = openRecord(loaded.config as unknown as Record<string, unknown>) as unknown as ProviderConfig;
+  }
+
   const state = mergeState(loaded);
   cache().set(id, state);
   if (!loaded) saveStateForUser(id, state);
