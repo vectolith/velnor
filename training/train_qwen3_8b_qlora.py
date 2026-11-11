@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 
 import torch
+import bitsandbytes as bnb
 import transformers
 import peft
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -160,7 +161,7 @@ def main() -> None:
     steps_per_epoch = math.ceil(len(train_batches) / GRAD_ACCUM)
     total_steps = EPOCHS * steps_per_epoch
     warmup_steps = max(1, int(total_steps * 0.05))
-    optimizer = torch.optim.AdamW(
+    optimizer = bnb.optim.PagedAdamW8bit(
         [p for p in model.parameters() if p.requires_grad],
         lr=LR,
         weight_decay=0.01,
@@ -251,6 +252,7 @@ def main() -> None:
             "dropout": 0.05,
             "target_modules": targets,
             "gradient_checkpointing": True,
+            "optimizer": "bitsandbytes PagedAdamW8bit",
             "micro_batch_size": MICRO_BATCH_SIZE,
             "gradient_accumulation": GRAD_ACCUM,
             "max_sequence_length": MAX_SEQ_LEN,
