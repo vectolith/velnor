@@ -72,7 +72,7 @@ chmod 600 .env
 : > .env.tmp
 while IFS= read -r line; do
   case "$line" in
-    VELNOR_SHARED_SECRET=*|VELNOR_SECRET_KEY=*|VELNOR_TENANT_TOKEN_SECRET=*|CRON_SECRET=*)
+    VELNOR_SHARED_SECRET=*|VELNOR_SECRET_KEY=*|VELNOR_TENANT_TOKEN_SECRET=*|VELNOR_PROVISIONING_SECRET=*|CRON_SECRET=*)
       name="${line%%=*}"
       value="${line#*=}"
       if [[ -z "$value" ]]; then
