@@ -67,6 +67,11 @@ fi
 
 say "3/6 Preparing .env"
 [[ -f .env ]] || cp .env.example .env
+# Add newly introduced required secrets to existing installations before the
+# idempotent generation loop below; old .env files do not inherit .env.example.
+if ! grep -q '^VELNOR_PROVISIONING_SECRET=' .env; then
+  printf '\\nVELNOR_PROVISIONING_SECRET=\\n' >> .env
+fi
 chmod 600 .env
 
 : > .env.tmp
