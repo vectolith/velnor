@@ -30,8 +30,8 @@ full-curriculum metric as though the experiments were equivalent.
   `models/qwen2.5-coder-1.5b`.
 - `train_velnor_lora.py` performs fine-tuning, validation, checkpoint selection,
   and base-versus-adapter rubric evaluation.
-- `train_fast_1b.py` is retained as a legacy experiment; use the canonical trainer
-  and its explicit smoke-run switch for new experiments.
+- `train_fast_1b.py` and `run_fast_1b_pass.py` are compatibility wrappers that delegate
+  to the canonical trainer in explicit smoke-run mode.
 - `grade_generations.py` applies deterministic checks for identity, arithmetic,
   HMAC advice, credential refusal, and fabricated booking receipts.
 - `evaluate_adapter.py` re-evaluates an adapter saved on disk against the full
