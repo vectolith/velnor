@@ -730,7 +730,13 @@ def main():
         f"[velnor-coder-v2] Reloading best checkpoint from Epoch {best_epoch} (val_loss={best_val_loss:.4f})...",
         flush=True,
     )
+    # Release the training graph and optimizer state before loading a clean
+    # base model for final adapter evaluation; this avoids doubling VRAM use.
+    del model, base, opt
+    if DEVICE.type == "cuda":
+        torch.cuda.empty_cache()
     clean_base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
+    clean_base.to(DEVICE)
     best_model = PeftModel.from_pretrained(clean_base, str(adapter_dir))
 
     post_val_loss = best_val_loss
