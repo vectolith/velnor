@@ -65,6 +65,7 @@ async function dispatchTenantReminderNotification(
         apiKeyId: state.config.sendblueApiKey,
         apiSecretKey: state.config.sendblueApiSecret,
         number: rem.recipient,
+        fromNumber: state.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
         content: `🔔 Reminder from Velnor: ${rem.text}`,
       });
       if (sendblueResult.ok) channelsUsed.push("sendblue-imessage");
