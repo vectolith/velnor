@@ -59,7 +59,8 @@ Provider credentials entered through `POST /api/settings` are sealed with AES-25
 | `POST /api/tts` | signed tenant bearer token + shared deployment gate |
 | `GET/POST /api/lora-pilot` | `VELNOR_SHARED_SECRET` |
 | `/api/cron/*` | `Authorization: Bearer $CRON_SECRET` |
-| `GET /api/health`, `GET /api/vcard`, `GET /api/webhooks/manifest` | public |
+| `GET /api/health`, `GET /api/webhooks/manifest` | public |
+| `POST /api/internal/tenants/provision` | `x-velnor-provisioning-secret` (identity gateway only) |
 
 `VELNOR_ALLOW_SIMULATOR=1` plus `NODE_ENV !== "production"` is the only way the
 `x-velnor-simulator` header can skip signatures. Never enable the simulator bypass in production.
