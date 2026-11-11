@@ -130,3 +130,15 @@ test("gateway fails closed when no Cloudflare Access assertion is present", asyn
     assert.equal(response.status, 401);
   });
 });
+
+test("gateway rejects an origin that would recurse through the public Worker route", async () => {
+  await withFetchMock(async () => {
+    throw new Error("Recursive origin must be rejected before any outbound call");
+  }, async () => {
+    const request = new Request("https://velnor.example/api/chat", {
+      headers: { "Cf-Access-Jwt-Assertion": accessToken() },
+    });
+    const response = await worker.fetch(request, { ...env, VELNOR_ORIGIN: "https://velnor.example" });
+    assert.equal(response.status, 503);
+  });
+});
