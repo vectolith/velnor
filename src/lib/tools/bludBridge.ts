@@ -7,6 +7,8 @@
  * an internal RPC with strict execution verification and zero fabrication.
  */
 
+import { resolveAndAssert } from "@/lib/security/outboundUrl";
+
 export interface BrowserTaskOptions {
   task: string;
   startUrl?: string;
@@ -46,6 +48,12 @@ export async function delegateBrowserTaskToBlud(
       error: "Task instructions must not be empty.",
     };
   }
+
+  if (task.length > 8000) {
+    return { status: "failure", summary: "Browser task exceeds the 8,000-character limit.", verifiedAtUtc, error: "Task instructions are too long." };
+  }
+  const taskUrls = [startUrl, ...(task.match(/https?:\/\/[^\s)]+/g) || [])].filter((value): value is string => Boolean(value));
+  for (const url of taskUrls) await resolveAndAssert(url);
 
   // 1. Attempt internal RPC to Blud browser agent
   const rpcUrl = DEFAULT_BLUD_RPC_URL;
