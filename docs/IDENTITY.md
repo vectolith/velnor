@@ -45,7 +45,8 @@ Replace legacy `x-velnor-user` tenant selection with the bearer token. A shared 
 - Use HTTPS for all control-plane requests.
 - Keep identity tokens short-lived and rotate the signing secret through a coordinated gateway/Velnor rollout.
 - Do not log bearer tokens.
-- Revoke a user by disabling their upstream account and removing their Velnor tenant provisioning.
+- Revoke sign-in by disabling the upstream identity or removing/revoking the user in the Cloudflare Access policy/session. The gateway issues a new Velnor bearer token per request and each token expires after five minutes; it does not keep a separate refresh-token session.
+- Revoking sign-in does not delete tenant data. Handle tenant-data deletion separately under the deployment's retention and recovery policy.
 - Keep provider credentials tenant-scoped; do not put personal OAuth tokens in global environment variables for multi-tenant deployments.
 
 
