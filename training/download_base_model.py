@@ -8,9 +8,16 @@ TARGET_DIR = Path(__file__).resolve().parent / "models" / "qwen2.5-coder-1.5b"
 
 def main() -> None:
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
-    safetensors_file = TARGET_DIR / "model.safetensors"
-    if safetensors_file.exists() and safetensors_file.stat().st_size > 3_000_000_000:
-        print(f"Base 1.5B model already exists at {TARGET_DIR} ({safetensors_file.stat().st_size / 1e9:.2f} GB). Skipping download.")
+    weight_files = list(TARGET_DIR.glob("*.safetensors"))
+    total_weight_bytes = sum(path.stat().st_size for path in weight_files)
+    has_config = (TARGET_DIR / "config.json").is_file()
+    # Qwen snapshots may be sharded; validate the complete weight set rather
+    # than assuming a single model.safetensors file exists.
+    if has_config and weight_files and total_weight_bytes > 2_500_000_000:
+        print(
+            f"Base model already exists at {TARGET_DIR} "
+            f"({total_weight_bytes / 1e9:.2f} GB across {len(weight_files)} weight files). Skipping download."
+        )
         return
 
     print(f"Downloading 1.5B quantitative reasoning model ({MODEL_ID}) to {TARGET_DIR}...", flush=True)
