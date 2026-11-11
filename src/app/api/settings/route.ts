@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getEffectiveKeys, getStore, saveStore, resolveSlackChannel, isValidSlackChannel, withVelnorUser } from "@/lib/store";
 import { authorizeChatTenant } from "@/lib/security/tenant";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const tenant = authorizeChatTenant(req.headers.get("authorization"));
+  if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401 });
+  return withVelnorUser(tenant.userId, () => buildSettings());
+}
+
+function buildSettings() {
   const state = getStore();
   const keys = getEffectiveKeys(state);
 
@@ -27,7 +33,13 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const tenant = authorizeChatTenant(req.headers.get("authorization"));
+  if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401 });
   const body = await req.json();
+  return withVelnorUser(tenant.userId, () => updateSettings(body));
+}
+
+function updateSettings(body: any) {
   const state = getStore();
 
   if (body.activeProvider) state.config.activeProvider = body.activeProvider;
