@@ -95,15 +95,16 @@ looks broken rather than unsecured. Pass `-DataVolume <bucket>` to mount Cloud
 Storage at `/app/.data`; without a mount, chats, reminders and sealed credentials
 die with the container revision.
 
-Preflight checks: `VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY` (32+ characters) and
-`CRON_SECRET` are required; `VELNOR_DATA_DIR`, `VELNOR_TENANT_TOKEN_SECRET`, `TWILIO_AUTH_TOKEN`,
+Preflight checks: `VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY` (32+ characters),
+`VELNOR_TENANT_TOKEN_SECRET` (32+ characters), and `CRON_SECRET` are required;
+`VELNOR_DATA_DIR`, `TWILIO_AUTH_TOKEN`,
 `SLACK_SIGNING_SECRET` and `SENDBLUE_WEBHOOK_SECRET` warn when absent;
 `VELNOR_EMAIL_ALLOWLIST` is rejected if an entry is not an address or @domain.
 
 Run it locally before any rollout:
 
 ```
-VELNOR_SHARED_SECRET=... VELNOR_SECRET_KEY=... CRON_SECRET=... node scripts/preflight-deploy.mjs
+VELNOR_SHARED_SECRET=... VELNOR_SECRET_KEY=... VELNOR_TENANT_TOKEN_SECRET=... CRON_SECRET=... node scripts/preflight-deploy.mjs
 ```
 
 ## Where things run
