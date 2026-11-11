@@ -104,39 +104,20 @@ export async function transcribeAudioWithProvider(params: {
 }): Promise<{ transcript: string; modelUsed: string }> {
   const state = getStore();
   const { geminiApiKey } = getEffectiveKeys(state);
+  if (!geminiApiKey) throw new Error("Audio transcription requires a configured Gemini API key.");
+  if (!params.base64Audio) throw new Error("Audio data is required for transcription.");
 
-  if (geminiApiKey) {
-    try {
-      const client = new GoogleGenAI({ apiKey: geminiApiKey });
-      const interaction = await client.interactions.create({
-        model: "gemini-3.5-transcribe",
-        input: [
-          {
-            type: "audio",
-            data: params.base64Audio,
-            mime_type: params.mimeType || "audio/webm",
-          },
-          {
-            type: "text",
-            text: "Transcribe this voice message accurately.",
-          },
-        ] as any,
-      });
-      if (interaction.output_text) {
-        return {
-          transcript: interaction.output_text.trim(),
-          modelUsed: "gemini-3.5-transcribe",
-        };
-      }
-    } catch (err) {
-      console.warn("Gemini audio transcription error:", err);
-    }
-  }
-
-  return {
-    transcript: "Voice note received.",
-    modelUsed: "browser-speech-engine",
-  };
+  const client = new GoogleGenAI({ apiKey: geminiApiKey });
+  const interaction = await client.interactions.create({
+    model: "gemini-3.5-transcribe",
+    input: [
+      { type: "audio", data: params.base64Audio, mime_type: params.mimeType || "audio/webm" },
+      { type: "text", text: "Transcribe this voice message accurately." },
+    ] as any,
+  });
+  const transcript = interaction.output_text?.trim();
+  if (!transcript) throw new Error("Gemini returned no transcription text.");
+  return { transcript, modelUsed: "gemini-3.5-transcribe" };
 }
 
 export async function generateSpeechWithProvider(text: string): Promise<{
