@@ -89,7 +89,7 @@ test("Google Calendar creation requires OAuth and provider acceptance", async ()
     state.config.googleAccessToken = "test-access-token";
     saveStore(state);
     await withFetchMock(async (input) => {
-      assert.match(String(input), /googleapis\.com\/calendar\/v3\/calendars\/primary\/events$/);
+      assert.match(String(input), /googleapis\\.com\\/calendar\\/v3\\/calendars\\/primary\\/events\\?sendUpdates=all$/);
       return new Response("forbidden", { status: 403 });
     }, async () => {
       await assert.rejects(
