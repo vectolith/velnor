@@ -97,7 +97,7 @@ test("the simulator bypass is disabled in production", () => {
   const middleware = readFileSync(new URL("../src/middleware.ts", import.meta.url), "utf8");
   assert.match(
     middleware,
-    /process\\.env\\.NODE_ENV !== "production"[\\s\\S]*?VELNOR_ALLOW_SIMULATOR === "1"[\\s\\S]*?x-velnor-simulator/,
+    /process\.env\.NODE_ENV !== "production"[\s\S]*?VELNOR_ALLOW_SIMULATOR === "1"[\s\S]*?x-velnor-simulator/,
     "the simulator bypass must require a non-production runtime"
   );
 });
