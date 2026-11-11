@@ -204,7 +204,7 @@ export async function POST(req: NextRequest) {
     );
 
     return NextResponse.json({
-      status: deliveryResults.every((result) => result.ok) ? "ok" : "delivery_failed",
+      status: deliveryResults.length === 0 ? "not_configured" : deliveryResults.every((result) => result.ok) ? "ok" : "delivery_failed",
       delivery: deliveryResults,
       recipient: senderHandle,
           reply: {
