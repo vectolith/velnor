@@ -400,11 +400,36 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("set a reminder") ||
     lower.includes("add a task")
   ) {
-    const timeMatch = raw.match(/\b(tomorrow[^,.]*|today[^,.]*|in \d+\s*(?:minutes?|hours?|days?)|at \d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
-    const dueAt = timeMatch ? timeMatch[0] : "Today at 5:00 PM";
+    const timeMatch = raw.match(/\\b(tomorrow[^,.]*|today[^,.]*|in \\d+\\s*(?:minutes?|hours?|days?)|at \\d{1,2}(?::\\d{2})?\\s*(?:am|pm)?)/i);
+    const timeExpression = timeMatch?.[0] || "";
+    const dueDate = new Date();
+    const relative = timeExpression.match(/^in (\\d+)\\s*(minutes?|hours?|days?)/i);
+    if (relative) {
+      const amount = Number(relative[1]);
+      const unit = relative[2].toLowerCase();
+      if (unit.startsWith("minute")) dueDate.setMinutes(dueDate.getMinutes() + amount);
+      else if (unit.startsWith("hour")) dueDate.setHours(dueDate.getHours() + amount);
+      else dueDate.setDate(dueDate.getDate() + amount);
+    } else {
+      if (/tomorrow/i.test(timeExpression)) dueDate.setDate(dueDate.getDate() + 1);
+      const clock = timeExpression.match(/(?:at )?(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?/i);
+      if (clock) {
+        let hour = Number(clock[1]);
+        const minute = Number(clock[2] || 0);
+        const meridiem = (clock[3] || "").toLowerCase();
+        if (meridiem === "pm" && hour < 12) hour += 12;
+        if (meridiem === "am" && hour === 12) hour = 0;
+        if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) dueDate.setHours(hour, minute, 0, 0);
+      } else if (timeExpression) {
+        dueDate.setHours(/tomorrow/i.test(timeExpression) ? 9 : 17, 0, 0, 0);
+      } else {
+        dueDate.setHours(dueDate.getHours() + 1);
+      }
+    }
+    const dueAt = dueDate.toISOString();
     const taskText = raw
       .replace(/^(remind me to|remind me|set a reminder to|set a reminder|add a task to)\s*/i, "")
-      .replace(dueAt, "")
+      .replace(timeExpression, "")
       .trim() || raw;
 
     const { reminder } = await executeToolCall(
