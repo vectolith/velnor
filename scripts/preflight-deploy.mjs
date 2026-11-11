@@ -11,7 +11,8 @@
  */
 
 const REQUIRED = [
-  ["VELNOR_SHARED_SECRET", "protects /api/chat, /api/settings, /api/tts, /api/siri, /api/lora-pilot"],
+  ["VELNOR_SHARED_SECRET", "protects state-changing control-plane routes"],
+  ["VELNOR_TENANT_TOKEN_SECRET", "verifies short-lived per-user identity tokens"],
   ["VELNOR_SECRET_KEY", "seals provider keys at rest; without it keys are never written"],
   ["CRON_SECRET", "authorises /api/cron/reminders"],
 ];
@@ -32,6 +33,8 @@ for (const [name, why] of REQUIRED) {
   if (!value) problems.push(`${name} is missing — ${why}`);
   else if (name === "VELNOR_SECRET_KEY" && value.length < 16) {
     problems.push(`VELNOR_SECRET_KEY is only ${value.length} characters; use 32+ random characters`);
+  } else if (name === "VELNOR_TENANT_TOKEN_SECRET" && value.length < 32) {
+    problems.push("VELNOR_TENANT_TOKEN_SECRET must contain at least 32 characters");
   }
 }
 
