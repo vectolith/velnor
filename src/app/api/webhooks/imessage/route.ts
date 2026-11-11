@@ -80,7 +80,8 @@ export async function POST(req: NextRequest) {
       }
 
       const from = String(formData.get("From") || "").slice(0, 64);
-      if (!from) return NextResponse.json({ error: "Twilio webhook is missing sender identity." }, { status: 400 });
+      const to = String(formData.get("To") || "").slice(0, 64);
+      if (!from || !to) return NextResponse.json({ error: "Twilio webhook is missing sender or destination identity." }, { status: 400 });
       // Twilio retries on slow responses; do not run the agent twice for one SMS.
       const twilioMessageId = String(formData.get("MessageSid") || formData.get("SmsSid") || "");
       if (twilioMessageId && !inboundWebhookCache.seen(inboundKey(["twilio", twilioMessageId]))) {
@@ -111,7 +112,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const reply = await withVelnorUser(resolveUserId("imessage", from), () =>
+      const reply = await withVelnorUser(resolveUserId("imessage", to + ":" + from), () =>
         processUserMessage({
           channel: "imessage",
           userHandle: from,
@@ -147,6 +148,7 @@ export async function POST(req: NextRequest) {
     if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
     if (payload.is_outbound === true || (payload.event && payload.event !== "message_inbound")) return NextResponse.json({ status: "ignored", event: payload.event || "outbound" });
     const provider = payload.contact ? "loopmessage" : "sendblue";
+    const providerAccount = String(payload.organization_id || payload.sendblue_number || payload.to_number || "default");
     const webhookId = String(payload.message_handle || payload.webhook_id || payload.message_id || "");
     if (webhookId && !inboundWebhookCache.seen(inboundKey([provider, webhookId]))) return NextResponse.json({ status: "duplicate" });
     const messageText = String(
@@ -167,7 +169,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { reply, outboundText, deliveryResults } = await withVelnorUser(
-      resolveUserId("imessage", senderHandle),
+      resolveUserId("imessage", provider + ":" + providerAccount + ":" + senderHandle),
       async () => {
         const reply = await processUserMessage({
           channel: "imessage",
