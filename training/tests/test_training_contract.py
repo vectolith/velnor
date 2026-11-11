@@ -1,6 +1,6 @@
 """Dependency-free contract tests for the Velnor training entrypoint."""
 import ast
-import re
+import json
 import unittest
 from pathlib import Path
 
@@ -55,6 +55,18 @@ class TrainingContractTests(unittest.TestCase):
         self.assertNotIn("download.pytorch.org/whl/cpu", requirements)
         self.assertIn("transformers==", requirements)
         self.assertIn("peft==", requirements)
+
+    def test_colab_notebook_is_valid_and_persists_artifacts(self):
+        notebook_path = TRAINER.parent / "Velnor_Qwen_1.5B_Colab.ipynb"
+        notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+        self.assertEqual(notebook["nbformat"], 4)
+        source = "\\n".join(
+            "".join(cell.get("source", [])) for cell in notebook["cells"]
+        )
+        self.assertIn("torch.cuda.is_available()", source)
+        self.assertIn("requirements-gpu.txt", source)
+        self.assertIn("SHA256SUMS.json", source)
+        self.assertIn("VELNOR_FAST_TRAIN=1", source) is False
 
     def test_readme_describes_same_base_and_opt_in_fast_mode(self):
         readme = README.read_text(encoding="utf-8")
