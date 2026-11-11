@@ -62,9 +62,9 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const tenant = authorizeChatTenant(
-    body.userHandle || req.headers.get("x-velnor-user")
-  );
+  // User identity must come exclusively from the verified bearer token.
+  // Body fields and legacy tenant headers are untrusted input, never credentials.
+  const tenant = authorizeChatTenant(req.headers.get("authorization"));
   if (!tenant.ok) {
     return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 403 });
   }
