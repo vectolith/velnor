@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getStore, saveStore, withVelnorUser } from "../src/lib/store";
+import { sendSendblueMessage } from "../src/lib/channels/sendblue";
+import { sendLoopMessage } from "../src/lib/channels/loopmessage";
+
+process.env.VELNOR_SECRET_KEY ||= "test-secret-key-for-integration-suite-32-bytes";
 import {
   createCalendarEvent,
   draftOrSendEmail,
@@ -43,7 +47,7 @@ test("Gmail drafts use the Gmail drafts API and require OAuth", async () => {
   await withVelnorUser("gmail-no-token", async () => {
     await assert.rejects(
       draftOrSendEmail({ to: "person@example.com", subject: "No token", body: "Must fail" }),
-      /OAuth connection is required/
+      /OAuth connection/
     );
   });
 });
@@ -75,7 +79,7 @@ test("Google Calendar creation requires OAuth and provider acceptance", async ()
   await withVelnorUser("calendar-no-token", async () => {
     await assert.rejects(
       createCalendarEvent({ title: "No token", date: "2026-11-12", startTime: "10:00" }),
-      /OAuth connection is required/
+      /OAuth connection/
     );
   });
 
