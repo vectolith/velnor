@@ -165,3 +165,27 @@ test("LoopMessage uses its documented host, Authorization header, and contact fi
     assert.match(result.detail || "", /loop-message-123/);
   });
 });
+
+test("Google Calendar retains the provider event ID and sends attendee updates", async () => {
+  await withVelnorUser("calendar-success-contract", async () => {
+    const state = getStore();
+    state.config.googleAccessToken = "test-access-token";
+    saveStore(state);
+    await withFetchMock(async (input, init) => {
+      assert.match(String(input), /events\?sendUpdates=all$/);
+      const body = JSON.parse(String(init?.body));
+      assert.equal(body.start.timeZone, "UTC");
+      assert.equal(body.end.timeZone, "UTC");
+      return new Response(JSON.stringify({ id: "google-event-123" }), { status: 200 });
+    }, async () => {
+      const event = await createCalendarEvent({
+        title: "Provider contract",
+        date: "2026-11-12",
+        startTime: "10:00",
+        attendees: ["person@example.com"],
+      });
+      assert.equal(event.id, "google-event-123");
+      assert.equal(event.source, "google_calendar");
+    });
+  });
+});
