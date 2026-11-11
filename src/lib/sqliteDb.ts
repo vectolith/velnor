@@ -26,11 +26,17 @@ export function resolveWritableDataDir(): string {
   if (configured) {
     const resolved = ensureWritable(path.resolve(configured));
     if (resolved) return resolved;
-    console.warn(`VELNOR_DATA_DIR=${configured} is not writable; falling back to a local data directory`);
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Configured VELNOR_DATA_DIR is not writable; refusing ephemeral production storage.");
+    }
+    console.warn("VELNOR_DATA_DIR is not writable; falling back to a local data directory");
   }
 
   const localDir = ensureWritable(path.join(process.cwd(), ".data"));
   if (localDir) return localDir;
+  if (process.env.NODE_ENV === "production") {
+    throw new Error("No durable writable Velnor data directory is available in production.");
+  }
 
   const tmpDir = path.join(os.tmpdir(), "velnor-data");
   try {
@@ -57,6 +63,7 @@ function getSqliteDb() {
     const sqlite = require("node:sqlite");
     if (sqlite && sqlite.DatabaseSync) {
       const db = new sqlite.DatabaseSync(SQLITE_PATH);
+      db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;");
       db.exec(`
         CREATE TABLE IF NOT EXISTS kv_state (
           key TEXT PRIMARY KEY,
@@ -136,13 +143,13 @@ export function saveStateToSqlite(state: VelnorState, key = "velnor_root_state")
 }
 
 export function getDatabaseEngineStatus(): {
-  engine: "node:sqlite (SQLite3 + HNSW Memory)" | "JSON + In-Memory HNSW";
+  engine: "node:sqlite" | "JSON fallback";
   dbPath: string;
   writableDir: string;
 } {
   const db = getSqliteDb();
   return {
-    engine: db ? "node:sqlite (SQLite3 + HNSW Memory)" : "JSON + In-Memory HNSW",
+    engine: db ? "node:sqlite" : "JSON fallback",
     dbPath: db ? SQLITE_PATH : path.join(DATA_DIR, "velnor-store.json"),
     writableDir: DATA_DIR,
   };
