@@ -79,7 +79,8 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const from = String(formData.get("From") || "+15550192834").slice(0, 64);
+      const from = String(formData.get("From") || "").slice(0, 64);
+      if (!from) return NextResponse.json({ error: "Twilio webhook is missing sender identity." }, { status: 400 });
       // Twilio retries on slow responses; do not run the agent twice for one SMS.
       const twilioMessageId = String(formData.get("MessageSid") || formData.get("SmsSid") || "");
       if (twilioMessageId && !inboundWebhookCache.seen(inboundKey(["twilio", twilioMessageId]))) {
@@ -142,13 +143,8 @@ export async function POST(req: NextRequest) {
       // A malformed body is the caller's error, not a server fault.
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
-    const senderHandle = String(
-      payload.number ||
-        payload.from_number ||
-        payload.recipient ||
-        payload.sender ||
-        "+1 (555) 019-2834"
-    ).slice(0, 64);
+    const senderHandle = String(payload.number || payload.from_number || payload.sender || "").slice(0, 64);
+    if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
     const messageText = String(
       payload.content || payload.text || payload.body || payload.message || ""
     )
