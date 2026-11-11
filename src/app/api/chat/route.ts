@@ -94,7 +94,7 @@ async function handlePost(body: any) {
     }
 
     if (action === "organize_email") {
-      organizeEmail({
+      await organizeEmail({
         emailId: body.emailId ? String(body.emailId) : undefined,
         query: body.query ? String(body.query) : undefined,
         action: body.emailAction || "archive",
