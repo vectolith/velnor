@@ -95,7 +95,7 @@ export function authorizeChatTenant(
   if (requested !== sanitizeUserId(DEFAULT_TENANT) && !known.includes(requested)) {
     return denied("Identity is not provisioned for this Velnor deployment.", 403);
   }
-  return { ok: true, userId: requested === sanitizeUserId(DEFAULT_TENANT) ? "default" : requested };
+  return { ok: true, userId: requested === sanitizeUserId(DEFAULT_TENANT) ? "default" : claims.sub as string };
 }
 
 function safeListUsers(): string[] {
