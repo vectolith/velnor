@@ -29,6 +29,12 @@ test("missing authorization is denied", () => {
   assert.equal(decision.status, 401);
 });
 
+test("the reserved owner identity maps to the legacy default partition", () => {
+  const decision = authorizeChatTenant(token("owner"), [DEFAULT_TENANT]);
+  assert.equal(decision.ok, true);
+  assert.equal(decision.userId, "default");
+});
+
 test("a valid signed identity selects its provisioned tenant", () => {
   const decision = authorizeChatTenant(token("tenant-123"), [DEFAULT_TENANT, "tenant-123"]);
   assert.equal(decision.ok, true);
