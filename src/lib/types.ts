@@ -131,6 +131,7 @@ export interface ProviderConfig {
   twilioFromNumber?: string;
   sendblueApiKey?: string;
   sendblueApiSecret?: string;
+  sendblueFromNumber?: string;
   loopMessageAuthKey?: string;
   loopMessageSecretKey?: string;
   slackBotToken?: string;
