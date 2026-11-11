@@ -138,7 +138,7 @@ test("gateway rejects an origin that would recurse through the public Worker rou
     const request = new Request("https://velnor.example/api/chat", {
       headers: { "Cf-Access-Jwt-Assertion": accessToken() },
     });
-    const response = await worker.fetch(request, { ...env, VELNOR_ORIGIN: "https://velnor.example" });
+    const response = await worker.fetch(request, { ...env, VELNOR_ORIGIN: "https://velnor.example:8443" });
     assert.equal(response.status, 503);
   });
 });
