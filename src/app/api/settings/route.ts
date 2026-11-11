@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEffectiveKeys, getStore, saveStore, resolveSlackChannel, isValidSlackChannel } from "@/lib/store";
+import { getEffectiveKeys, getStore, saveStore, resolveSlackChannel, isValidSlackChannel, withVelnorUser } from "@/lib/store";
+import { authorizeChatTenant } from "@/lib/security/tenant";
 
 export async function GET() {
   const state = getStore();
