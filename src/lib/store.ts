@@ -151,17 +151,7 @@ export function loadUserState(userId: string): VelnorState {
     try {
       const file = stateFile(id);
       if (fs.existsSync(file)) {
-        const parsed = JSON.parse(fs.readFileSync(file, "utf-8"));
-        const migrated = migrateState(parsed).value;
-        const coerced = coerceState(migrated);
-        if (coerced.issues.length > 0) {
-          console.warn(`State for ${id} was repaired on load: ${coerced.issues.join("; ")}`);
-        }
-        const config = coerced.value.config;
-        if (config && typeof config === "object") {
-          coerced.value.config = openRecord(config as Record<string, unknown>);
-        }
-        loaded = coerced.value as unknown as VelnorState;
+        loaded = JSON.parse(fs.readFileSync(file, "utf-8")) as VelnorState;
       }
     } catch (err) {
       // Recovery: keep the broken file for inspection instead of silently
@@ -180,11 +170,20 @@ export function loadUserState(userId: string): VelnorState {
     }
   }
 
-  // SQLite is the primary store in Node 22 deployments. Its values are sealed
-  // on write just like the JSON backup, so hydrate credentials for either source
-  // before exposing the state to providers.
-  if (loaded?.config && typeof loaded.config === "object") {
-    loaded.config = openRecord(loaded.config as unknown as Record<string, unknown>) as unknown as ProviderConfig;
+  // SQLite is the primary store in Node 22 deployments; the JSON file is its
+  // recovery mirror. Apply the same migrations, validation and credential
+  // hydration regardless of which persistence source supplied the state.
+  if (loaded) {
+    const migrated = migrateState(loaded).value;
+    const coerced = coerceState(migrated);
+    if (coerced.issues.length > 0) {
+      console.warn(`State for ${id} was repaired on load: ${coerced.issues.join("; ")}`);
+    }
+    const config = coerced.value.config;
+    if (config && typeof config === "object") {
+      coerced.value.config = openRecord(config as Record<string, unknown>);
+    }
+    loaded = coerced.value as unknown as VelnorState;
   }
 
   const state = mergeState(loaded);
