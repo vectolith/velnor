@@ -87,7 +87,14 @@ Webhook, cron, health, and the signed Google OAuth callback paths are intentiona
    - `VELNOR_TENANT_TOKEN_SECRET`: must match Velnor's `VELNOR_TENANT_TOKEN_SECRET`.
    - `VELNOR_PROVISIONING_SECRET`: must match Velnor's `VELNOR_PROVISIONING_SECRET`.
 5. Configure the same three secrets in Velnor's deployment secret manager. Keep them out of source control and browser bundles.
-6. Deploy from the repository root with `npx wrangler deploy --config identity-gateway/wrangler.toml`, then bind the Worker to the Velnor API hostname using a Cloudflare route. Test login and tenant isolation before enabling broad Access policies.
+6. In the Cloudflare dashboard, set the non-secret Worker variables under Workers & Pages → `velnor-identity-gateway` → Settings → Variables and Secrets. Use the exact values for `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `VELNOR_ORIGIN`.
+7. From the repository root, upload each Worker secret:
+   ```sh
+   npx wrangler secret put VELNOR_SHARED_SECRET --config identity-gateway/wrangler.toml
+   npx wrangler secret put VELNOR_TENANT_TOKEN_SECRET --config identity-gateway/wrangler.toml
+   npx wrangler secret put VELNOR_PROVISIONING_SECRET --config identity-gateway/wrangler.toml
+   ```
+8. Deploy with `npx wrangler deploy --config identity-gateway/wrangler.toml`, then bind the Worker to the Velnor API hostname using a Cloudflare route. Test login and tenant isolation before enabling broad Access policies.
 
 The internal provisioning route accepts only tenant IDs in the deterministic `cf-<64 lowercase hex characters>` format. It is idempotent and refuses requests without `VELNOR_PROVISIONING_SECRET`. Do not expose that secret to clients.
 
