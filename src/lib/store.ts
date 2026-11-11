@@ -206,9 +206,8 @@ export function loadUserState(userId: string): VelnorState {
   let loaded: VelnorState | null = selected?.state || null;
   const loadedFromLegacy = Boolean(selected?.legacy);
 
-  // SQLite is the primary store in Node 22 deployments; the JSON file is its
-  // recovery mirror. Apply the same migrations, validation and credential
-  // hydration regardless of which persistence source supplied the state.
+  // SQLite and the JSON mirror can fail independently. Choose the newest
+  // durable copy, then apply identical migration, validation and decryption.
   if (loaded) {
     const migrated = migrateState(loaded).value;
     const coerced = coerceState(migrated);
@@ -224,7 +223,7 @@ export function loadUserState(userId: string): VelnorState {
 
   const state = mergeState(loaded);
   cache().set(id, state);
-  if (!loaded || loadedFromLegacy) saveStateForUser(id, state);
+  if (!loaded || loadedFromLegacy || useJson) saveStateForUser(id, state);
   return state;
 }
 
