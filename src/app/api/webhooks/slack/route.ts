@@ -77,6 +77,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, ignored: "bot_message" });
     }
 
+    const isDirectMessage = event.type === "message" && event.channel_type === "im";
+    const isAppMention = event.type === "app_mention";
+    if ((!isDirectMessage && !isAppMention) || event.subtype) {
+      return NextResponse.json({ ok: true, ignored: "unsupported_event" });
+    }
+
     // Slack redelivers when its 3s ack is missed; drop the repeat.
     const slackDedupeKey = String(event.client_msg_id || event.event_ts || event.ts || payload.event_id || "");
     if (slackDedupeKey && !inboundWebhookCache.seen(inboundKey(["slack", slackDedupeKey]))) {
