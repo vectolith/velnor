@@ -37,7 +37,7 @@ This repository currently verifies signed identity tokens; it does not yet inclu
 
 ## API migration
 
-Replace legacy `x-velnor-user` tenant selection with the bearer token. A shared `VELNOR_SHARED_SECRET` is still an outer deployment/API perimeter control in production; it is not a substitute for per-user identity.
+Replace legacy `x-velnor-user` tenant selection with the bearer token. A shared `VELNOR_SHARED_SECRET` is still an outer deployment/API perimeter control in production; it is not a substitute for per-user identity. Send it in `x-velnor-secret` because the `Authorization` header is reserved for the per-user bearer token.
 
 ## Operational requirements
 
