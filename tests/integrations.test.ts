@@ -4,12 +4,13 @@ import { getStore, saveStore, withVelnorUser } from "../src/lib/store";
 import { sendSendblueMessage } from "../src/lib/channels/sendblue";
 import { sendLoopMessage } from "../src/lib/channels/loopmessage";
 
-process.env.VELNOR_SECRET_KEY ||= "test-secret-key-for-integration-suite-32-bytes";
 import {
   createCalendarEvent,
   draftOrSendEmail,
   organizeEmail,
 } from "../src/lib/tools/workspaceService";
+
+process.env.VELNOR_SECRET_KEY ||= "test-secret-key-for-integration-suite-32-bytes";
 
 async function withFetchMock(
   handler: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
