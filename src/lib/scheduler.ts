@@ -76,7 +76,6 @@ async function dispatchTenantReminderNotification(
     if (
       rem.channel === "imessage" &&
       state.config.loopMessageAuthKey &&
-      state.config.loopMessageSecretKey &&
       rem.recipient
     ) {
       const loopResult = await sendLoopMessage({
