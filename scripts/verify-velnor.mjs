@@ -20,6 +20,7 @@ let BASE = process.env.VELNOR_VERIFY_BASE_URL || "http://localhost:3000";
 let SHARED_SECRET = process.env.VELNOR_SHARED_SECRET || "";
 let TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 let SLACK_SECRET = process.env.SLACK_SIGNING_SECRET || "";
+let TENANT_TOKEN_SECRET = process.env.VELNOR_TENANT_TOKEN_SECRET || "";
 
 
 
@@ -89,7 +90,27 @@ function slackSignature(timestamp, rawBody) {
   return `v0=${digest}`;
 }
 
+function identityToken(subject, extraClaims = {}) {
+  if (!TENANT_TOKEN_SECRET) throw new Error("VELNOR_TENANT_TOKEN_SECRET is not configured");
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
+  const now = Math.floor(Date.now() / 1000);
+  const header = encode({ alg: "HS256", typ: "JWT" });
+  const payload = encode({
+    iss: process.env.VELNOR_TENANT_TOKEN_ISSUER || "velnor-auth",
+    aud: process.env.VELNOR_TENANT_TOKEN_AUDIENCE || "velnor-api",
+    sub: subject,
+    iat: now,
+    nbf: now - 1,
+    exp: now + 300,
+    ...extraClaims,
+  });
+  const signature = crypto.createHmac("sha256", TENANT_TOKEN_SECRET)
+    .update(`${header}.${payload}`).digest("base64url");
+  return `Bearer ${header}.${payload}.${signature}`;
+}
+
 const auth = { "x-velnor-secret": SHARED_SECRET };
+const ownerAuth = () => ({ ...auth, authorization: identityToken("owner") });
 
 await check("GET /api/health returns 200 with security headers", async () => {
   const res = await fetch(`${BASE}/api/health`, { headers: auth });
@@ -111,16 +132,16 @@ await check("GET /api/chat without the shared secret is rejected", async () => {
   assert(res.status === 401 || res.status === 503, `expected auth failure, got ${res.status}`);
 });
 
-if (SHARED_SECRET || process.env.SENDBLUE_WEBHOOK_SECRET) await check("GET /api/chat with the shared secret returns state", async () => {
-  const res = await fetch(`${BASE}/api/chat`, { headers: auth });
+if (SHARED_SECRET && TENANT_TOKEN_SECRET) await check("GET /api/chat with both deployment and user credentials returns state", async () => {
+  const res = await fetch(`${BASE}/api/chat`, { headers: ownerAuth() });
   assert(res.status === 200, `status ${res.status}`);
   const body = await res.json();
   assert(Array.isArray(body.messages), "messages array missing");
 });
 
-if (SHARED_SECRET) await check("POST /api/chat records a turn for that user and it is readable back", async () => {
+if (SHARED_SECRET && TENANT_TOKEN_SECRET) await check("POST /api/chat records a turn for that user and it is readable back", async () => {
   const marker = `verify-${Date.now()}`;
-  const userHeaders = { ...auth };
+  const userHeaders = ownerAuth();
   const saved = await fetch(`${BASE}/api/chat`, {
     method: "POST",
     headers: { ...userHeaders, "content-type": "application/json" },
@@ -229,11 +250,21 @@ if (SHARED_SECRET || process.env.SENDBLUE_WEBHOOK_SECRET) await check("POST /api
   assert(res.status === 400, `expected 400 for malformed JSON, got ${res.status}`);
 });
 
-if (SHARED_SECRET) await check("GET /api/chat with an unknown tenant is refused", async () => {
+if (SHARED_SECRET && TENANT_TOKEN_SECRET) await check("GET /api/chat refuses an unknown signed tenant", async () => {
   const res = await fetch(`${BASE}/api/chat`, {
-    headers: { ...auth, "x-velnor-user": "no-such-tenant" },
+    headers: { ...auth, authorization: identityToken("no-such-tenant") },
   });
-  assert(res.status === 403, `expected 403 for an unknown tenant, got ${res.status}`);
+  assert(res.status === 403, `expected 403 for an unknown signed tenant, got ${res.status}`);
+});
+
+if (SHARED_SECRET && TENANT_TOKEN_SECRET) await check("POST /api/chat refuses identity supplied only in body or legacy tenant header", async () => {
+  const forged = identityToken("owner");
+  const res = await fetch(`${BASE}/api/chat`, {
+    method: "POST",
+    headers: { ...auth, "x-velnor-user": "owner", "content-type": "application/json" },
+    body: JSON.stringify({ userHandle: forged, text: "must not be accepted" }),
+  });
+  assert(res.status === 401, `expected 401 without Authorization bearer, got ${res.status}`);
 });
 
 if (process.env.SENDBLUE_WEBHOOK_SECRET) await check("POST /api/webhooks/imessage with malformed JSON is rejected", async () => {
@@ -248,15 +279,15 @@ if (process.env.SENDBLUE_WEBHOOK_SECRET) await check("POST /api/webhooks/imessag
   assert([400, 413, 415, 422, 503].includes(res.status), `expected a rejection for malformed JSON, got ${res.status}`);
 });
 
-if (SHARED_SECRET) await check("POST /api/settings stores a Slack channel override and refuses a malformed one", async () => {
-  const headers = { "content-type": "application/json", "x-velnor-secret": SHARED_SECRET };
+if (SHARED_SECRET && TENANT_TOKEN_SECRET) await check("POST /api/settings stores a Slack channel override and refuses a malformed one", async () => {
+  const headers = { ...ownerAuth(), "content-type": "application/json" };
   const bad = await fetch(`${BASE}/api/settings`, { method: "POST", headers, body: JSON.stringify({ slackChannel: "not a channel" }) });
   assert(bad.status === 400, `expected 400 for a malformed channel, got ${bad.status}`);
 
   const good = await fetch(`${BASE}/api/settings`, { method: "POST", headers, body: JSON.stringify({ slackChannel: "#velnor-agent" }) });
   assert(good.status === 200, `expected 200 for a valid channel, got ${good.status}`);
 
-  const read = await fetch(`${BASE}/api/settings`, { headers: { "x-velnor-secret": SHARED_SECRET } });
+  const read = await fetch(`${BASE}/api/settings`, { headers: ownerAuth() });
   const payload = await read.json();
   assert(payload.slackChannel === "#velnor-agent", `settings reported ${payload.slackChannel}`);
 });
