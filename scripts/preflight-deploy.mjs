@@ -22,7 +22,9 @@ const RECOMMENDED = [
   ["TWILIO_AUTH_TOKEN", "without it the Twilio webhook returns 503"],
   ["SLACK_SIGNING_SECRET", "without it the Slack webhook returns 503"],
   ["SLACK_BOT_TOKEN", "the bot cannot post into the channel without it"],
-  ["SENDBLUE_WEBHOOK_SECRET", "required for the JSON webhook path in production"],
+  ["SENDBLUE_WEBHOOK_SECRET", "required for Sendblue JSON webhooks in production"],
+  ["LOOPMESSAGE_WEBHOOK_SECRET", "must match the Authorization header configured on the LoopMessage webhook"],
+  ["LOOPMESSAGE_AUTH_KEY", "required for outbound LoopMessage messages"],
 ];
 
 const problems = [];
