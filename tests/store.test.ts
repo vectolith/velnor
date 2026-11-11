@@ -15,6 +15,8 @@ test.before(async () => {
   store = await import("../src/lib/store");
 });
 
+process.env.VELNOR_SECRET_KEY ||= "test-secret-key-for-store-suite-32-bytes";
+
 test("tenants do not see each other's data", async () => {
   await store.withVelnorUser("imessage:+15550001", async () => {
     const s = store.getStore();
