@@ -8,6 +8,9 @@ test("reminder dispatch traverses tenant partitions without mixing their state",
   await withVelnorUser("scheduler-tenant-a", () => {
     createReminder({ text: "tenant A reminder", dueAt: new Date(Date.now() - 1000).toISOString(), channel: "imessage", recipient: "" });
   });
+  await withVelnorUser("scheduler-tenant-a", () => {
+    createReminder({ text: "future tenant A reminder", dueAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), channel: "imessage", recipient: "" });
+  });
   await withVelnorUser("scheduler-tenant-b", () => {
     createReminder({ text: "tenant B reminder", dueAt: "now", channel: "imessage", recipient: "" });
   });
@@ -22,4 +25,6 @@ test("reminder dispatch traverses tenant partitions without mixing their state",
   assert.equal(b.find((item) => item.text === "tenant B reminder")?.completed, true);
   assert.equal(a.some((item) => item.text === "tenant B reminder"), false);
   assert.equal(b.some((item) => item.text === "tenant A reminder"), false);
+  assert.equal(a.find((item) => item.text === "future tenant A reminder")?.completed, false);
+  assert.equal(dispatched.some((item) => item.reminder.text === "future tenant A reminder"), false);
 });
