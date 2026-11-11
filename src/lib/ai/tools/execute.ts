@@ -34,7 +34,8 @@ export async function executeToolCall(
   name: string,
   args: Record<string, any>,
   channel: ChannelType,
-  bundle: ToolExecutionBundle
+  bundle: ToolExecutionBundle,
+  userHandle?: string
 ): Promise<Record<string, any>> {
   const policy = enforceToolPolicy(name, args);
   if (!policy.allowed) {
@@ -172,6 +173,7 @@ export async function executeToolCall(
         text: String(args.text || ""),
         dueAt: String(args.dueAt || "Later today"),
         channel,
+        recipient: userHandle,
       });
       bundle.toolActions.push({
         tool: "create_reminder",
