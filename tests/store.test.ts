@@ -6,9 +6,11 @@ import test from "node:test";
 
 type StoreModule = typeof import("../src/lib/store");
 let store: StoreModule;
+let testRoot = "";
 
 test.before(async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-store-"));
+  testRoot = tmp;
   process.chdir(tmp);
   store = await import("../src/lib/store");
 });
@@ -57,6 +59,25 @@ test("sealed provider credentials hydrate correctly from SQLite", async (t) => {
     if (previousKey === undefined) delete process.env.VELNOR_SECRET_KEY;
     else process.env.VELNOR_SECRET_KEY = previousKey;
   }
+});
+
+test("SQLite tenant records remain discoverable without a JSON mirror", async (t) => {
+  const { getDatabaseEngineStatus } = await import("../src/lib/sqliteDb");
+  if (!getDatabaseEngineStatus().engine.startsWith("node:sqlite")) {
+    t.skip("Node built-in SQLite is unavailable in this runtime");
+    return;
+  }
+  const rawId = "sqlite-only-tenant";
+  const id = store.sanitizeUserId(rawId);
+  await store.withVelnorUser(rawId, async () => {
+    store.getStore().memories.push({ id: "sqlite-only", category: "work", fact: "persisted in SQLite", createdAt: new Date().toISOString() });
+    store.saveStore(store.getStore());
+  });
+  fs.unlinkSync(path.join(testRoot, ".data", "users", id + ".json"));
+  store.resetStoreCache();
+  assert.ok(store.listUserIds().includes(id));
+  const restored = await store.withVelnorUser(rawId, async () => store.getStore());
+  assert.equal(restored.memories[0].fact, "persisted in SQLite");
 });
 
 test("user ids are sanitised for filesystem use", () => {
