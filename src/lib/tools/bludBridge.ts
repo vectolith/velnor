@@ -86,10 +86,18 @@ export async function delegateBrowserTaskToBlud(
 
     if (res.ok) {
       const data = await res.json();
+      if (!data || data.status !== "success") {
+        return {
+          status: data?.status === "offline" ? "offline" : "failure",
+          summary: data?.message || data?.summary || "Blud did not confirm successful browser execution.",
+          error: data?.error || "Coordinator response did not contain status=success.",
+          verifiedAtUtc,
+        };
+      }
       return {
-        status: data.status === "failure" ? "failure" : "success",
-        summary: data.message || data.summary || "Browser task executed by Blud Kernel coordinator.",
-        currentUrl: data.currentUrl || startUrl,
+        status: "success",
+        summary: data.message || data.summary || "Browser task completed and confirmed by Blud.",
+        currentUrl: typeof data.currentUrl === "string" ? data.currentUrl : startUrl,
         extractedData: data.data || data.extractedData,
         images: Array.isArray(data.images) ? data.images : [],
         verifiedAtUtc,
