@@ -2,6 +2,7 @@ name = "velnor-identity-gateway"
 main = "src/index.ts"
 compatibility_date = "2026-11-11"
 workers_dev = false
+preview_urls = false
 
 # Bind this Worker to the Velnor API hostname in Cloudflare after deployment.
 # Keep the Velnor origin private or restrict it so clients cannot bypass this gateway.
