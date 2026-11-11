@@ -193,7 +193,6 @@ export async function POST(req: NextRequest) {
         ) {
           deliveryResults.push(await sendLoopMessage({
             authKey: scoped.config.loopMessageAuthKey,
-            secretKey: scoped.config.loopMessageSecretKey,
             recipient: payload.recipient,
             text: outboundText,
           }));
