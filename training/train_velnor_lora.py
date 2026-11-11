@@ -654,7 +654,9 @@ def main():
     adapter_dir = OUT / "adapter"
 
     history = []
-    best_val_loss = pre_val_loss
+    # Always persist at least one real epoch checkpoint. If every epoch is
+    # worse than the base, the report still records that regression honestly.
+    best_val_loss = float("inf")
     best_epoch = 0
     opt_step = 0
 
