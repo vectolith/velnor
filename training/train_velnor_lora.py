@@ -52,8 +52,11 @@ MODEL_ID = os.environ.get(
 if not MODEL_ID.strip():
     raise ValueError("VELNOR_BASE_MODEL must be a non-empty model ID or local snapshot path")
 
-_is_1b = "1.5b" in str(MODEL_ID).lower() or "qwen" in str(MODEL_ID).lower()
-_load_dtype = torch.bfloat16 if _is_1b else torch.float32
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if DEVICE.type == "cuda":
+    _load_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+else:
+    _load_dtype = torch.float32
 _LOAD_KW = {"dtype": _load_dtype} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": _load_dtype}
 OUT = ROOT / "outputs" / "velnor-coder-v2"
 
@@ -522,12 +525,19 @@ def make_minibatches(examples, batch_size: int, pad_id: int):
     return batches
 
 
+def move_batch(batch, device=None):
+    target = device or next(model_parameter.device for model_parameter in model.parameters())
+    return {key: value.to(target, non_blocking=(target.type == "cuda")) for key, value in batch.items()}
+
+
 def eval_loss(model, batches):
     model.eval()
+    device = next(model.parameters()).device
     total = 0.0
     with torch.no_grad():
-        for b in batches:
-            total += float(model(**b).loss.item())
+        for batch in batches:
+            batch = move_batch(batch, device)
+            total += float(model(**batch).loss.item())
     return total / max(1, len(batches))
 
 
@@ -540,6 +550,7 @@ def generate_reply(model, tokenizer, prompt: str, max_new_tokens: int = 64) -> s
         msgs, tokenize=True, add_generation_prompt=True, return_tensors="pt"
     )
     input_ids = enc if isinstance(enc, torch.Tensor) else enc["input_ids"]
+    input_ids = input_ids.to(next(model.parameters()).device)
     with torch.no_grad():
         out = model.generate(
             input_ids=input_ids,
@@ -563,6 +574,7 @@ def main():
         tok.pad_token = tok.eos_token
 
     base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
+    base.to(DEVICE)
     lora_cfg = LoraConfig(
         r=8,
         lora_alpha=16,
@@ -651,6 +663,7 @@ def main():
         opt.zero_grad()
 
         for idx, b in enumerate(train_batches, 1):
+            b = move_batch(b, DEVICE)
             loss = model(**b).loss
             ep_loss += float(loss.item())
             (loss / grad_accum).backward()
@@ -781,8 +794,8 @@ def main():
             "trained_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "host": f"{platform.system()} {platform.machine()}",
             "cpu_count": os.cpu_count(),
-            "device": "cpu",
-            "dtype": "bfloat16" if _is_1b else "float32",
+            "device": str(DEVICE),
+            "dtype": str(_load_dtype).replace("torch.", ""),
             "torch": torch.__version__,
             "transformers": transformers.__version__,
             "peft": peft.__version__,
