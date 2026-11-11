@@ -24,7 +24,11 @@ export async function sendLoopMessage(params: {
     if (!response.ok) {
       return { provider: "loopmessage", ok: false, status: response.status, detail: await readFailure(response) };
     }
-    return { provider: "loopmessage", ok: true, status: response.status };
+    const payload = await response.json().catch(() => ({})) as { success?: boolean; message?: string; message_id?: string };
+    if (payload.success === false) {
+      return { provider: "loopmessage", ok: false, status: response.status, detail: payload.message || "LoopMessage rejected the message." };
+    }
+    return { provider: "loopmessage", ok: true, status: response.status, detail: "Accepted by LoopMessage queue; delivery is pending" + (payload.message_id ? " (" + payload.message_id + ")" : "") + "." };
   } catch (err) {
     return { provider: "loopmessage", ok: false, detail: (err as Error).message };
   }
