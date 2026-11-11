@@ -22,6 +22,7 @@ function buildSettings() {
     hasOpenaiKey: Boolean(keys.openaiApiKey),
     hasAnthropicKey: Boolean(keys.anthropicApiKey),
     twilioFromNumber: state.config.twilioFromNumber || "",
+    sendblueFromNumber: state.config.sendblueFromNumber || "",
     hasTwilio: Boolean(state.config.twilioAccountSid),
     hasSendblue: Boolean(state.config.sendblueApiKey),
     hasLoopMessage: Boolean(state.config.loopMessageAuthKey),
@@ -64,6 +65,7 @@ function updateSettings(body: any) {
   if (typeof body.twilioFromNumber === "string") state.config.twilioFromNumber = body.twilioFromNumber.trim();
   if (typeof body.sendblueApiKey === "string") state.config.sendblueApiKey = body.sendblueApiKey.trim();
   if (typeof body.sendblueApiSecret === "string") state.config.sendblueApiSecret = body.sendblueApiSecret.trim();
+  if (typeof body.sendblueFromNumber === "string") state.config.sendblueFromNumber = body.sendblueFromNumber.trim();
   if (typeof body.loopMessageAuthKey === "string") state.config.loopMessageAuthKey = body.loopMessageAuthKey.trim();
   if (typeof body.loopMessageSecretKey === "string") state.config.loopMessageSecretKey = body.loopMessageSecretKey.trim();
   if (typeof body.slackBotToken === "string") state.config.slackBotToken = body.slackBotToken.trim();
