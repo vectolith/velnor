@@ -61,8 +61,9 @@ For a CUDA runtime (for example, a Colab GPU session), install
 `requirements-gpu.txt`, not the CPU-pinned `requirements.txt`. The GPU
 requirements intentionally omit PyTorch so the runtime's CUDA-enabled build is
 not replaced by a CPU-only wheel. Open `Velnor_Qwen_1.5B_Colab.ipynb` and run
-the cells in order. The notebook refuses to train if CUDA is unavailable and
-stores the adapter archive, report, log, and SHA-256 manifest in Google Drive.
+the cells in order. The notebook refuses to train if CUDA is unavailable,
+persists epoch checkpoints directly to Google Drive, and saves the final adapter
+archive, report, log, and SHA-256 manifest there as well.
 Do not start a paid instance without checking its total cost first.
 
 A lower validation loss is useful but does not prove better task performance.
