@@ -181,6 +181,10 @@ async function provisionTenant(tenantId: string, env: Env): Promise<void> {
     signal: AbortSignal.timeout(8000),
   });
   if (!response.ok) throw new Error("Velnor tenant provisioning failed with status " + response.status);
+  if (provisionedTenants.size >= 1000) {
+    const oldestTenant = provisionedTenants.keys().next().value;
+    if (oldestTenant) provisionedTenants.delete(oldestTenant);
+  }
   provisionedTenants.set(tenantId, Date.now() + 5 * 60 * 1000);
 }
 
@@ -218,6 +222,16 @@ export default {
       upstreamOrigin = new URL(env.VELNOR_ORIGIN);
       if (upstreamOrigin.protocol !== "https:" && upstreamOrigin.hostname !== "localhost") {
         return jsonError("Velnor origin must use HTTPS.", 503);
+      }
+      if (
+        upstreamOrigin.username ||
+        upstreamOrigin.password ||
+        upstreamOrigin.pathname !== "/" ||
+        upstreamOrigin.search ||
+        upstreamOrigin.hash ||
+        upstreamOrigin.host === incoming.host
+      ) {
+        return jsonError("Velnor origin must be a separate origin that does not route back through this Worker.", 503);
       }
     } catch {
       return jsonError("Velnor origin is invalid.", 503);
