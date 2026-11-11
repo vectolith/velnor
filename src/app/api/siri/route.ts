@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
-import { resolveUserId, withVelnorUser } from "@/lib/store";
+import { withVelnorUser } from "@/lib/store";
+import { authorizeChatTenant } from "@/lib/security/tenant";
 import { generateSpeechWithProvider } from "@/lib/tools/multimodal";
 
 /**
@@ -33,6 +34,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const tenant = authorizeChatTenant(req.headers.get("authorization"));
+    if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401 });
     const body = await req.json();
     const query = String(body.query || body.text || body.prompt || "").trim();
     if (!query) {
@@ -43,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     const handle = body.device ? "Siri (" + body.device + ")" : "Siri Shortcut";
-    const reply = await withVelnorUser(resolveUserId("imessage", handle), () =>
+    const reply = await withVelnorUser(tenant.userId, () =>
       processUserMessage({
         channel: "imessage",
         userHandle: handle,
