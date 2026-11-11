@@ -51,6 +51,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
       }
 
+      if (!jsonPayload || typeof jsonPayload !== "object" || Array.isArray(jsonPayload)) {
+        return NextResponse.json({ error: "Webhook JSON must be an object." }, { status: 400 });
+      }
+
       // Each provider must prove possession of its own webhook secret. A
       // LoopMessage secret must never authenticate a Sendblue callback (or vice versa).
       const isLoopMessage = Boolean(jsonPayload.contact) || jsonPayload.event === "message_inbound";
