@@ -137,7 +137,7 @@ if [[ "$host" != "localhost" && -n "$host" ]]; then
   for _ in $(seq 1 24); do
     if curl -fsS --max-time 5 "https://$host/api/health" >/dev/null 2>&1; then
       printf '\n\033[32mVelnor is live: https://%s\033[0m\n' "$host"
-      exit 0
+      break
     fi
     sleep 5
   done
