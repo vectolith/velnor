@@ -24,9 +24,13 @@ async function dispatchTenantReminderNotification(
   reminderId?: string
 ): Promise<DispatchedReminderResult[]> {
   const state = getStore();
-  const pending = state.reminders.filter((r) =>
-    reminderId ? r.id === reminderId : !r.completed
-  );
+  const now = Date.now();
+  const pending = state.reminders.filter((reminder) => {
+    if (reminder.completed) return false;
+    if (reminderId) return reminder.id === reminderId;
+    const dueAt = Date.parse(reminder.dueAt);
+    return Number.isFinite(dueAt) && dueAt <= now;
+  });
 
   const results: DispatchedReminderResult[] = [];
 
