@@ -1,4 +1,4 @@
-import { getStore, saveStore, resolveSlackChannel } from "./store";
+import { getStore, saveStore, resolveSlackChannel, listUserIds, withVelnorUser } from "./store";
 import { sendSendblueMessage } from "./channels/sendblue";
 import { sendLoopMessage } from "./channels/loopmessage";
 import { postSlackMessage } from "./channels/slack";
@@ -9,7 +9,18 @@ export interface DispatchedReminderResult {
   deliveredVia: string[];
 }
 
-export async function dispatchReminderNotification(
+export async function dispatchReminderNotification(reminderId?: string): Promise<DispatchedReminderResult[]> {
+  const userIds = new Set(listUserIds());
+  userIds.add("default");
+  const results: DispatchedReminderResult[] = [];
+  for (const userId of userIds) {
+    const tenantResults = await withVelnorUser(userId, () => dispatchTenantReminderNotification(reminderId));
+    results.push(...tenantResults);
+  }
+  return results;
+}
+
+async function dispatchTenantReminderNotification(
   reminderId?: string
 ): Promise<DispatchedReminderResult[]> {
   const state = getStore();
