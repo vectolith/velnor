@@ -1,8 +1,8 @@
 """
 Velnor Core v1 — Multi-Domain LoRA Fine-Tuning & Verification Pipeline
 =====================================================================
-Trains a Rank-Stabilized LoRA (rsLoRA) adapter on `HuggingFaceTB/SmolLM2-135M-Instruct`
-(r=8, alpha=16, dropout=0.05, q/k/v/o projections) across a 12-domain, 138-example
+Trains a Rank-Stabilized LoRA (rsLoRA) adapter on `Qwen/Qwen2.5-Coder-1.5B-Instruct`
+(r=8, alpha=16, dropout=0.05, q/v projections) across a 12-domain, 138-example
 executive intelligence curriculum with 20 held-out validation examples across all
 domains. Override the base model with VELNOR_BASE_MODEL.
 
@@ -41,17 +41,16 @@ torch.manual_seed(SEED)
 torch.set_num_threads(os.cpu_count() or 4)
 
 ROOT = Path(__file__).resolve().parent
-LOCAL_1B_2B = ROOT / "models" / "qwen2.5-coder-1.5b"
-LOCAL_LEGACY = ROOT / "models" / "smollm2-135m"
-# Base model: uses local model or environment override
-MODEL_ID = os.environ.get("VELNOR_BASE_MODEL")
-if not MODEL_ID:
-    if LOCAL_1B_2B.exists() and (LOCAL_1B_2B / "model.safetensors").exists():
-        MODEL_ID = str(LOCAL_1B_2B)
-    elif LOCAL_LEGACY.exists():
-        MODEL_ID = str(LOCAL_LEGACY)
-    else:
-        MODEL_ID = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+LOCAL_QWEN = ROOT / "models" / "qwen2.5-coder-1.5b"
+# One canonical base model. A local snapshot is accepted only when it has a
+# Hugging Face config; otherwise Transformers resolves the pinned repo ID.
+MODEL_REPO_ID = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+MODEL_ID = os.environ.get(
+    "VELNOR_BASE_MODEL",
+    str(LOCAL_QWEN) if (LOCAL_QWEN / "config.json").is_file() else MODEL_REPO_ID,
+)
+if not MODEL_ID.strip():
+    raise ValueError("VELNOR_BASE_MODEL must be a non-empty model ID or local snapshot path")
 
 _is_1b = "1.5b" in str(MODEL_ID).lower() or "qwen" in str(MODEL_ID).lower()
 _load_dtype = torch.bfloat16 if _is_1b else torch.float32
@@ -591,7 +590,7 @@ def main():
             flush=True,
         )
 
-    fast_mode = os.environ.get("VELNOR_FAST_TRAIN", "1") == "1"
+    fast_mode = os.environ.get("VELNOR_FAST_TRAIN", "0").strip() == "1"
     if fast_mode and len(TRAIN) > 36:
         step = max(1, len(TRAIN) // 36)
         train_pool = TRAIN[::step][:36]
@@ -802,9 +801,13 @@ def main():
         "base_generations": base_generations,
         "trainable_params": trainable,
         "total_params": total_p,
-        "train_examples": len(TRAIN),
-        "val_examples": len(HELDOUT),
-        "domains_covered": summary["domains_covered"],
+        # These are the exact examples used in this run, not the full source pool.
+        "train_examples": len(train_pool),
+        "val_examples": len(val_pool),
+        "full_train_examples": len(TRAIN),
+        "full_val_examples": len(HELDOUT),
+        "fast_mode": fast_mode,
+        "curriculum_domains_available": summary["domains_covered"],
         "curriculum": summary,
         "epochs": epochs,
         "best_checkpoint_epoch": best_epoch,
