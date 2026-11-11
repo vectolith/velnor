@@ -91,8 +91,8 @@ export async function draftOrSendEmail(params: {
     ].join("\r\n");
     const raw = Buffer.from(mimeMessage)
       .toString("base64")
-      .replace(/\\+/g, "-")
-      .replace(/\\//g, "_")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
       .replace(/=+$/, "");
 
     const sendResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
