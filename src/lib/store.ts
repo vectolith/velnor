@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import fs from "fs";
 import path from "path";
 import { DEFAULT_MODELS } from "./ai/registry";
-import { loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
+import { listStateKeysFromSqlite, loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
 import { coerceState, migrateState, STATE_SCHEMA_VERSION } from "./security/stateSchema";
 import { isCredentialField, isSealed, openRecord, sealRecord, secretsEnabled } from "./security/secretBox";
 import {
@@ -268,7 +268,7 @@ export function getEffectiveKeys(state: VelnorState) {
 
 /** Every tenant that has state on disk or in cache. */
 export function listUserIds(): string[] {
-  const ids = new Set<string>(cache().keys());
+  const ids = new Set<string>([...cache().keys(), ...listStateKeysFromSqlite()]);
   try {
     if (fs.existsSync(USERS_DIR)) {
       for (const file of fs.readdirSync(USERS_DIR)) {
