@@ -248,8 +248,9 @@ export async function createCalendarEvent(params: {
     })();
 
   if (!state.config.googleAccessToken) throw new Error("Google Calendar requires a verified OAuth connection.");
-  if (state.config.googleAccessToken) {
-    const calendarResponse = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+  let remoteEventId: string | undefined;
+  {
+    const calendarResponse = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${state.config.googleAccessToken}`,
@@ -269,10 +270,12 @@ export async function createCalendarEvent(params: {
       const detail = await calendarResponse.text().catch(() => "");
       throw new Error(`Google Calendar rejected the event (${calendarResponse.status}): ${detail.slice(0, 200)}`);
     }
+    const remoteEvent = await calendarResponse.json().catch(() => ({}));
+    remoteEventId = typeof remoteEvent.id === "string" ? remoteEvent.id : undefined;
   }
 
   const newEvent: CalendarEventItem = {
-    id: `evt-${Date.now()}`,
+    id: remoteEventId || `evt-${Date.now()}`,
     title: params.title,
     date: params.date || new Date().toISOString().split("T")[0],
     startTime: params.startTime || "10:00",
@@ -280,7 +283,7 @@ export async function createCalendarEvent(params: {
     attendees: params.attendees || [],
     location: params.location || "Google Meet",
     description: params.description || "",
-    source: state.config.googleAccessToken ? "google_calendar" : "local",
+    source: "google_calendar",
   };
 
   state.calendarEvents.push(newEvent);
