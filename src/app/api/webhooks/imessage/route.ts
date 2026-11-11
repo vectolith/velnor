@@ -162,10 +162,22 @@ export async function POST(req: NextRequest) {
     // 2. SENDBLUE / LOOPMESSAGE iMESSAGE JSON WEBHOOK
     // =========================================================================
     const payload: any = jsonPayload;
+    const provider = payload.contact ? "loopmessage" : "sendblue";
+    if (provider === "loopmessage" && payload.event && payload.event !== "message_inbound") {
+      return NextResponse.json({ status: "ignored", event: payload.event });
+    }
+    if (provider === "sendblue") {
+      const eventType = String(payload.event_type || "").toLowerCase();
+      if (
+        payload.is_outbound === true ||
+        (payload.message_type && payload.message_type !== "message") ||
+        (eventType && !eventType.includes("message") && !eventType.includes("receive"))
+      ) {
+        return NextResponse.json({ status: "ignored", event: eventType || "outbound_or_non_message" });
+      }
+    }
     const senderHandle = String(payload.contact || payload.number || payload.from_number || "").slice(0, 64);
     if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
-    if (payload.is_outbound === true || (payload.event && payload.event !== "message_inbound")) return NextResponse.json({ status: "ignored", event: payload.event || "outbound" });
-    const provider = payload.contact ? "loopmessage" : "sendblue";
     const providerAccount = String(payload.organization_id || payload.sendblue_number || payload.to_number || "default");
     const webhookId = String(payload.message_handle || payload.webhook_id || payload.message_id || "");
     if (webhookId && !inboundWebhookCache.seen(inboundKey([provider, webhookId]))) return NextResponse.json({ status: "duplicate" });
