@@ -1,5 +1,6 @@
+import crypto from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
-import { resolveAndAssert } from "@/lib/security/outboundUrl";
+import { safeFetchText } from "@/lib/security/outboundUrl";
 import { getEffectiveKeys, getStore, saveStore } from "../store";
 import { DocumentChunk, IndexedDocument } from "../types";
 import { extractTextFromPdfBuffer } from "./pdfParser";
@@ -61,36 +62,51 @@ export async function ingestDocumentOrUrl(params: {
   const { geminiApiKey } = getEffectiveKeys(state);
 
   let rawText = params.content || "";
-  if (params.base64Data && (params.mimeType === "application/pdf" || params.name.toLowerCase().endsWith(".pdf"))) {
-    const cleanB64 = params.base64Data.includes(",")
-      ? params.base64Data.split(",")[1]
-      : params.base64Data;
+  if (rawText.length > 2_000_000) throw new Error("Document text exceeds the 2 MB indexing limit.");
+
+  if (params.base64Data) {
+    const cleanB64 = params.base64Data.includes(",") ? params.base64Data.split(",")[1] : params.base64Data;
     const pdfBuf = Buffer.from(cleanB64, "base64");
-    rawText = extractTextFromPdfBuffer(pdfBuf);
-  }
-  if (params.url && !rawText) {
-    try {
-      // SSRF guard: a texted-in URL must not reach loopback or cloud metadata.
-      const guardedUrl = await resolveAndAssert(String(params.url));
-      const response = await fetch(guardedUrl.toString(), {
-        redirect: "manual",
-        headers: { "User-Agent": "VelnorBot/1.0 (+https://pluco.dev)" },
-        signal: AbortSignal.timeout(6000),
-      });
-      const html = await response.text();
-      rawText = html
-        .replace(/<script[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style[\s\S]*?<\/style>/gi, " ")
-        .replace(/<\/?[^>]+(>|$)/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-        .slice(0, 20000);
-    } catch (err) {
-      rawText = `URL source (${params.url}) registered. Could not fetch full body directly (${String(err)}).`;
+    if (pdfBuf.length === 0 || pdfBuf.length > 15 * 1024 * 1024) {
+      throw new Error("Uploaded document is empty or exceeds the 15 MB limit.");
+    }
+    if (params.mimeType === "application/pdf" || params.name.toLowerCase().endsWith(".pdf")) {
+      rawText = extractTextFromPdfBuffer(pdfBuf);
+    } else if (/^(text\/|application\/(json|xml))/.test(params.mimeType || "")) {
+      rawText = pdfBuf.toString("utf8");
+    } else {
+      throw new Error("Unsupported document type. Upload a PDF or text-based document.");
     }
   }
 
-  const cleanText = rawText.trim() || `Document "${params.name}" uploaded.`;
+  if (params.url && !rawText) {
+    const fetched = await safeFetchText(String(params.url), {
+      timeoutMs: 8000,
+      maxBytes: 2_000_000,
+      maxRedirects: 3,
+      accept: (contentType) => /text\/|application\/(json|xml)|html/i.test(contentType),
+    });
+    rawText = fetched.text
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<\/?[^>]+(>|$)/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  const cleanText = rawText.trim();
+  if (!cleanText) throw new Error("No readable text was found; the document was not indexed.");
+  const docId = "doc-" + crypto.randomUUID();
+  const wordCount = cleanText.split(/\s+/).length;
+
+  // Build quick extractive summary
+  const sentences = cleanText
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 25);
+  const summary =
+    sentences.slice(0, 3).join(" ").slice(0, 420) ||
+    cleanText.slice(0, 320);
   const chunks = chunkText(cleanText);
   const docId = `doc-${Date.now()}`;
   const wordCount = cleanText.split(/\s+/).length;
