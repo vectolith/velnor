@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
 import { getStore, saveStore } from "../store";
+import { getGoogleAccessToken } from "@/lib/auth/googleToken";
 import { assertRecipientAllowed, parseAllowlist } from "@/lib/security/recipients";
 import { CalendarEventItem, ChannelType, EmailItem, ReminderItem } from "../types";
 
 export async function listEmails(query?: string, maxResults = 6): Promise<EmailItem[]> {
   const state = getStore();
-  const token = state.config.googleAccessToken;
+  const token = await getGoogleAccessToken();
   if (!token) throw new Error("Gmail inbox access requires a verified Google OAuth connection.");
   const limit = Math.min(Math.max(Math.floor(maxResults), 1), 50);
   const q = query ? "&q=" + encodeURIComponent(query) : "";
@@ -51,7 +52,7 @@ export async function draftOrSendEmail(params: {
   sendImmediately?: boolean;
 }): Promise<EmailItem> {
   const state = getStore();
-  if (!state.config.googleAccessToken) throw new Error("Gmail draft/send requires a verified Google OAuth connection.");
+  const token = await getGoogleAccessToken();
 
   if (params.sendImmediately) {
     assertRecipientAllowed(params.to, parseAllowlist(process.env.VELNOR_EMAIL_ALLOWLIST));
@@ -71,7 +72,7 @@ export async function draftOrSendEmail(params: {
     const sendResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${state.config.googleAccessToken}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ raw }),
@@ -248,7 +249,7 @@ export async function createCalendarEvent(params: {
       return `${nextH}:${String(m || 0).padStart(2, "0")}`;
     })();
 
-  if (!state.config.googleAccessToken) throw new Error("Google Calendar requires a verified OAuth connection.");
+  const token = await getGoogleAccessToken();
   let remoteEventId: string | undefined;
   {
     const calendarResponse = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all", {
