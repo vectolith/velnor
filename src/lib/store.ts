@@ -198,14 +198,19 @@ function saveStateForUser(userId: string, state: VelnorState): void {
   if (persisted.config && typeof persisted.config === "object") {
     persisted.config = sealRecord(persisted.config as unknown as Record<string, unknown>) as unknown as typeof persisted.config;
   }
-  cache().set(id, state);
-  saveStateToSqlite(persisted, sqliteKey(id));
+  const sqliteSaved = saveStateToSqlite(persisted, sqliteKey(id));
+  let jsonSaved = false;
   try {
     if (!fs.existsSync(USERS_DIR)) fs.mkdirSync(USERS_DIR, { recursive: true });
     fs.writeFileSync(stateFile(id), JSON.stringify(persisted, null, 2), "utf-8");
+    jsonSaved = true;
   } catch (err) {
-    console.warn("Non-fatal: could not persist store for " + id + ":", err);
+    console.warn("Could not persist JSON recovery mirror for " + id + ":", err);
   }
+  if (!sqliteSaved && !jsonSaved) {
+    throw new Error("Velnor could not durably persist tenant state; refusing to report success.");
+  }
+  cache().set(id, state);
 }
 
 /** Run fn with the store bound to this user. */
