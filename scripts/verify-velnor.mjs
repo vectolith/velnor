@@ -301,6 +301,7 @@ await check("GET /api/vcard returns a contact card", async () => {
 
 await check("every state-touching API route refuses an unauthenticated caller", async () => {
   const protectedPaths = [
+    ["GET", "/api/auth/google"],
     ["GET", "/api/chat"],
     ["POST", "/api/chat"],
     ["POST", "/api/settings"],
