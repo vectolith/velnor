@@ -6,7 +6,7 @@ import { dispatchReminderNotification } from "../src/lib/scheduler";
 
 test("reminder dispatch traverses tenant partitions without mixing their state", async () => {
   await withVelnorUser("scheduler-tenant-a", () => {
-    createReminder({ text: "tenant A reminder", dueAt: "now", channel: "imessage", recipient: "" });
+    createReminder({ text: "tenant A reminder", dueAt: new Date(Date.now() - 1000).toISOString(), channel: "imessage", recipient: "" });
   });
   await withVelnorUser("scheduler-tenant-b", () => {
     createReminder({ text: "tenant B reminder", dueAt: "now", channel: "imessage", recipient: "" });
