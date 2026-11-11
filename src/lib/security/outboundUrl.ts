@@ -102,7 +102,7 @@ async function resolveAddressesAndAssert(
   });
   let addresses: string[];
   try {
-    addresses = await resolver(url.hostname);
+    addresses = await resolver(url.hostname.replace(/^\[|\]$/g, ""));
   } catch (err) {
     throw new OutboundUrlError("DNS lookup failed for " + url.hostname + ": " + (err as Error).message);
   }
