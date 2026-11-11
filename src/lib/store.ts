@@ -105,7 +105,7 @@ export function sanitizeUserId(raw: string): string {
 }
 
 export function resolveUserId(channel: ChannelType | string, handle?: string): string {
-  return sanitizeUserId(String(channel) + ":" + (handle || "anonymous"));
+  return String(channel) + ":" + (handle || "anonymous");
 }
 
 function stateFile(userId: string): string {
