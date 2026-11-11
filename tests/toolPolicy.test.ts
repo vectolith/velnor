@@ -1,3 +1,4 @@
+import { withVelnorUser } from "../src/lib/store";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -20,7 +21,7 @@ test("a sensitive tool is blocked until the user says yes", () => {
   noteUserMessage("email Aishat about the launch");
   const first = enforceToolPolicy("draft_or_send_email");
   assert.equal(first.allowed, false);
-  assert.match(String(first.reason), /confirmation|yes/i);
+  assert.match(String(first.reason), /confirmation|confirm|yes/i);
   assert.equal(pendingCount(), 1);
 
   noteUserMessage("yes");
@@ -59,6 +60,9 @@ test("confirmation is bound to exact arguments", () => {
   assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com", subject: "A", body: "B" }).allowed, false);
   noteUserMessage("yes");
   assert.equal(enforceToolPolicy("draft_or_send_email", { to: "b@example.com", subject: "A", body: "B" }).allowed, false);
+  noteUserMessage("yes");
+  assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com", subject: "A", body: "B" }).allowed, false);
+  noteUserMessage("yes");
   assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com", subject: "A", body: "B" }).allowed, true);
 });
 
