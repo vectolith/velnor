@@ -18,14 +18,19 @@ interface PendingAction {
 }
 
 const pending = new Map<string, PendingAction>();
-const lastUserMessages = new Map<string, string>();
+const lastUserAffirmations = new Map<string, boolean>();
 
 function scopedKey(toolName: string): string {
   return currentUserId() + ":" + toolName;
 }
 
 export function noteUserMessage(text: string): void {
-  lastUserMessages.set(currentUserId(), text || "");
+  const userId = currentUserId();
+  lastUserAffirmations.set(userId, isAffirmation(text));
+  if (lastUserAffirmations.size > MAX_PENDING * 10) {
+    const oldest = lastUserAffirmations.keys().next().value;
+    if (oldest) lastUserAffirmations.delete(oldest);
+  }
 }
 
 export function isAffirmation(text: string): boolean {
@@ -60,7 +65,7 @@ export function enforceToolPolicy(
     entry &&
     entry.expiresAt > now &&
     entry.fingerprint === fingerprint &&
-    isAffirmation(lastUserMessages.get(userId) || "")
+    lastUserAffirmations.get(userId) === true
   ) {
     pending.delete(key);
     return { allowed: true };
@@ -87,7 +92,7 @@ export function enforceToolPolicy(
 /** Test helper: clear all confirmation state between cases. */
 export function resetToolPolicy(): void {
   pending.clear();
-  lastUserMessages.clear();
+  lastUserAffirmations.clear();
 }
 
 export function pendingCount(): number {
