@@ -224,6 +224,7 @@ export async function createCalendarEvent(params: {
       return `${nextH}:${String(m || 0).padStart(2, "0")}`;
     })();
 
+  if (!state.config.googleAccessToken) throw new Error("Google Calendar requires a verified OAuth connection.");
   if (state.config.googleAccessToken) {
     const calendarResponse = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
       method: "POST",
