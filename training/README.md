@@ -53,9 +53,17 @@ python serve_adapter.py
 ```
 
 The 1.5B base model requires several GB of storage and substantial memory for
-fine-tuning. A small free-tier VPS is not a suitable training host. Use a machine
-with adequate RAM and preferably a supported GPU; do not start a paid instance
-without checking its total cost first.
+fine-tuning. A small free-tier VPS is not a suitable training host. The trainer
+automatically uses CUDA when available, selecting BF16 only when supported and
+FP16 otherwise; it falls back to CPU/FP32 when no GPU is present.
+
+For a CUDA runtime (for example, a Colab GPU session), install
+`requirements-gpu.txt`, not the CPU-pinned `requirements.txt`. The GPU
+requirements intentionally omit PyTorch so the runtime's CUDA-enabled build is
+not replaced by a CPU-only wheel. Open `Velnor_Qwen_1.5B_Colab.ipynb` and run
+the cells in order. The notebook refuses to train if CUDA is unavailable and
+stores the adapter archive, report, log, and SHA-256 manifest in Google Drive.
+Do not start a paid instance without checking its total cost first.
 
 A lower validation loss is useful but does not prove better task performance.
 Review both `eval.base` and `eval.tuned`, broaden the held-out benchmark, and
