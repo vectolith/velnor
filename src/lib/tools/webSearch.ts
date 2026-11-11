@@ -84,21 +84,78 @@ export function extractReadableText(html: string): string {
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-async function fetchPageText(rawUrl: string): Promise<string> {
+async function fetchPageText(url: string): Promise<string> {
   try {
-    const result = await safeFetchText(rawUrl, { timeoutMs: 6000, maxBytes: 2_000_000, maxRedirects: 3 });
-    return result.text
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<[^>]*>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 12000);
+    const result = await safeFetchText(url, {
+      timeoutMs: 7000,
+      maxBytes: 2_000_000,
+      maxRedirects: 3,
+      accept: (contentType) => /text\/html|text\/plain|application\/xhtml/i.test(contentType),
+    });
+    return extractReadableText(result.text).slice(0, PAGE_CHARS);
   } catch {
     return "";
   }
 }
 
+async function duckDuckGo(query: string): Promise<SearchHit[]> {
+  try {
+    const res = await fetch("https://html.duckduckgo.com/html/?q=" + encodeURIComponent(query), {
+      headers: { "user-agent": UA, accept: "text/html" },
+      signal: AbortSignal.timeout(7000),
+    });
+    if (!res.ok) return [];
+    return parseDuckDuckGoHtml(await res.text());
+  } catch {
+    return [];
+  }
+}
+
+async function wikipedia(query: string): Promise<SearchHit[]> {
+  try {
+    const res = await fetch(
+      "https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=" +
+        encodeURIComponent(query) +
+        "&utf8=&format=json&srlimit=2",
+      { headers: { "user-agent": "VelnorBot/1.0" }, signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data?.query?.search || []).map((item: any) => ({
+      title: item.title + " — Wikipedia",
+      url: "https://en.wikipedia.org/wiki/" + encodeURIComponent(String(item.title).replace(/ /g, "_")),
+      snippet: stripTags(String(item.snippet || "")),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function hackerNews(query: string): Promise<SearchHit[]> {
+  try {
+    const res = await fetch(
+      "https://hn.algolia.com/api/v1/search?query=" + encodeURIComponent(query) + "&tags=story&hitsPerPage=2",
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data?.hits || [])
+      .filter((h: any) => h.title)
+      .map((h: any) => ({
+        title: h.title,
+        url: h.url || "https://news.ycombinator.com/item?id=" + h.objectID,
+        snippet: (h.points || 0) + " points, " + (h.num_comments || 0) + " comments",
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Search the live web, then actually read the top pages. The summary is built
+ * from page text, not from search-engine snippets, so the model can cite
+ * something it has really seen.
+ */
 export async function performWebSearch(query: string): Promise<WebSearchOutput> {
   const key = query.trim().toLowerCase();
   const cached = cache.get(key);
