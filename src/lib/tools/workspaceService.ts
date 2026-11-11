@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { getStore, saveStore } from "../store";
 import { assertRecipientAllowed, parseAllowlist } from "@/lib/security/recipients";
 import { CalendarEventItem, ChannelType, EmailItem, ReminderItem } from "../types";
@@ -298,10 +299,14 @@ export function createReminder(params: {
   recipient?: string;
 }): ReminderItem {
   const state = getStore();
+  const dueDate = params.dueAt ? new Date(params.dueAt) : new Date(Date.now() + 60 * 60 * 1000);
+  if (!Number.isFinite(dueDate.getTime())) {
+    throw new Error("Reminder dueAt must be a valid ISO 8601 date-time.");
+  }
   const reminder: ReminderItem = {
-    id: `rem-${Date.now()}`,
+    id: "rem-" + crypto.randomUUID(),
     text: params.text,
-    dueAt: params.dueAt || "Later today",
+    dueAt: dueDate.toISOString(),
     channel: params.channel || "imessage",
     recipient: params.recipient || "",
     completed: false,
