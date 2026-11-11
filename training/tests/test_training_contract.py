@@ -41,10 +41,27 @@ class TrainingContractTests(unittest.TestCase):
             for item in examples
         ))
 
+    def test_cuda_training_moves_model_batches_and_generation_inputs(self):
+        self.assertIn('torch.cuda.is_available()', self.source)
+        self.assertIn('base.to(DEVICE)', self.source)
+        self.assertIn('move_batch(b, DEVICE)', self.source)
+        self.assertIn('input_ids = input_ids.to(next(model.parameters()).device)', self.source)
+        self.assertIn('torch.cuda.is_bf16_supported()', self.source)
+
+    def test_gpu_requirements_do_not_replace_cuda_torch(self):
+        gpu_requirements = TRAIN.parent / "requirements-gpu.txt"
+        requirements = gpu_requirements.read_text(encoding="utf-8")
+        self.assertNotRegex(requirements, r"(?m)^\\s*torch([<=>!~]|\\s|$)")
+        self.assertNotIn("download.pytorch.org/whl/cpu", requirements)
+        self.assertIn("transformers==", requirements)
+        self.assertIn("peft==", requirements)
+
     def test_readme_describes_same_base_and_opt_in_fast_mode(self):
         readme = README.read_text(encoding="utf-8")
         self.assertIn("Qwen/Qwen2.5-Coder-1.5B-Instruct", readme)
         self.assertIn("VELNOR_FAST_TRAIN=1", readme)
+        self.assertIn("requirements-gpu.txt", readme)
+        self.assertIn("Velnor_Qwen_1.5B_Colab.ipynb", readme)
         self.assertNotIn("SmolLM2-135M-Instruct", readme)
 
 
