@@ -93,6 +93,13 @@ test("the VM runs the reminder sweep that vercel.json used to schedule", () => {
   assert.match(setup, /systemctl enable --now velnor-reminders\.timer/, "the timer is not enabled");
 });
 
+test("the shared deployment secret never consumes the per-user Authorization bearer token", () => {
+  const middleware = readFileSync(new URL("../src/middleware.ts", import.meta.url), "utf8");
+  const gate = middleware.slice(middleware.indexOf("const provided ="), middleware.indexOf("if (!safeEquals(provided, sharedSecret))"));
+  assert.match(gate, /x-velnor-secret/);
+  assert.doesNotMatch(gate, /authorization/);
+});
+
 test("the simulator bypass is disabled in production", () => {
   const middleware = readFileSync(new URL("../src/middleware.ts", import.meta.url), "utf8");
   assert.match(
