@@ -12,7 +12,7 @@ export async function getGoogleAccessToken(): Promise<string> {
   const clientId = state.config.googleClientId || process.env.GOOGLE_CLIENT_ID || "";
   const clientSecret = state.config.googleClientSecret || process.env.GOOGLE_CLIENT_SECRET || "";
   if (!refreshToken || !clientId || !clientSecret) {
-    throw new Error("A verified Google OAuth connection is required; access expired and no refresh grant is available.");
+    throw new Error("A verified Google OAuth connection is required; access expired. Reconnect the Google account to continue.");
   }
 
   const response = await fetch("https://oauth2.googleapis.com/token", {
