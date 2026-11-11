@@ -47,3 +47,13 @@ Replace legacy `x-velnor-user` tenant selection with the bearer token. A shared 
 - Do not log bearer tokens.
 - Revoke a user by disabling their upstream account and removing their Velnor tenant provisioning.
 - Keep provider credentials tenant-scoped; do not put personal OAuth tokens in global environment variables for multi-tenant deployments.
+
+
+## Google Workspace OAuth
+
+- The authenticated `GET /api/auth/google` endpoint requires the same signed tenant bearer token as other control-plane APIs and returns an `authUrl` for the client to open.
+- The OAuth state is HMAC-signed with `VELNOR_TENANT_TOKEN_SECRET`, bound to the tenant, expires after ten minutes, and is consumed once.
+- The authorization-code flow uses PKCE (S256). The verifier is encrypted at rest.
+- The callback stores access and refresh tokens inside the bound tenant partition. Refresh tokens and access tokens are encrypted with `VELNOR_SECRET_KEY`.
+- Set `VELNOR_PUBLIC_URL` to the externally registered HTTPS origin so the callback URI remains stable behind reverse proxies.
+- The callback is public by necessity, but it cannot select a tenant from caller input; it accepts only a valid signed state and matching one-time nonce.
