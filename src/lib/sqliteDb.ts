@@ -70,14 +70,8 @@ function getSqliteDb() {
           value TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS vector_chunks (
-          id TEXT PRIMARY KEY,
-          doc_id TEXT NOT NULL,
-          doc_name TEXT NOT NULL,
-          content TEXT NOT NULL,
-          tokens_json TEXT NOT NULL,
-          embedding_json TEXT
-        );
+        DROP TABLE IF EXISTS vector_chunks;
+
       `);
       sqliteInstance = db;
       sqliteSupported = true;
@@ -116,25 +110,6 @@ export function saveStateToSqlite(state: VelnorState, key = "velnor_root_state")
     `);
     upsertKv.run(key, JSON.stringify(state), now);
 
-    // Sync vector_chunks table for structured inspection
-    const upsertChunk = db.prepare(`
-      INSERT INTO vector_chunks (id, doc_id, doc_name, content, tokens_json, embedding_json)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        content = excluded.content,
-        tokens_json = excluded.tokens_json,
-        embedding_json = excluded.embedding_json
-    `);
-    for (const chunk of state.documentChunks.slice(0, 500)) {
-      upsertChunk.run(
-        chunk.id,
-        chunk.docId,
-        chunk.docName,
-        chunk.content,
-        JSON.stringify(chunk.tokens),
-        chunk.embedding ? JSON.stringify(chunk.embedding) : null
-      );
-    }
     return true;
   } catch (err) {
     console.warn("SQLite write warning:", err);
