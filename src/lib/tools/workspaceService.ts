@@ -4,68 +4,43 @@ import { CalendarEventItem, ChannelType, EmailItem, ReminderItem } from "../type
 
 export async function listEmails(query?: string, maxResults = 6): Promise<EmailItem[]> {
   const state = getStore();
-
-  // If user has connected live Google OAuth token, fetch from Gmail REST API first
-  if (state.config.googleAccessToken) {
-    try {
-      const qParam = query ? `&q=${encodeURIComponent(query)}` : "";
-      const listRes = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}${qParam}`,
-        {
-          headers: { Authorization: `Bearer ${state.config.googleAccessToken}` },
-          signal: AbortSignal.timeout(5000),
-        }
-      );
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        const messages = listData.messages || [];
-        const fetched: EmailItem[] = [];
-        for (const m of messages.slice(0, maxResults)) {
-          const detailRes = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Date`,
-            {
-              headers: { Authorization: `Bearer ${state.config.googleAccessToken}` },
-            }
-          );
-          if (detailRes.ok) {
-            const d = await detailRes.json();
-            const headers: Array<{ name: string; value: string }> = d.payload?.headers || [];
-            const getH = (n: string) =>
-              headers.find((h) => h.name.toLowerCase() === n.toLowerCase())?.value || "";
-            fetched.push({
-              id: d.id,
-              from: getH("From") || "Unknown Sender",
-              to: getH("To") || state.config.googleConnectedEmail || "you",
-              subject: getH("Subject") || "(No Subject)",
-              snippet: d.snippet || "",
-              body: d.snippet || "",
-              date: getH("Date") || "Recent",
-              unread: Array.isArray(d.labelIds) && d.labelIds.includes("UNREAD"),
-              archived: Array.isArray(d.labelIds) && !d.labelIds.includes("INBOX"),
-              labels: d.labelIds || ["INBOX"],
-              status: "inbox",
-            });
-          }
-        }
-        if (fetched.length > 0) return fetched;
-      }
-    } catch {
-      // Fallback to local inbox state
-    }
+  const token = state.config.googleAccessToken;
+  if (!token) throw new Error("Gmail inbox access requires a verified Google OAuth connection.");
+  const limit = Math.min(Math.max(Math.floor(maxResults), 1), 50);
+  const q = query ? "&q=" + encodeURIComponent(query) : "";
+  const listRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=" + limit + q, {
+    headers: { Authorization: "Bearer " + token },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!listRes.ok) throw new Error("Gmail message listing failed (" + listRes.status + ").");
+  const listData = await listRes.json();
+  const messages = Array.isArray(listData.messages) ? listData.messages.slice(0, limit) : [];
+  const fetched: EmailItem[] = [];
+  for (const message of messages) {
+    const detailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/" + encodeURIComponent(message.id) + "?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Date", {
+      headers: { Authorization: "Bearer " + token },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!detailRes.ok) throw new Error("Gmail message detail failed (" + detailRes.status + ").");
+    const detail = await detailRes.json();
+    const headers: Array<{ name: string; value: string }> = detail.payload?.headers || [];
+    const getHeader = (name: string) => headers.find((header) => header.name.toLowerCase() === name.toLowerCase())?.value || "";
+    const labels: string[] = Array.isArray(detail.labelIds) ? detail.labelIds : [];
+    fetched.push({
+      id: detail.id,
+      from: getHeader("From") || "Unknown Sender",
+      to: getHeader("To") || state.config.googleConnectedEmail || "you",
+      subject: getHeader("Subject") || "(No Subject)",
+      snippet: detail.snippet || "",
+      body: detail.snippet || "",
+      date: getHeader("Date") || "Recent",
+      unread: labels.includes("UNREAD"),
+      archived: !labels.includes("INBOX"),
+      labels,
+      status: "inbox",
+    });
   }
-
-  let items = state.emails.filter((e) => !e.archived);
-  if (query && query.trim()) {
-    const q = query.toLowerCase();
-    items = items.filter(
-      (e) =>
-        e.subject.toLowerCase().includes(q) ||
-        e.from.toLowerCase().includes(q) ||
-        e.body.toLowerCase().includes(q) ||
-        e.labels.some((l) => l.toLowerCase().includes(q))
-    );
-  }
-  return items.slice(0, maxResults);
+  return fetched;
 }
 
 export async function draftOrSendEmail(params: {
@@ -223,49 +198,34 @@ export async function organizeEmail(params: {
 
 export async function listCalendarEvents(dateFilter?: string): Promise<CalendarEventItem[]> {
   const state = getStore();
-
-  if (state.config.googleAccessToken) {
-    try {
-      const timeMin = new Date();
-      timeMin.setHours(0, 0, 0, 0);
-      const res = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(
-          timeMin.toISOString()
-        )}&maxResults=10&singleEvents=true&orderBy=startTime`,
-        {
-          headers: { Authorization: `Bearer ${state.config.googleAccessToken}` },
-          signal: AbortSignal.timeout(5000),
-        }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.items) && data.items.length > 0) {
-          return data.items.map((ev: Record<string, any>) => {
-            const startRaw = ev.start?.dateTime || ev.start?.date || new Date().toISOString();
-            const endRaw = ev.end?.dateTime || ev.end?.date || startRaw;
-            return {
-              id: ev.id,
-              title: ev.summary || "Untitled Event",
-              date: String(startRaw).slice(0, 10),
-              startTime: String(startRaw).slice(11, 16) || "09:00",
-              endTime: String(endRaw).slice(11, 16) || "10:00",
-              attendees: (ev.attendees || []).map((a: Record<string, string>) => a.email),
-              location: ev.location || "Google Calendar",
-              description: ev.description || "",
-              source: "google_calendar",
-            };
-          });
-        }
-      }
-    } catch {
-      // Fallback to local calendar store
-    }
-  }
-
-  if (dateFilter) {
-    return state.calendarEvents.filter((e) => e.date.includes(dateFilter));
-  }
-  return state.calendarEvents;
+  const token = state.config.googleAccessToken;
+  if (!token) throw new Error("Google Calendar access requires a verified Google OAuth connection.");
+  const start = dateFilter ? new Date(dateFilter + "T00:00:00") : new Date();
+  if (!dateFilter) start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  const url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=" + encodeURIComponent(start.toISOString()) + "&timeMax=" + encodeURIComponent(end.toISOString()) + "&maxResults=50&singleEvents=true&orderBy=startTime";
+  const response = await fetch(url, {
+    headers: { Authorization: "Bearer " + token },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error("Google Calendar event listing failed (" + response.status + ").");
+  const data = await response.json();
+  return (Array.isArray(data.items) ? data.items : []).map((event: Record<string, any>) => {
+    const startRaw = event.start?.dateTime || event.start?.date || new Date().toISOString();
+    const endRaw = event.end?.dateTime || event.end?.date || startRaw;
+    return {
+      id: event.id,
+      title: event.summary || "Untitled Event",
+      date: String(startRaw).slice(0, 10),
+      startTime: String(startRaw).slice(11, 16) || "09:00",
+      endTime: String(endRaw).slice(11, 16) || "10:00",
+      attendees: (event.attendees || []).map((attendee: Record<string, string>) => attendee.email),
+      location: event.location || "Google Calendar",
+      description: event.description || "",
+      source: "google_calendar",
+    };
+  });
 }
 
 export async function createCalendarEvent(params: {
