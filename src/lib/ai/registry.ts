@@ -14,9 +14,9 @@ export interface ProviderSlot {
  * names that were current when this was written; set VELNOR_MODEL_* to pin.
  */
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
-  gemini: process.env.VELNOR_MODEL_GEMINI || "gemini-2.5-flash",
+  gemini: process.env.VELNOR_MODEL_GEMINI || "gemini-3.8-flash",
   openai: process.env.VELNOR_MODEL_OPENAI || "gpt-4o",
-  anthropic: process.env.VELNOR_MODEL_ANTHROPIC || "claude-sonnet-4-20250514",
+  anthropic: process.env.VELNOR_MODEL_ANTHROPIC || "claude-sonnet-4-6",
 };
 
 export function createProvider(id: ProviderId, apiKey: string): Provider {
@@ -64,6 +64,10 @@ export function buildProviderChain(params: {
 
 /** USD per 1M tokens, [input, output]. Unknown models return zero. */
 const PRICES: Array<[RegExp, [number, number]]> = [
+  [/^gemini-3\.8-flash/, [0.75, 3.75]],
+  [/^gemini-3\.7-flash/, [0.75, 3.75]],
+  [/^gemini-3\.6-flash/, [0.75, 3.75]],
+  [/^gemini-3\.5-flash/, [0.5, 3]],
   [/^gemini-2\.5-pro/, [1.25, 10]],
   [/^gemini-2\.5-flash/, [0.3, 2.5]],
   [/^gemini-2\.0-flash/, [0.1, 0.4]],
