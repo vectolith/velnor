@@ -14,7 +14,8 @@ The token must be minted by a trusted authentication gateway after that gateway 
 - HMAC-SHA256 signature using `VELNOR_TENANT_TOKEN_SECRET`
 - issuer `VELNOR_TENANT_TOKEN_ISSUER` (default `velnor-auth`)
 - audience `VELNOR_TENANT_TOKEN_AUDIENCE` (default `velnor-api`)
-- `sub` as the authenticated upstream account subject\n- optional signed `tenant_id` to map that account to an existing Velnor tenant partition
+- `sub` as the authenticated upstream account subject
+- optional signed `tenant_id` to map that account to an existing Velnor tenant partition
 - `iat`, `nbf`, and `exp`; maximum token lifetime is 15 minutes
 
 Set `VELNOR_TENANT_TOKEN_SECRET` to a cryptographically random secret of at least 32 characters. Keep it only in the authentication gateway and Velnor's secret manager. Never expose it to browsers, mobile apps, logs, or source control.
