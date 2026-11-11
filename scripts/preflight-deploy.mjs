@@ -37,8 +37,8 @@ for (const [name, why] of REQUIRED) {
   if (!value) problems.push(`${name} is missing — ${why}`);
   else if (name === "VELNOR_SECRET_KEY" && value.length < 16) {
     problems.push(`VELNOR_SECRET_KEY is only ${value.length} characters; use 32+ random characters`);
-  } else if (name === "VELNOR_TENANT_TOKEN_SECRET" && value.length < 32) {
-    problems.push("VELNOR_TENANT_TOKEN_SECRET must contain at least 32 characters");
+  } else if ((name === "VELNOR_TENANT_TOKEN_SECRET" || name === "VELNOR_PROVISIONING_SECRET") && value.length < 32) {
+    problems.push(`${name} must contain at least 32 characters`);
   }
 }
 
