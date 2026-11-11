@@ -11,7 +11,7 @@ README = Path(__file__).resolve().parents[1] / "README.md"
 class TrainingContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.source = TRAINER.read_text(encoding="utf-8")
+        source = " ".join(
         cls.tree = ast.parse(cls.source)
 
     def test_canonical_base_is_qwen_and_legacy_auto_fallback_is_absent(self):
