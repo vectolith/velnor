@@ -273,10 +273,13 @@ export async function createCalendarEvent(params: {
     }
     const remoteEvent = await calendarResponse.json().catch(() => ({}));
     remoteEventId = typeof remoteEvent.id === "string" ? remoteEvent.id : undefined;
+    if (!remoteEventId) {
+      throw new Error("Google Calendar accepted the request without returning an event ID; refusing to report a confirmed event.");
+    }
   }
 
   const newEvent: CalendarEventItem = {
-    id: remoteEventId || `evt-${Date.now()}`,
+    id: remoteEventId,
     title: params.title,
     date: params.date || new Date().toISOString().split("T")[0],
     startTime: params.startTime || "10:00",
