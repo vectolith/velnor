@@ -88,10 +88,10 @@ async function fetchPageText(rawUrl: string): Promise<string> {
   try {
     const result = await safeFetchText(rawUrl, { timeoutMs: 6000, maxBytes: 2_000_000, maxRedirects: 3 });
     return result.text
-      .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
-      .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
       .replace(/<[^>]*>/g, " ")
-      .replace(/\\s+/g, " ")
+      .replace(/\s+/g, " ")
       .trim()
       .slice(0, 12000);
   } catch {
