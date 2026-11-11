@@ -117,7 +117,7 @@ export async function transcribeAudioWithProvider(params: {
   const client = new GoogleGenAI({ apiKey: geminiApiKey });
   const uploaded = await client.files.upload({
     file: new Blob([new Uint8Array(bytes)], { type: mimeType }),
-    config: { mime_type: mimeType },
+    config: { mimeType },
   });
   if (!uploaded.uri) throw new Error("Gemini did not return an uploaded audio URI.");
 
