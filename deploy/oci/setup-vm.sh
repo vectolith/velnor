@@ -69,11 +69,11 @@ say "3/6 Preparing .env"
 [[ -f .env ]] || cp .env.example .env
 chmod 600 .env
 
-if grep -qE '^(VELNOR_SHARED_SECRET|VELNOR_SECRET_KEY|CRON_SECRET)=$' .env; then
+if grep -qE '^(VELNOR_SHARED_SECRET|VELNOR_SECRET_KEY|VELNOR_TENANT_TOKEN_SECRET|CRON_SECRET)=' .env; then
   : > .env.tmp
   while IFS= read -r line; do
     case "$line" in
-      VELNOR_SHARED_SECRET=|VELNOR_SECRET_KEY=|CRON_SECRET=)
+      VELNOR_SHARED_SECRET=|VELNOR_SECRET_KEY=|VELNOR_TENANT_TOKEN_SECRET=|CRON_SECRET=)
         printf '%s=%s\n' "${line%=}" "$(openssl rand -hex 32)" >> .env.tmp
         echo "generated ${line%=}" ;;
       *) printf '%s\n' "$line" >> .env.tmp ;;
