@@ -3,6 +3,8 @@ import test from "node:test";
 import { withVelnorUser, getStore } from "../src/lib/store";
 import { ingestDocumentOrUrl } from "../src/lib/tools/documentStore";
 
+process.env.VELNOR_SECRET_KEY ||= "test-secret-key-for-store-suite-32-bytes";
+
 test("document ingestion rejects private-network URLs without creating a document", async () => {
   await withVelnorUser("document-ssrf-test", async () => {
     await assert.rejects(
