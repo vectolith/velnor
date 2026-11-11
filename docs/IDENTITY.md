@@ -79,7 +79,7 @@ Webhook, cron, health, and the signed Google OAuth callback paths are intentiona
 3. Set the non-secret configuration in the Worker environment:
    - `CF_ACCESS_TEAM_DOMAIN`: your Cloudflare Access team domain, such as `https://example.cloudflareaccess.com`.
    - `CF_ACCESS_AUD`: the exact AUD tag for the Velnor Access application.
-   - `VELNOR_ORIGIN`: the HTTPS origin of the Velnor deployment, without an API path.
+   - `VELNOR_ORIGIN`: the HTTPS origin of the Velnor deployment, without an API path. It must use a separate hostname from the public Worker route so internal provisioning and proxy requests do not recurse through the Worker.
    - `VELNOR_TENANT_TOKEN_ISSUER`: `velnor-auth`, unless Velnor is configured with another issuer.
    - `VELNOR_TENANT_TOKEN_AUDIENCE`: `velnor-api`, unless Velnor is configured with another audience.
 4. Configure the following Worker secrets using Wrangler. Generate each secret independently with `openssl rand -base64 48`; do not reuse one secret for multiple purposes:
