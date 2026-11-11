@@ -171,7 +171,7 @@ export async function executeToolCall(
     case "create_reminder": {
       const rem = createReminder({
         text: String(args.text || ""),
-        dueAt: String(args.dueAt || "Later today"),
+        dueAt: String(args.dueAt || new Date(Date.now() + 60 * 60 * 1000).toISOString()),
         channel,
         recipient: channel === "imessage" ? userHandle : undefined,
       });
