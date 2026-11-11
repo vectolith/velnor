@@ -69,19 +69,24 @@ say "3/6 Preparing .env"
 [[ -f .env ]] || cp .env.example .env
 chmod 600 .env
 
-if grep -qE '^(VELNOR_SHARED_SECRET|VELNOR_SECRET_KEY|VELNOR_TENANT_TOKEN_SECRET|CRON_SECRET)=' .env; then
-  : > .env.tmp
-  while IFS= read -r line; do
-    case "$line" in
-      VELNOR_SHARED_SECRET=|VELNOR_SECRET_KEY=|VELNOR_TENANT_TOKEN_SECRET=|CRON_SECRET=)
-        printf '%s=%s\n' "${line%=}" "$(openssl rand -hex 32)" >> .env.tmp
-        echo "generated ${line%=}" ;;
-      *) printf '%s\n' "$line" >> .env.tmp ;;
-    esac
-  done < .env
-  mv .env.tmp .env
-  chmod 600 .env
-fi
+: > .env.tmp
+while IFS= read -r line; do
+  case "$line" in
+    VELNOR_SHARED_SECRET=*|VELNOR_SECRET_KEY=*|VELNOR_TENANT_TOKEN_SECRET=*|CRON_SECRET=*)
+      name="${line%%=*}"
+      value="${line#*=}"
+      if [[ -z "$value" ]]; then
+        printf '%s=%s\n' "$name" "$(openssl rand -hex 32)" >> .env.tmp
+        echo "generated $name"
+      else
+        printf '%s\n' "$line" >> .env.tmp
+      fi
+      ;;
+    *) printf '%s\n' "$line" >> .env.tmp ;;
+  esac
+done < .env
+mv .env.tmp .env
+chmod 600 .env
 
 if grep -qE '^VELNOR_HOST=(localhost)?$' .env; then
   public_ip="$(curl -fsS --max-time 8 https://ifconfig.me 2>/dev/null || true)"
