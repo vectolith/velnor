@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
             userHandle: "@" + slackUserId,
           });
           const scoped = getStore();
-          return { reply, botToken: scoped.config.slackBotToken || process.env.SLACK_BOT_TOKEN || "" };
+          return { reply: reply.text, botToken: scoped.config.slackBotToken || process.env.SLACK_BOT_TOKEN || "" };
         });
         if (!result.botToken) throw new Error("No Slack bot token is configured for this tenant.");
         const delivery = await postSlackMessage({
