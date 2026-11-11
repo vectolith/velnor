@@ -61,7 +61,7 @@ async function withFetchMock(
 
 test("gateway verifies Access JWT, provisions tenant, and injects isolated Velnor credentials", async () => {
   let provisionCount = 0;
-  let upstreamHeaders: Headers | null = null;
+  const captured: { upstreamHeaders: Headers | null } = { upstreamHeaders: null };
   await withFetchMock(async (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
     if (url === teamDomain + "/cdn-cgi/access/certs") {
@@ -73,7 +73,7 @@ test("gateway verifies Access JWT, provisions tenant, and injects isolated Velno
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }
     if (url === origin + "/api/chat") {
-      upstreamHeaders = new Headers(input instanceof Request ? input.headers : init?.headers);
+      captured.upstreamHeaders = new Headers(input instanceof Request ? input.headers : init?.headers);
       return new Response("proxied", { status: 200 });
     }
     throw new Error("Unexpected gateway fetch: " + url);
@@ -87,7 +87,8 @@ test("gateway verifies Access JWT, provisions tenant, and injects isolated Velno
   });
 
   assert.equal(provisionCount, 1);
-  assert.ok(upstreamHeaders);
+  assert.ok(captured.upstreamHeaders);
+  const upstreamHeaders = captured.upstreamHeaders as Headers;
   assert.equal(upstreamHeaders.get("x-velnor-secret"), sharedSecret);
   assert.match(upstreamHeaders.get("authorization") || "", /^Bearer /);
   assert.equal(upstreamHeaders.has("cf-access-jwt-assertion"), false);
