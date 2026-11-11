@@ -162,35 +162,49 @@ export function loadUserState(userId: string): VelnorState {
   const hit = cache().get(id);
   if (hit) return hit;
 
-  let loaded: VelnorState | null = loadStateFromSqlite(sqliteKey(id));
-  let loadedFromLegacy = false;
-  if (!loaded && legacyId !== id) {
-    loaded = loadStateFromSqlite(sqliteKey(legacyId));
-    loadedFromLegacy = Boolean(loaded);
-  }
-  if (!loaded) {
+  const sqliteCurrent = loadStateFromSqlite(sqliteKey(id));
+  const sqliteLegacy = legacyId !== id ? loadStateFromSqlite(sqliteKey(legacyId)) : null;
+  const sqliteCandidate = sqliteCurrent
+    ? { state: sqliteCurrent, legacy: false }
+    : sqliteLegacy
+      ? { state: sqliteLegacy, legacy: true }
+      : null;
+
+  let jsonCandidate: { state: VelnorState; legacy: boolean } | null = null;
+  const jsonPaths = [
+    { file: stateFile(id), legacy: false },
+    ...(legacyId !== id ? [{ file: stateFile(legacyId), legacy: true }] : []),
+  ];
+  for (const candidate of jsonPaths) {
+    if (!fs.existsSync(candidate.file)) continue;
     try {
-      const file = fs.existsSync(stateFile(id)) ? stateFile(id) : stateFile(legacyId);
-      if (fs.existsSync(file)) {
-        loaded = JSON.parse(fs.readFileSync(file, "utf-8")) as VelnorState;
-        loadedFromLegacy = file === stateFile(legacyId) && legacyId !== id;
-      }
+      const parsed = JSON.parse(fs.readFileSync(candidate.file, "utf-8")) as VelnorState;
+      jsonCandidate = { state: parsed, legacy: candidate.legacy };
+      break;
     } catch (err) {
-      // Recovery: keep the broken file for inspection instead of silently
-      // overwriting it, then start from a clean state.
-      console.warn("Could not read store for " + id + ", starting fresh:", err);
+      console.warn("Could not read store for " + id + " from " + candidate.file + ":", err);
       try {
-        const file = stateFile(id);
-        if (fs.existsSync(file)) {
-          const quarantine = `${file}.corrupt-${Date.now()}`;
-          fs.renameSync(file, quarantine);
-          console.warn(`Quarantined unreadable state at ${quarantine}`);
-        }
+        const quarantine = candidate.file + ".corrupt-" + Date.now();
+        fs.renameSync(candidate.file, quarantine);
+        console.warn("Quarantined unreadable state at " + quarantine);
       } catch (renameErr) {
         console.warn("Could not quarantine corrupt state:", renameErr);
       }
     }
   }
+
+  const persistedAt = (state: VelnorState | null) => {
+    const value = (state as (VelnorState & { persistedAt?: string }) | null)?.persistedAt;
+    const parsed = value ? Date.parse(value) : 0;
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const useJson = Boolean(
+    jsonCandidate &&
+    (!sqliteCandidate || persistedAt(jsonCandidate.state) > persistedAt(sqliteCandidate.state))
+  );
+  const selected = useJson ? jsonCandidate : sqliteCandidate;
+  let loaded: VelnorState | null = selected?.state || null;
+  const loadedFromLegacy = Boolean(selected?.legacy);
 
   // SQLite is the primary store in Node 22 deployments; the JSON file is its
   // recovery mirror. Apply the same migrations, validation and credential
@@ -216,7 +230,7 @@ export function loadUserState(userId: string): VelnorState {
 
 function saveStateForUser(userId: string, state: VelnorState): void {
   const id = sanitizeUserId(userId);
-  const persisted = { ...state, schemaVersion: STATE_SCHEMA_VERSION };
+  const persisted = { ...state, schemaVersion: STATE_SCHEMA_VERSION, persistedAt: new Date().toISOString() };
   if (persisted.config && typeof persisted.config === "object") {
     persisted.config = sealRecord(persisted.config as unknown as Record<string, unknown>) as unknown as typeof persisted.config;
   }
