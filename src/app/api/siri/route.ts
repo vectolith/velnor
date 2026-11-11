@@ -16,6 +16,8 @@ export async function GET(req: NextRequest) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Authorization: "Bearer <short-lived identity token>",
+      "x-velnor-secret": "<deployment shared secret>",
     },
     samplePayload: {
       query: "What's on my schedule today and do I have any unread emails?",
