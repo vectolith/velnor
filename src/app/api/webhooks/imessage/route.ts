@@ -181,6 +181,7 @@ export async function POST(req: NextRequest) {
             apiKeyId: scoped.config.sendblueApiKey,
             apiSecretKey: scoped.config.sendblueApiSecret,
             number: payload.number,
+            fromNumber: scoped.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
             content: outboundText,
           }));
         }
