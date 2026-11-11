@@ -81,6 +81,9 @@ test("SQLite tenant records remain discoverable without a JSON mirror", async (t
 });
 
 test("user ids are sanitised for filesystem use", () => {
-  assert.equal(store.sanitizeUserId("iMessage:+1 (555) 019-2834"), "imessage_+1__555__019-2834");
+  const key = store.sanitizeUserId("iMessage:+1 (555) 019-2834");
+  assert.match(key, /^v2_/);
+  assert.notEqual(key, store.sanitizeUserId("imessage_+1__555__019-2834"));
+  assert.equal(store.sanitizeUserId(key), key);
   assert.equal(store.sanitizeUserId(""), "default");
 });
