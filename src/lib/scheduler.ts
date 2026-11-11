@@ -80,7 +80,6 @@ async function dispatchTenantReminderNotification(
     ) {
       const loopResult = await sendLoopMessage({
         authKey: state.config.loopMessageAuthKey,
-        secretKey: state.config.loopMessageSecretKey,
         recipient: rem.recipient,
         text: `🔔 Reminder from Velnor: ${rem.text}`,
       });
