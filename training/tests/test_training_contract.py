@@ -51,7 +51,7 @@ class TrainingContractTests(unittest.TestCase):
     def test_gpu_requirements_do_not_replace_cuda_torch(self):
         gpu_requirements = TRAIN.parent / "requirements-gpu.txt"
         requirements = gpu_requirements.read_text(encoding="utf-8")
-        self.assertNotRegex(requirements, r"(?m)^\\s*torch([<=>!~]|\\s|$)")
+        self.assertNotRegex(requirements, r"(?m)^\s*torch([<=>!~]|\s|$)")
         self.assertNotIn("download.pytorch.org/whl/cpu", requirements)
         self.assertIn("transformers==", requirements)
         self.assertIn("peft==", requirements)
