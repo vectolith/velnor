@@ -136,6 +136,7 @@ export async function organizeEmail(params: {
   const state = getStore();
   const token = state.config.googleAccessToken;
   if (!token) throw new Error("Gmail organization requires a verified Google OAuth connection.");
+  if (!["archive", "mark_read", "label"].includes(params.action)) throw new Error("Unsupported Gmail organization action.");
   if (!params.emailId && !(params.query || "").trim()) throw new Error("Provide a Gmail message ID or search query.");
   if (params.action === "label" && !(params.label || "").trim()) throw new Error("A label name is required for the label action.");
 
@@ -258,8 +259,8 @@ export async function createCalendarEvent(params: {
         summary: params.title,
         location: params.location,
         description: params.description,
-        start: { dateTime: `${params.date}T${params.startTime}:00` },
-        end: { dateTime: `${params.date}T${computedEnd}:00` },
+        start: { dateTime: `${params.date}T${params.startTime}:00`, timeZone: process.env.VELNOR_TIMEZONE || "UTC" },
+        end: { dateTime: `${params.date}T${computedEnd}:00`, timeZone: process.env.VELNOR_TIMEZONE || "UTC" },
         attendees: (params.attendees || []).map((email) => ({ email })),
       }),
       signal: AbortSignal.timeout(15000),
