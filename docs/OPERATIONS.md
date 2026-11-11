@@ -52,10 +52,12 @@ Provider credentials entered through `POST /api/settings` are sealed with AES-25
 | Endpoint | Auth |
 | --- | --- |
 | `POST /api/webhooks/imessage` (Twilio form) | `X-Twilio-Signature`, fail closed |
-| `POST /api/webhooks/imessage` (Sendblue JSON) | `sb-signing-secret` or configured `x-velnor-webhook-secret` |\n| `POST /api/webhooks/imessage` (LoopMessage JSON) | configured `Authorization` webhook header (`LOOPMESSAGE_WEBHOOK_SECRET`) |
+| `POST /api/webhooks/imessage` (Sendblue JSON) | `sb-signing-secret` or configured `x-velnor-webhook-secret` |
+| `POST /api/webhooks/imessage` (LoopMessage JSON) | configured `Authorization` webhook header (`LOOPMESSAGE_WEBHOOK_SECRET`) |
 | `POST /api/webhooks/slack` | v0 signature + 300s freshness |
 | `GET/POST /api/chat`, `GET/POST /api/settings`, `POST /api/siri` | signed tenant bearer token; shared deployment secret is an outer gate where enabled |
-| `POST /api/tts` | signed tenant bearer token + shared deployment gate |\n| `GET/POST /api/lora-pilot` | `VELNOR_SHARED_SECRET` |
+| `POST /api/tts` | signed tenant bearer token + shared deployment gate |
+| `GET/POST /api/lora-pilot` | `VELNOR_SHARED_SECRET` |
 | `/api/cron/*` | `Authorization: Bearer $CRON_SECRET` |
 | `GET /api/health`, `GET /api/vcard`, `GET /api/webhooks/manifest` | public |
 
