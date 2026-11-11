@@ -23,7 +23,7 @@ class Qwen3QLoRAContractTests(unittest.TestCase):
         for token in (
             "BitsAndBytesConfig", "load_in_4bit=True", 'bnb_4bit_quant_type="nf4"',
             "bnb_4bit_use_double_quant=True", "prepare_model_for_kbit_training",
-            "gradient_checkpointing_kwargs", "get_peft_model",
+            "gradient_checkpointing_kwargs", "get_peft_model", "PagedAdamW8bit",
         ):
             self.assertIn(token, self.source)
 
@@ -56,7 +56,7 @@ class Qwen3QLoRAContractTests(unittest.TestCase):
         req = (ROOT / "requirements-qwen3-qlora.txt").read_text(encoding="utf-8")
         self.assertIn("-r requirements-gpu.txt", req)
         self.assertIn("bitsandbytes", req)
-        self.assertNotRegex(req, r"(?m)^\\s*torch([<=>!~]|\\s|$)")
+        self.assertNotRegex(req, r"(?m)^\s*torch([<=>!~]|\s|$)")
 
     def test_colab_notebook_is_valid_and_uses_isolated_branch(self):
         path = ROOT / "Velnor_Qwen3_8B_QLoRA_Colab.ipynb"
