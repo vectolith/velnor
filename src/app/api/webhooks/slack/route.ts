@@ -2,7 +2,8 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
 import { processUserMessage } from "@/lib/ai/agent";
 import { postSlackMessage } from "@/lib/channels/slack";
-import { authorizeSlackRequest, inboundWebhookCache, inboundKey } from "@/lib/security/webhookAuth";
+import { authorizeSlackRequest } from "@/lib/security/webhookAuth";
+import { inboundWebhookCache, inboundKey } from "@/lib/security/idempotency";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -18,6 +19,7 @@ export async function POST(req: NextRequest) {
       timestamp: req.headers.get("x-slack-request-timestamp"),
       signature: req.headers.get("x-slack-signature"),
       rawBody,
+      simulator: false,
     })) {
       return NextResponse.json({ error: "Unauthorized: invalid Slack signature" }, { status: 401 });
     }
@@ -37,13 +39,13 @@ export async function POST(req: NextRequest) {
       after(async () => {
         try {
           const result = await withVelnorUser(resolveUserId("slack", workspaceId + ":" + slackUserId), async () => {
-            const reply = await processUserMessage({
+            const message = await processUserMessage({
               text,
               channel: "slack",
               userHandle: "@" + slackUserId,
             });
             const scoped = getStore();
-            return { reply, botToken: scoped.config.slackBotToken || process.env.SLACK_BOT_TOKEN || "" };
+            return { reply: message.text, botToken: scoped.config.slackBotToken || process.env.SLACK_BOT_TOKEN || "" };
           });
           if (responseUrl) {
             const parsed = new URL(responseUrl);
