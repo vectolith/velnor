@@ -71,7 +71,7 @@ export async function executeToolCall(
       const res = await queryVectorDocuments(q);
       bundle.toolActions.push({
         tool: "query_documents",
-        label: `Vector search across ${res.documents.length} doc(s)`,
+        label: `Semantic search across ${res.documents.length} doc(s)`,
         status: "info",
         details: `Top chunk match from ${res.matches[0]?.docName || "knowledge base"}`,
       });
@@ -84,7 +84,7 @@ export async function executeToolCall(
       bundle.citations.push({ title: doc.name, url });
       bundle.toolActions.push({
         tool: "ingest_url_or_doc",
-        label: `Indexed "${doc.name}" into HNSW Vector Store`,
+        label: `Indexed "${doc.name}" into tenant document store`,
         status: "success",
         details: `${doc.chunkCount} chunks (${doc.wordCount} words)`,
       });
