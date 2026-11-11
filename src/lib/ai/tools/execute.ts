@@ -173,7 +173,7 @@ export async function executeToolCall(
         text: String(args.text || ""),
         dueAt: String(args.dueAt || "Later today"),
         channel,
-        recipient: userHandle,
+        recipient: channel === "imessage" ? userHandle : undefined,
       });
       bundle.toolActions.push({
         tool: "create_reminder",
