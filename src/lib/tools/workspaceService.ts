@@ -129,34 +129,73 @@ export async function draftOrSendEmail(params: {
   return item;
 }
 
-export function organizeEmail(params: {
+export async function organizeEmail(params: {
   emailId?: string;
   query?: string;
   action: "archive" | "mark_read" | "label";
   label?: string;
-}): { updatedCount: number; affectedSubjects: string[] } {
+}): Promise<{ updatedCount: number; affectedSubjects: string[] }> {
   const state = getStore();
-  const affected: string[] = [];
+  const token = state.config.googleAccessToken;
+  if (!token) throw new Error("Gmail organization requires a verified Google OAuth connection.");
+  if (!params.emailId && !(params.query || "").trim()) throw new Error("Provide a Gmail message ID or search query.");
+  if (params.action === "label" && !(params.label || "").trim()) throw new Error("A label name is required for the label action.");
 
-  for (const email of state.emails) {
-    const matchesId = params.emailId && email.id === params.emailId;
-    const matchesQuery =
-      params.query &&
-      (email.subject.toLowerCase().includes(params.query.toLowerCase()) ||
-        email.from.toLowerCase().includes(params.query.toLowerCase()));
-
-    if (matchesId || matchesQuery) {
-      if (params.action === "archive") email.archived = true;
-      if (params.action === "mark_read") email.unread = false;
-      if (params.action === "label" && params.label && !email.labels.includes(params.label)) {
-        email.labels.push(params.label);
-      }
-      affected.push(email.subject);
-    }
+  const ids: string[] = [];
+  if (params.emailId) {
+    ids.push(params.emailId);
+  } else {
+    const listResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=" + encodeURIComponent(params.query || ""), {
+      headers: { Authorization: "Bearer " + token },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!listResponse.ok) throw new Error("Gmail search failed (" + listResponse.status + ").");
+    const data = await listResponse.json();
+    for (const message of data.messages || []) if (typeof message.id === "string") ids.push(message.id);
   }
 
-  saveStore(state);
-  return { updatedCount: affected.length, affectedSubjects: affected };
+  if (ids.length === 0) return { updatedCount: 0, affectedSubjects: [] };
+  let labelId: string | undefined;
+  if (params.action === "label") {
+    const labelsResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
+      headers: { Authorization: "Bearer " + token },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!labelsResponse.ok) throw new Error("Gmail label lookup failed (" + labelsResponse.status + ").");
+    const labelsData = await labelsResponse.json();
+    const existing = (labelsData.labels || []).find((item: any) => item.name === params.label);
+    if (existing?.id) {
+      labelId = existing.id;
+    } else {
+      const createResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: params.label, labelListVisibility: "labelShow", messageListVisibility: "show" }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!createResponse.ok) throw new Error("Gmail label creation failed (" + createResponse.status + ").");
+      const created = await createResponse.json();
+      labelId = created.id;
+    }
+    if (!labelId) throw new Error("Gmail did not return a label ID.");
+  }
+
+  const body = params.action === "archive"
+    ? { removeLabelIds: ["INBOX"] }
+    : params.action === "mark_read"
+      ? { removeLabelIds: ["UNREAD"] }
+      : { addLabelIds: [labelId] };
+  for (const id of ids) {
+    const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/" + encodeURIComponent(id) + "/modify", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error("Gmail could not update message " + id + " (" + response.status + ").");
+  }
+  const affectedSubjects = state.emails.filter((email) => ids.includes(email.id)).map((email) => email.subject);
+  return { updatedCount: ids.length, affectedSubjects };
 }
 
 export async function listCalendarEvents(dateFilter?: string): Promise<CalendarEventItem[]> {
