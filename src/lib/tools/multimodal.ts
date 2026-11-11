@@ -107,17 +107,33 @@ export async function transcribeAudioWithProvider(params: {
   if (!geminiApiKey) throw new Error("Audio transcription requires a configured Gemini API key.");
   if (!params.base64Audio) throw new Error("Audio data is required for transcription.");
 
+  const mimeType = params.mimeType || "audio/webm";
+  const base64 = params.base64Audio.replace(/^data:[^;]+;base64,/, "");
+  const bytes = Buffer.from(base64, "base64");
+  if (bytes.length === 0 || bytes.length > 25 * 1024 * 1024) {
+    throw new Error("Audio payload is empty or exceeds the 25 MB transcription limit.");
+  }
+
   const client = new GoogleGenAI({ apiKey: geminiApiKey });
-  const interaction = await client.interactions.create({
-    model: "gemini-3.5-transcribe",
-    input: [
-      { type: "audio", data: params.base64Audio, mime_type: params.mimeType || "audio/webm" },
-      { type: "text", text: "Transcribe this voice message accurately." },
-    ] as any,
+  const uploaded = await client.files.upload({
+    file: new Blob([new Uint8Array(bytes)], { type: mimeType }),
+    config: { mime_type: mimeType },
   });
-  const transcript = interaction.output_text?.trim();
-  if (!transcript) throw new Error("Gemini returned no transcription text.");
-  return { transcript, modelUsed: "gemini-3.5-transcribe" };
+  if (!uploaded.uri) throw new Error("Gemini did not return an uploaded audio URI.");
+
+  try {
+    const interaction = await client.interactions.create({
+      model: "gemini-3.5-transcribe",
+      input: [{ type: "audio", uri: uploaded.uri, mime_type: uploaded.mimeType || mimeType }],
+    });
+    const transcript = interaction.output_text?.trim();
+    if (!transcript) throw new Error("Gemini returned no transcription text.");
+    return { transcript, modelUsed: "gemini-3.5-transcribe" };
+  } finally {
+    if (uploaded.name) {
+      await client.files.delete({ name: uploaded.name }).catch(() => undefined);
+    }
+  }
 }
 
 export async function generateSpeechWithProvider(text: string): Promise<{
