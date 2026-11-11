@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, duplicate: true });
     }
 
-    const rawText = String(event.text || "").replace(/<@[A-Z0-9]+>\\s*/g, "").trim();
+    const rawText = String(event.text || "").replace(/<@[A-Z0-9]+>\s*/g, "").trim();
     const threadTs = event.thread_ts || event.ts;
 
     after(async () => {
