@@ -168,7 +168,7 @@ export async function processUserMessage(params: {
         tools,
         maxOutputTokens: Number(process.env.VELNOR_MAX_OUTPUT_TOKENS || 1400),
         executeTool: async (name, args) => ({
-          payload: await executeToolCall(name, args, params.channel, bundle),
+          payload: await executeToolCall(name, args, params.channel, bundle, params.userHandle),
         }),
       });
       replyText = result.text;
@@ -272,6 +272,7 @@ async function runBuiltInAgentOrchestrator(
   params: {
     channel: ChannelType;
     text: string;
+    userHandle?: string;
     attachments?: Attachment[];
   },
   bundle: ToolExecutionBundle
@@ -410,7 +411,8 @@ async function runBuiltInAgentOrchestrator(
       "create_reminder",
       { text: taskText, dueAt },
       params.channel,
-      bundle
+      bundle,
+      params.userHandle
     );
     return `⏰ **Reminder Set!**\n• **Task:** ${reminder.text}\n• **When:** ${reminder.dueAt}\n• **Channel:** ${params.channel.toUpperCase()}`;
   }
