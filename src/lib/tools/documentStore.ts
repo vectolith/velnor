@@ -108,17 +108,6 @@ export async function ingestDocumentOrUrl(params: {
     sentences.slice(0, 3).join(" ").slice(0, 420) ||
     cleanText.slice(0, 320);
   const chunks = chunkText(cleanText);
-  const docId = `doc-${Date.now()}`;
-  const wordCount = cleanText.split(/\s+/).length;
-
-  // Build quick extractive summary
-  const sentences = cleanText
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 25);
-  const summary =
-    sentences.slice(0, 3).join(" ").slice(0, 420) ||
-    cleanText.slice(0, 320);
 
   const newChunks: DocumentChunk[] = [];
   for (let idx = 0; idx < chunks.length; idx++) {
