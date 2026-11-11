@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     if (contentType.includes("application/json")) {
       const jsonDecision = authorizeJsonWebhook({
         secrets: [process.env.SENDBLUE_WEBHOOK_SECRET, process.env.LOOPMESSAGE_WEBHOOK_SECRET],
-        provided: req.headers.get("x-velnor-webhook-secret"),
+        provided: req.headers.get("x-velnor-webhook-secret") || req.headers.get("authorization"),
         simulator: isLocalSimulator,
       });
       if (!jsonDecision.ok) {
@@ -143,8 +143,12 @@ export async function POST(req: NextRequest) {
       // A malformed body is the caller's error, not a server fault.
       return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
-    const senderHandle = String(payload.number || payload.from_number || payload.sender || "").slice(0, 64);
+    const senderHandle = String(payload.contact || payload.number || payload.from_number || "").slice(0, 64);
     if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
+    if (payload.event && payload.event !== "message_inbound") return NextResponse.json({ status: "ignored", event: payload.event });
+    const provider = payload.contact ? "loopmessage" : "sendblue";
+    const webhookId = String(payload.webhook_id || payload.message_handle || payload.message_id || "");
+    if (webhookId && !inboundWebhookCache.seen(inboundKey([provider, webhookId]))) return NextResponse.json({ status: "duplicate" });
     const messageText = String(
       payload.content || payload.text || payload.body || payload.message || ""
     )
@@ -189,12 +193,11 @@ export async function POST(req: NextRequest) {
         // Outbound dispatch via LoopMessage if configured
         if (
           scoped.config.loopMessageAuthKey &&
-          scoped.config.loopMessageSecretKey &&
-          payload.recipient
+          payload.contact
         ) {
           deliveryResults.push(await sendLoopMessage({
             authKey: scoped.config.loopMessageAuthKey,
-            recipient: payload.recipient,
+            recipient: payload.contact,
             text: outboundText,
           }));
         }
