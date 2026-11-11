@@ -11,7 +11,7 @@ README = Path(__file__).resolve().parents[1] / "README.md"
 class TrainingContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        source = " ".join(
+        cls.source = TRAINER.read_text(encoding="utf-8")
         cls.tree = ast.parse(cls.source)
 
     def test_canonical_base_is_qwen_and_legacy_auto_fallback_is_absent(self):
@@ -49,9 +49,9 @@ class TrainingContractTests(unittest.TestCase):
         self.assertIn('torch.cuda.is_bf16_supported()', self.source)
 
     def test_gpu_requirements_do_not_replace_cuda_torch(self):
-        gpu_requirements = TRAIN.parent / "requirements-gpu.txt"
+        gpu_requirements = TRAINER.parent / "requirements-gpu.txt"
         requirements = gpu_requirements.read_text(encoding="utf-8")
-        self.assertNotRegex(requirements, r"(?m)^\s*torch([<=>!~]|\s|$)")
+        self.assertNotRegex(requirements, r"(?m)^\\s*torch([<=>!~]|\\s|$)")
         self.assertNotIn("download.pytorch.org/whl/cpu", requirements)
         self.assertIn("transformers==", requirements)
         self.assertIn("peft==", requirements)
@@ -60,12 +60,12 @@ class TrainingContractTests(unittest.TestCase):
         notebook_path = TRAINER.parent / "Velnor_Qwen_1.5B_Colab.ipynb"
         notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
         self.assertEqual(notebook["nbformat"], 4)
-        source = "\\n".join(
+        notebook_source = " ".join(
             "".join(cell.get("source", [])) for cell in notebook["cells"]
         )
-        self.assertIn("torch.cuda.is_available()", source)
-        self.assertIn("requirements-gpu.txt", source)
-        self.assertIn("SHA256SUMS.json", source)
+        self.assertIn("torch.cuda.is_available()", notebook_source)
+        self.assertIn("requirements-gpu.txt", notebook_source)
+        self.assertIn("SHA256SUMS.json", notebook_source)
 
     def test_readme_describes_same_base_and_opt_in_fast_mode(self):
         readme = README.read_text(encoding="utf-8")
