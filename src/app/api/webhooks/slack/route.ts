@@ -104,8 +104,9 @@ export async function POST(req: NextRequest) {
 
     const blocks = buildSlackBlocks(reply);
 
+    let deliveryResult;
     if (botToken && slackChannelId) {
-      void postSlackMessage({
+      deliveryResult = await postSlackMessage({
         botToken,
         channel: slackChannelId,
         text: reply.text,
@@ -120,6 +121,7 @@ export async function POST(req: NextRequest) {
       text: reply.text,
       blocks,
       reply,
+      delivery: deliveryResult || { ok: false },
     });
   } catch (err) {
     console.error("Slack webhook error:", err);
