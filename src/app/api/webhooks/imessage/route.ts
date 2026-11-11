@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     if (contentType.includes("application/json")) {
       const jsonDecision = authorizeJsonWebhook({
         secrets: [process.env.SENDBLUE_WEBHOOK_SECRET, process.env.LOOPMESSAGE_WEBHOOK_SECRET],
-        provided: req.headers.get("x-velnor-webhook-secret") || req.headers.get("authorization"),
+        provided: req.headers.get("sb-signing-secret") || req.headers.get("x-velnor-webhook-secret") || req.headers.get("authorization"),
         simulator: isLocalSimulator,
       });
       if (!jsonDecision.ok) {
@@ -145,9 +145,9 @@ export async function POST(req: NextRequest) {
     }
     const senderHandle = String(payload.contact || payload.number || payload.from_number || "").slice(0, 64);
     if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
-    if (payload.event && payload.event !== "message_inbound") return NextResponse.json({ status: "ignored", event: payload.event });
+    if (payload.is_outbound === true || (payload.event && payload.event !== "message_inbound")) return NextResponse.json({ status: "ignored", event: payload.event || "outbound" });
     const provider = payload.contact ? "loopmessage" : "sendblue";
-    const webhookId = String(payload.webhook_id || payload.message_handle || payload.message_id || "");
+    const webhookId = String(payload.message_handle || payload.webhook_id || payload.message_id || "");
     if (webhookId && !inboundWebhookCache.seen(inboundKey([provider, webhookId]))) return NextResponse.json({ status: "duplicate" });
     const messageText = String(
       payload.content || payload.text || payload.body || payload.message || ""
