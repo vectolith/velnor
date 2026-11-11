@@ -46,28 +46,30 @@ export async function POST(req: NextRequest) {
     }
 
     const handle = body.device ? "Siri (" + body.device + ")" : "Siri Shortcut";
-    const reply = await withVelnorUser(tenant.userId, () =>
-      processUserMessage({
+    const result = await withVelnorUser(tenant.userId, async () => {
+      const reply = await processUserMessage({
         channel: "imessage",
         userHandle: handle,
         text: query,
-      })
-    );
+      });
 
-    // Clean markdown for natural Siri / CarPlay spoken output
-    const spokenText = reply.text
-      .replace(/[*#_`~]/g, "")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .replace(/\n+/g, ". ")
-      .trim();
+      // Clean markdown for natural Siri / CarPlay spoken output.
+      const spokenText = reply.text
+        .replace(/[*#_`~]/g, "")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/\n+/g, ". ")
+        .trim();
 
-    let audioDataUrl: string | undefined;
-    let ttsModel: string | undefined;
-    if (body.voiceReply) {
-      const tts = await generateSpeechWithProvider(spokenText);
-      audioDataUrl = tts.audioDataUrl;
-      ttsModel = tts.modelUsed;
-    }
+      let audioDataUrl: string | undefined;
+      let ttsModel: string | undefined;
+      if (body.voiceReply) {
+        const tts = await generateSpeechWithProvider(spokenText);
+        audioDataUrl = tts.audioDataUrl;
+        ttsModel = tts.modelUsed;
+      }
+      return { reply, spokenText, audioDataUrl, ttsModel };
+    });
+    const { reply, spokenText, audioDataUrl, ttsModel } = result;
 
     return NextResponse.json({
       ok: true,
