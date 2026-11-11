@@ -38,11 +38,15 @@ function jsonError(message: string, status: number): Response {
   });
 }
 
-function decodeBase64Url(value: string): Uint8Array {
+function decodeBase64Url(value: string): ArrayBuffer {
   if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error("Invalid base64url segment");
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - value.length % 4) % 4);
   const binary = atob(base64);
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes.buffer;
 }
 
 function encodeBase64Url(value: Uint8Array): string {
