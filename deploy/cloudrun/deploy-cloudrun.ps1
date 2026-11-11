@@ -9,7 +9,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not $DataVolume) {\n  Write-Host "DataVolume is required: Cloud Run storage must be mounted at /app/.data for durable state." -ForegroundColor Red\n  exit 1\n}\n\nif (-not $ProjectId) {
+if (-not $DataVolume) {
+  Write-Host "DataVolume is required: Cloud Run storage must be mounted at /app/.data for durable state." -ForegroundColor Red
+  exit 1
+}
+
+if (-not $ProjectId) {
   Write-Host "Usage: .\deploy-cloudrun.ps1 -ProjectId <your-gcp-project-id> [-Region us-central1] [-DataVolume <gcs-bucket>]" -ForegroundColor Yellow
   exit 1
 }
