@@ -299,7 +299,7 @@ export function createReminder(params: {
     text: params.text,
     dueAt: params.dueAt || "Later today",
     channel: params.channel || "imessage",
-    recipient: params.recipient || "+1 (555) 019-2834",
+    recipient: params.recipient || "",
     completed: false,
     createdAt: new Date().toISOString(),
   };
