@@ -80,6 +80,20 @@ test("SQLite tenant records remain discoverable without a JSON mirror", async (t
   assert.equal(restored.memories[0].fact, "persisted in SQLite");
 });
 
+test("legacy tenant JSON is migrated into the collision-resistant key format", async () => {
+  const rawId = "imessage:+15550003";
+  const legacyId = "imessage_+15550003";
+  const state = await store.withVelnorUser("legacy-state-template", async () => store.getStore());
+  state.memories.push({ id: "legacy-memory", category: "work", fact: "preserved during migration", createdAt: new Date().toISOString() });
+  fs.mkdirSync(path.join(testRoot, ".data", "users"), { recursive: true });
+  fs.writeFileSync(path.join(testRoot, ".data", "users", legacyId + ".json"), JSON.stringify(state));
+  store.resetStoreCache();
+
+  const migrated = await store.withVelnorUser(rawId, async () => store.getStore());
+  assert.equal(migrated.memories[0].fact, "preserved during migration");
+  assert.ok(fs.existsSync(path.join(testRoot, ".data", "users", store.sanitizeUserId(rawId) + ".json")));
+});
+
 test("user ids are sanitised for filesystem use", () => {
   const key = store.sanitizeUserId("iMessage:+1 (555) 019-2834");
   assert.match(key, /^v2_/);
