@@ -122,3 +122,41 @@ test("Gmail organization uses the provider modify endpoint", async () => {
     assert.equal(urls.length, 2);
   });
 });
+
+test("Sendblue uses the documented send-message contract and sender line", async () => {
+  await withFetchMock(async (input, init) => {
+    assert.equal(String(input), "https://api.sendblue.co/api/send-message");
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.number, "+15551234567");
+    assert.equal(body.from_number, "+15557654321");
+    assert.equal(body.content, "Hello");
+    assert.equal((init?.headers as Record<string, string>)["sb-api-key-id"], "key-id");
+    return new Response(JSON.stringify({ status: "QUEUED", message_handle: "sendblue-handle" }), { status: 200 });
+  }, async () => {
+    const result = await sendSendblueMessage({
+      apiKeyId: "key-id",
+      apiSecretKey: "secret",
+      number: "+15551234567",
+      fromNumber: "+15557654321",
+      content: "Hello",
+    });
+    assert.equal(result.ok, true);
+    assert.match(result.detail || "", /sendblue-handle/);
+  });
+});
+
+test("LoopMessage uses its documented host, Authorization header, and contact field", async () => {
+  await withFetchMock(async (input, init) => {
+    assert.equal(String(input), "https://a.loopmessage.com/api/v1/message/send/");
+    const body = JSON.parse(String(init?.body));
+    assert.equal(body.contact, "+15551234567");
+    assert.equal(body.text, "Hello");
+    assert.equal((init?.headers as Record<string, string>).Authorization, "loop-api-key");
+    assert.equal("Loop-Secret-Key" in (init?.headers as Record<string, string>), false);
+    return new Response(JSON.stringify({ success: true, message_id: "loop-message-123" }), { status: 200 });
+  }, async () => {
+    const result = await sendLoopMessage({ authKey: "loop-api-key", recipient: "+15551234567", text: "Hello" });
+    assert.equal(result.ok, true);
+    assert.match(result.detail || "", /loop-message-123/);
+  });
+});
