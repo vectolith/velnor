@@ -189,3 +189,22 @@ test("Google Calendar retains the provider event ID and sends attendee updates",
     });
   });
 });
+
+test("Google Calendar does not report success when provider omits the event ID", async () => {
+  await withVelnorUser("calendar-missing-provider-id", async () => {
+    const state = getStore();
+    state.config.googleAccessToken = "test-access-token";
+    saveStore(state);
+    await withFetchMock(async () => new Response(JSON.stringify({}), { status: 200 }), async () => {
+      await assert.rejects(
+        createCalendarEvent({
+          title: "Missing provider ID",
+          date: "2026-11-12",
+          startTime: "10:00",
+        }),
+        /without returning an event ID/
+      );
+    });
+    assert.equal(getStore().calendarEvents.some((event) => event.title === "Missing provider ID"), false);
+  });
+});
