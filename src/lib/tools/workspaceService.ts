@@ -75,13 +75,10 @@ export async function draftOrSendEmail(params: {
   sendImmediately?: boolean;
 }): Promise<EmailItem> {
   const state = getStore();
+  if (!state.config.googleAccessToken) throw new Error("Gmail draft/send requires a verified Google OAuth connection.");
 
   if (params.sendImmediately) {
     assertRecipientAllowed(params.to, parseAllowlist(process.env.VELNOR_EMAIL_ALLOWLIST));
-    if (!state.config.googleAccessToken) {
-      throw new Error("Cannot send email: a verified Google OAuth connection is required.");
-    }
-
     const mimeMessage = [
       `To: ${params.to}`,
       `Subject: ${params.subject}`,
@@ -107,6 +104,32 @@ export async function draftOrSendEmail(params: {
     if (!sendResponse.ok) {
       const detail = await sendResponse.text().catch(() => "");
       throw new Error(`Gmail rejected the send (${sendResponse.status}): ${detail.slice(0, 200)}`);
+    }
+  } else {
+    const mimeMessage = [
+      `To: ${params.to}`,
+      `Subject: ${params.subject}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      params.body,
+    ].join("\r\n");
+    const raw = Buffer.from(mimeMessage)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    const draftResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${state.config.googleAccessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message: { raw } }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!draftResponse.ok) {
+      const detail = await draftResponse.text().catch(() => "");
+      throw new Error(`Gmail rejected the draft (${draftResponse.status}): ${detail.slice(0, 200)}`);
     }
   }
 
