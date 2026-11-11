@@ -93,11 +93,12 @@ export function middleware(req: NextRequest) {
               { status: 503 }
             );
           }
+          // Authorization is reserved for the per-user identity JWT verified
+          // by the route handler. The deployment perimeter uses a separate header.
           const provided =
             req.headers.get("x-velnor-secret") ||
             req.headers.get("x-velnor-admin-token") ||
             req.headers.get("x-velnor-key") ||
-            req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
             "";
           if (!safeEquals(provided, sharedSecret)) {
             return NextResponse.json(
