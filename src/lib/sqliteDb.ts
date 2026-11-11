@@ -70,9 +70,15 @@ function getSqliteDb() {
           value TEXT NOT NULL,
           updated_at TEXT NOT NULL
         );
-        DROP TABLE IF EXISTS vector_chunks;
-
       `);
+      // The former global vector_chunks table had no tenant ownership column.
+      // Quarantine it instead of deleting it: it is no longer queried, but
+      // operators retain a recoverable copy for a controlled tenant-aware import.
+      const legacyVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vector_chunks'").get();
+      const quarantinedVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'legacy_vector_chunks_quarantined'").get();
+      if (legacyVector && !quarantinedVector) {
+        db.exec("ALTER TABLE vector_chunks RENAME TO legacy_vector_chunks_quarantined");
+      }
       sqliteInstance = db;
       sqliteSupported = true;
       return db;
