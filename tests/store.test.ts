@@ -33,6 +33,32 @@ test("state survives a cache reset (persisted per user)", async () => {
   assert.equal(reloaded.memories[0].fact, "likes tea");
 });
 
+test("sealed provider credentials hydrate correctly from SQLite", async (t) => {
+  const { getDatabaseEngineStatus } = await import("../src/lib/sqliteDb");
+  if (!getDatabaseEngineStatus().engine.startsWith("node:sqlite")) {
+    t.skip("Node built-in SQLite is unavailable in this runtime");
+    return;
+  }
+
+  const previousKey = process.env.VELNOR_SECRET_KEY;
+  process.env.VELNOR_SECRET_KEY = "store-test-key-with-at-least-16-characters";
+  try {
+    await store.withVelnorUser("imessage:credential-hydration", async () => {
+      const state = store.getStore();
+      state.config.openaiApiKey = "sk-test-credential";
+      store.saveStore(state);
+    });
+
+    store.resetStoreCache();
+    await store.withVelnorUser("imessage:credential-hydration", async () => {
+      assert.equal(store.getStore().config.openaiApiKey, "sk-test-credential");
+    });
+  } finally {
+    if (previousKey === undefined) delete process.env.VELNOR_SECRET_KEY;
+    else process.env.VELNOR_SECRET_KEY = previousKey;
+  }
+});
+
 test("user ids are sanitised for filesystem use", () => {
   assert.equal(store.sanitizeUserId("iMessage:+1 (555) 019-2834"), "imessage_+1__555__019-2834");
   assert.equal(store.sanitizeUserId(""), "default");
