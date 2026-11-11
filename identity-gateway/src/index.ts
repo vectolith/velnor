@@ -28,9 +28,13 @@ const provisionedTenants = new Map<string, number>();
 const encoder = new TextEncoder();
 
 function jsonError(message: string, status: number): Response {
-  return Response.json({ error: message }, {
+  return new Response(JSON.stringify({ error: message }), {
     status,
-    headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" },
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+    },
   });
 }
 
@@ -128,7 +132,8 @@ async function verifyAccessAssertion(token: string, env: Env): Promise<AccessCla
 
 async function deriveTenantId(subject: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", encoder.encode(subject));
-  return "cf-" + encodeBase64Url(new Uint8Array(digest)).replace(/-/g, "a").replace(/_/g, "b").replace(/[a-z]/g, (c) => c === "a" ? "0" : "1");
+  const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return "cf-" + hex;
 }
 
 async function signVelnorToken(tenantId: string, env: Env): Promise<string> {
