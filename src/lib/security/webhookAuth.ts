@@ -195,6 +195,6 @@ export function publicRequestUrl(req: {
   const forwardedProto = req.headers.get("x-forwarded-proto");
   const forwardedHost = req.headers.get("x-forwarded-host");
   const proto = (forwardedProto || req.nextUrl.protocol || "https:").replace(/:$/, "");
-  const host = req.headers.get("host") || forwardedHost || req.nextUrl.host;
+  const host = forwardedHost || req.headers.get("host") || req.nextUrl.host;
   return `${proto}://${host}${req.nextUrl.pathname}${req.nextUrl.search}`;
 }
