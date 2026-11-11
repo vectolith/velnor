@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { DEFAULT_MODELS } from "./ai/registry";
@@ -82,15 +83,29 @@ interface StoreScope {
 }
 const storage = new AsyncLocalStorage<StoreScope>();
 
-/** Stable, filesystem-safe tenant key. */
-export function sanitizeUserId(raw: string): string {
+/** Previous key format, retained only to migrate existing tenant data. */
+function legacySanitizeUserId(raw: string): string {
   const cleaned = (raw || "").trim().toLowerCase().replace(/[^a-z0-9._@+-]/g, "_");
   return cleaned.slice(0, 96) || ROOT_USER;
 }
 
+/** Collision-resistant, filesystem-safe and idempotent tenant key. */
+export function sanitizeUserId(raw: string): string {
+  const value = (raw || "").trim();
+  if (!value || value === ROOT_USER) return ROOT_USER;
+  if (/^v2h_[a-f0-9]{64}$/.test(value)) return value;
+  if (/^v2_(?:[A-Za-z0-9.@+-]|_x[0-9a-f]{2}_)*$/.test(value)) return value;
+  const encoded = value.replace(/[^A-Za-z0-9.@+-]/g, (character) =>
+    "_x" + character.charCodeAt(0).toString(16).padStart(2, "0") + "_"
+  );
+  const key = "v2_" + encoded;
+  return key.length <= 96
+    ? key
+    : "v2h_" + crypto.createHash("sha256").update(value).digest("hex");
+}
+
 export function resolveUserId(channel: ChannelType | string, handle?: string): string {
-  if (!handle) return sanitizeUserId("anon:" + channel);
-  return sanitizeUserId(String(channel) + ":" + handle);
+  return sanitizeUserId(String(channel) + ":" + (handle || "anonymous"));
 }
 
 function stateFile(userId: string): string {
@@ -143,15 +158,22 @@ function mergeState(loaded: Partial<VelnorState> | null | undefined): VelnorStat
 /** Load (and cache) the state for one tenant. */
 export function loadUserState(userId: string): VelnorState {
   const id = sanitizeUserId(userId);
+  const legacyId = legacySanitizeUserId(userId);
   const hit = cache().get(id);
   if (hit) return hit;
 
   let loaded: VelnorState | null = loadStateFromSqlite(sqliteKey(id));
+  let loadedFromLegacy = false;
+  if (!loaded && legacyId !== id) {
+    loaded = loadStateFromSqlite(sqliteKey(legacyId));
+    loadedFromLegacy = Boolean(loaded);
+  }
   if (!loaded) {
     try {
-      const file = stateFile(id);
+      const file = fs.existsSync(stateFile(id)) ? stateFile(id) : stateFile(legacyId);
       if (fs.existsSync(file)) {
         loaded = JSON.parse(fs.readFileSync(file, "utf-8")) as VelnorState;
+        loadedFromLegacy = file === stateFile(legacyId) && legacyId !== id;
       }
     } catch (err) {
       // Recovery: keep the broken file for inspection instead of silently
@@ -188,7 +210,7 @@ export function loadUserState(userId: string): VelnorState {
 
   const state = mergeState(loaded);
   cache().set(id, state);
-  if (!loaded) saveStateForUser(id, state);
+  if (!loaded || loadedFromLegacy) saveStateForUser(id, state);
   return state;
 }
 
@@ -218,7 +240,7 @@ export function withVelnorUser<T>(userId: string, fn: () => T | Promise<T>): Pro
   const id = sanitizeUserId(userId);
   const existing = storage.getStore();
   if (existing && existing.userId === id) return Promise.resolve(fn());
-  return storage.run({ userId: id, state: loadUserState(id) }, async () => fn());
+  return storage.run({ userId: id, state: loadUserState(userId) }, async () => fn());
 }
 
 export function currentUserId(): string {
