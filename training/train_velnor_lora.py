@@ -525,9 +525,11 @@ def make_minibatches(examples, batch_size: int, pad_id: int):
     return batches
 
 
-def move_batch(batch, device=None):
-    target = device or next(model_parameter.device for model_parameter in model.parameters())
-    return {key: value.to(target, non_blocking=(target.type == "cuda")) for key, value in batch.items()}
+def move_batch(batch, device):
+    return {
+        key: value.to(device, non_blocking=(device.type == "cuda"))
+        for key, value in batch.items()
+    }
 
 
 def eval_loss(model, batches):
