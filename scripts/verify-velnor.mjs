@@ -299,6 +299,11 @@ await check("GET /api/vcard returns a contact card", async () => {
   assert(text.includes("BEGIN:VCARD"), "not a vCard");
 });
 
+await check("Google OAuth callback rejects unsigned state", async () => {
+  const res = await fetch(`${BASE}/api/auth/google/callback?code=fake&state=not-signed`);
+  assert(res.status === 400, `expected 400 for unsigned OAuth state, got ${res.status}`);
+});
+
 await check("every state-touching API route refuses an unauthenticated caller", async () => {
   const protectedPaths = [
     ["GET", "/api/auth/google"],
