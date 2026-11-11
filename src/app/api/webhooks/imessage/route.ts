@@ -40,12 +40,29 @@ export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type") || "";
   const state = getStore();
   const isLocalSimulator = isSimulatorAllowed(req.headers.get("x-velnor-simulator"));
+  let jsonPayload: any;
 
   try {
     if (contentType.includes("application/json")) {
+      const rawJsonBody = await req.text();
+      try {
+        jsonPayload = JSON.parse(rawJsonBody);
+      } catch {
+        return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+      }
+
+      // Each provider must prove possession of its own webhook secret. A
+      // LoopMessage secret must never authenticate a Sendblue callback (or vice versa).
+      const isLoopMessage = Boolean(jsonPayload.contact) || jsonPayload.event === "message_inbound";
+      const expectedSecret = isLoopMessage
+        ? process.env.LOOPMESSAGE_WEBHOOK_SECRET
+        : process.env.SENDBLUE_WEBHOOK_SECRET;
+      const provided = isLoopMessage
+        ? req.headers.get("authorization") || req.headers.get("x-velnor-webhook-secret")
+        : req.headers.get("sb-signing-secret") || req.headers.get("x-velnor-webhook-secret");
       const jsonDecision = authorizeJsonWebhook({
-        secrets: [process.env.SENDBLUE_WEBHOOK_SECRET, process.env.LOOPMESSAGE_WEBHOOK_SECRET],
-        provided: req.headers.get("sb-signing-secret") || req.headers.get("x-velnor-webhook-secret") || req.headers.get("authorization"),
+        secrets: [expectedSecret],
+        provided,
         simulator: isLocalSimulator,
       });
       if (!jsonDecision.ok) {
@@ -140,13 +157,7 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     // 2. SENDBLUE / LOOPMESSAGE iMESSAGE JSON WEBHOOK
     // =========================================================================
-    let payload: any;
-    try {
-      payload = await req.json();
-    } catch {
-      // A malformed body is the caller's error, not a server fault.
-      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-    }
+    const payload: any = jsonPayload;
     const senderHandle = String(payload.contact || payload.number || payload.from_number || "").slice(0, 64);
     if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
     if (payload.is_outbound === true || (payload.event && payload.event !== "message_inbound")) return NextResponse.json({ status: "ignored", event: payload.event || "outbound" });
