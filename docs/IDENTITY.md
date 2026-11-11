@@ -102,7 +102,7 @@ The internal provisioning route accepts only tenant IDs in the deterministic `cf
 ### Security and rollout notes
 
 - The Worker overwrites inbound `Authorization` and `x-velnor-secret` headers; clients cannot choose a Velnor tenant by sending their own identity claims.
-- The Worker removes the Cloudflare assertion and provisioning-secret headers before forwarding requests to Velnor.
+- The Worker removes the Cloudflare assertion and provisioning-secret headers before forwarding requests to Velnor. Its Wrangler configuration disables the public `workers.dev` endpoint; bind only the intended API hostname route.
 - Velnor still validates the minted token independently. Keep the signing secret identical only between the Worker and Velnor.
 - Restrict direct access to the Velnor origin where practical. Even though the origin still requires the shared secret and a valid user token, the gateway should remain the normal public entry point.
 - The Worker caches successful tenant provisioning for up to five minutes per isolate. If a tenant is removed, Velnor's own provisioned-tenant check rejects the next request after the cache expires.
