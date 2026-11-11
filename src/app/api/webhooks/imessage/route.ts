@@ -16,6 +16,9 @@ import { Attachment } from "@/lib/types";
 
 const MAX_INPUT_CHARS = 8000;
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 function escapeXml(unsafe: string): string {
   return unsafe
     .replace(/&/g, "&amp;")
