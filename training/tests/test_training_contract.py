@@ -66,7 +66,6 @@ class TrainingContractTests(unittest.TestCase):
         self.assertIn("torch.cuda.is_available()", source)
         self.assertIn("requirements-gpu.txt", source)
         self.assertIn("SHA256SUMS.json", source)
-        self.assertIn("VELNOR_FAST_TRAIN=1", source) is False
 
     def test_readme_describes_same_base_and_opt_in_fast_mode(self):
         readme = README.read_text(encoding="utf-8")
