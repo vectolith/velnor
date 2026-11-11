@@ -195,22 +195,52 @@ export default {
       return fetch(request);
     }
 
-    try {
-      if (!env.VELNOR_ORIGIN || !env.VELNOR_SHARED_SECRET || !env.CF_ACCESS_AUD) {
-        return jsonError("Identity gateway is not configured.", 503);
-      }
-      const assertion = request.headers.get("Cf-Access-Jwt-Assertion");
-      if (!assertion) return jsonError("A Cloudflare Access identity is required.", 401);
+    if (
+      !env.CF_ACCESS_TEAM_DOMAIN ||
+      !env.CF_ACCESS_AUD ||
+      !env.VELNOR_ORIGIN ||
+      !env.VELNOR_SHARED_SECRET ||
+      env.VELNOR_SHARED_SECRET.length < 32 ||
+      !env.VELNOR_TENANT_TOKEN_SECRET ||
+      env.VELNOR_TENANT_TOKEN_SECRET.length < 32 ||
+      !env.VELNOR_PROVISIONING_SECRET ||
+      env.VELNOR_PROVISIONING_SECRET.length < 32
+    ) {
+      return jsonError("Identity gateway is not configured.", 503);
+    }
 
-      const claims = await verifyAccessAssertion(assertion, env);
+    let upstreamOrigin: URL;
+    try {
+      upstreamOrigin = new URL(env.VELNOR_ORIGIN);
+      if (upstreamOrigin.protocol !== "https:" && upstreamOrigin.hostname !== "localhost") {
+        return jsonError("Velnor origin must use HTTPS.", 503);
+      }
+    } catch {
+      return jsonError("Velnor origin is invalid.", 503);
+    }
+
+    const assertion = request.headers.get("Cf-Access-Jwt-Assertion");
+    if (!assertion) return jsonError("A Cloudflare Access identity is required.", 401);
+
+    let claims: AccessClaims;
+    try {
+      claims = await verifyAccessAssertion(assertion, env);
+    } catch (error) {
+      console.warn("Cloudflare Access assertion rejected:", error);
+      return jsonError("Identity verification failed.", 401);
+    }
+
+    let bearer: string;
+    try {
       const tenantId = await deriveTenantId(claims.sub as string);
       await provisionTenant(tenantId, env);
-      const bearer = await signVelnorToken(tenantId, env);
+      bearer = await signVelnorToken(tenantId, env);
+    } catch (error) {
+      console.error("Velnor tenant provisioning or token issuance failed:", error);
+      return jsonError("Identity service is temporarily unavailable.", 503);
+    }
 
-      const upstreamOrigin = new URL(env.VELNOR_ORIGIN);
-      if (upstreamOrigin.protocol !== "https:" && upstreamOrigin.hostname !== "localhost") {
-        return jsonError("Velnor origin must use HTTPS.", 500);
-      }
+    try {
       const upstreamUrl = new URL(incoming.pathname + incoming.search, upstreamOrigin);
       const headers = new Headers(request.headers);
       headers.delete("Cf-Access-Jwt-Assertion");
@@ -227,8 +257,8 @@ export default {
       });
       return await fetch(upstreamRequest);
     } catch (error) {
-      console.error("Velnor identity gateway rejected request:", error);
-      return jsonError("Identity verification failed.", 401);
+      console.error("Velnor upstream request failed:", error);
+      return jsonError("Velnor API is temporarily unavailable.", 502);
     }
   },
 };
