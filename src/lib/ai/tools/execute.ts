@@ -121,7 +121,7 @@ export async function executeToolCall(
       return { email: item };
     }
     case "organize_email": {
-      const res = organizeEmail({
+      const res = await organizeEmail({
         query: String(args.query || ""),
         action: args.action || "archive",
         label: args.label ? String(args.label) : undefined,
