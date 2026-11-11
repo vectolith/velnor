@@ -14,14 +14,18 @@ export async function POST(req: NextRequest) {
     const state = getStore();
     const signingSecret = state.config.slackSigningSecret || process.env.SLACK_SIGNING_SECRET || "";
 
-    if (!authorizeSlackRequest({
+    const authorization = authorizeSlackRequest({
       signingSecret,
       timestamp: req.headers.get("x-slack-request-timestamp"),
       signature: req.headers.get("x-slack-signature"),
       rawBody,
       simulator: false,
-    })) {
-      return NextResponse.json({ error: "Unauthorized: invalid Slack signature" }, { status: 401 });
+    });
+    if (!authorization.ok) {
+      return NextResponse.json(
+        { error: authorization.error || "Unauthorized: invalid Slack signature" },
+        { status: authorization.status || 401 }
+      );
     }
 
     const contentType = req.headers.get("content-type") || "";
