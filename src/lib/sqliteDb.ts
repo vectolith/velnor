@@ -98,6 +98,20 @@ export function loadStateFromSqlite(key = "velnor_root_state"): VelnorState | nu
   return null;
 }
 
+export function listStateKeysFromSqlite(): string[] {
+  const db = getSqliteDb();
+  if (!db) return [];
+  try {
+    const rows = db.prepare("SELECT key FROM kv_state").all() as Array<{ key: string }>;
+    return rows
+      .map((row) => row.key === "velnor_root_state" ? "default" : row.key.startsWith("state:") ? row.key.slice(6) : "")
+      .filter(Boolean);
+  } catch (err) {
+    console.warn("SQLite tenant listing warning:", err);
+    return [];
+  }
+}
+
 export function saveStateToSqlite(state: VelnorState, key = "velnor_root_state"): boolean {
   const db = getSqliteDb();
   if (!db) return false;
