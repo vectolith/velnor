@@ -98,7 +98,7 @@ export async function draftOrSendEmail(params: {
     const draftResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${state.config.googleAccessToken}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ message: { raw } }),
@@ -136,7 +136,7 @@ export async function organizeEmail(params: {
   label?: string;
 }): Promise<{ updatedCount: number; affectedSubjects: string[] }> {
   const state = getStore();
-  const token = state.config.googleAccessToken;
+  const token = await getGoogleAccessToken();
   if (!token) throw new Error("Gmail organization requires a verified Google OAuth connection.");
   if (!["archive", "mark_read", "label"].includes(params.action)) throw new Error("Unsupported Gmail organization action.");
   if (!params.emailId && !(params.query || "").trim()) throw new Error("Provide a Gmail message ID or search query.");
@@ -201,7 +201,7 @@ export async function organizeEmail(params: {
 
 export async function listCalendarEvents(dateFilter?: string): Promise<CalendarEventItem[]> {
   const state = getStore();
-  const token = state.config.googleAccessToken;
+  const token = await getGoogleAccessToken();
   if (!token) throw new Error("Google Calendar access requires a verified Google OAuth connection.");
   const start = dateFilter ? new Date(dateFilter + "T00:00:00") : new Date();
   if (!dateFilter) start.setHours(0, 0, 0, 0);
@@ -255,7 +255,7 @@ export async function createCalendarEvent(params: {
     const calendarResponse = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${state.config.googleAccessToken}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
