@@ -86,7 +86,7 @@ export function authorizeChatTenant(
       claims.exp - claims.iat > 15 * 60) {
     return denied("Identity token lifetime is invalid.");
   }
-  if (typeof claims.sub !== "string" || !/^[A-Za-z0-9._@+-]{1,96}$/.test(claims.sub)) {
+  if (typeof claims.sub !== "string" || !/^[A-Za-z0-9._@+-]{1,96}$/.test(claims.sub) || claims.sub.startsWith("v2_") || claims.sub.startsWith("v2h_")) {
     return denied("Identity token subject is invalid.");
   }
 
