@@ -9,7 +9,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-if (-not $ProjectId) {
+if (-not $DataVolume) {\n  Write-Host "DataVolume is required: Cloud Run storage must be mounted at /app/.data for durable state." -ForegroundColor Red\n  exit 1\n}\n\nif (-not $ProjectId) {
   Write-Host "Usage: .\deploy-cloudrun.ps1 -ProjectId <your-gcp-project-id> [-Region us-central1] [-DataVolume <gcs-bucket>]" -ForegroundColor Yellow
   exit 1
 }
@@ -31,7 +31,7 @@ $envPairs = @(
   "VELNOR_DATA_DIR=/app/.data"
 )
 
-foreach ($optional in @("TWILIO_AUTH_TOKEN", "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_CHANNEL", "VELNOR_ADMIN_TOKEN", "SENDBLUE_WEBHOOK_SECRET", "LOOPMESSAGE_WEBHOOK_SECRET", "VELNOR_EMAIL_ALLOWLIST", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "BLUD_INTERNAL_RPC_URL")) {
+foreach ($optional in @("TWILIO_AUTH_TOKEN", "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_CHANNEL", "VELNOR_ADMIN_TOKEN", "SENDBLUE_WEBHOOK_SECRET", "LOOPMESSAGE_WEBHOOK_SECRET", "VELNOR_EMAIL_ALLOWLIST", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "VELNOR_TENANT_TOKEN_ISSUER", "VELNOR_TENANT_TOKEN_AUDIENCE", "BLUD_INTERNAL_RPC_URL")) {
   $value = [Environment]::GetEnvironmentVariable($optional)
   if ($value) { $envPairs += "$optional=$value" }
 }
