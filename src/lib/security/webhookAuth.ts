@@ -43,6 +43,20 @@ export function timingSafeEquals(a: string, b: string): boolean {
   return crypto.timingSafeEqual(left, right);
 }
 
+/** Separate deployment perimeter credential; never substitute an admin token. */
+export function authorizeGatewayRequest(
+  secret: string | undefined,
+  provided: string | null | undefined
+): WebhookDecision {
+  if (!secret || secret.length < 32) {
+    return deny(503, "Gateway perimeter authentication is not configured.");
+  }
+  if (!provided || !timingSafeEquals(provided, secret)) {
+    return deny(401, "Request must pass through the trusted API gateway.");
+  }
+  return { ok: true };
+}
+
 export function authorizeCronRequest(secret: string | undefined, provided: string | null | undefined): WebhookDecision {
   if (!secret || secret.length < 32) {
     return deny(503, "Cron authentication is not configured.");
