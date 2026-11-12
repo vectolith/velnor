@@ -220,11 +220,6 @@ test("Twilio signature URL ignores spoofable forwarded and Host headers", () => 
   try {
     mutableEnv.NODE_ENV = "production";
     mutableEnv.VELNOR_PUBLIC_URL = "https://api.velnor.ai";
-    const headers = new Map([
-      ["x-forwarded-host", "attacker.example"],
-      ["x-forwarded-proto", "http"],
-      ["host", "attacker.example"],
-    ]);
     const url = publicRequestUrl({
       nextUrl: {
         origin: "http://attacker.example",
