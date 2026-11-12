@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - fix/security-hardening-followup
   pull_request:
     branches:
       - main
