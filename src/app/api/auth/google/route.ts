@@ -62,5 +62,5 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set("code_challenge", challenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
 
-  return NextResponse.json({ authUrl: authUrl.toString(), expiresIn: 600 });
+  return NextResponse.json({ authUrl: authUrl.toString(), expiresIn: 600 }, { headers: { "Cache-Control": "no-store" } });
 }
