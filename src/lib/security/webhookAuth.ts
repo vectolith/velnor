@@ -43,6 +43,16 @@ export function timingSafeEquals(a: string, b: string): boolean {
   return crypto.timingSafeEqual(left, right);
 }
 
+export function authorizeCronRequest(secret: string | undefined, provided: string | null | undefined): WebhookDecision {
+  if (!secret || secret.length < 32) {
+    return deny(503, "Cron authentication is not configured.");
+  }
+  if (!provided || !timingSafeEquals(provided, secret)) {
+    return deny(401, "Unauthorized cron invocation.");
+  }
+  return { ok: true };
+}
+
 export function isSimulatorAllowed(headerValue: string | null | undefined): boolean {
   return (
     !isProduction() &&
@@ -197,4 +207,30 @@ export function publicRequestUrl(req: {
   const proto = (forwardedProto || req.nextUrl.protocol || "https:").replace(/:$/, "");
   const host = forwardedHost || req.headers.get("host") || req.nextUrl.host;
   return `${proto}://${host}${req.nextUrl.pathname}${req.nextUrl.search}`;
+}/**
+ * Build the URL Twilio signs from a configured canonical origin. Forwarded and
+ * Host headers are attacker-controlled unless every hop is explicitly trusted;
+ * never use them to select the signature input in production.
+ */
+export function publicRequestUrl(req: {
+  nextUrl: { origin?: string; pathname: string; search: string };
+}): string {
+  const configuredOrigin = runtimeEnv.VELNOR_PUBLIC_URL;
+  if (isProduction() && !configuredOrigin) {
+    throw new Error("VELNOR_PUBLIC_URL must be configured for production webhook signature verification.");
+  }
+  const base = configuredOrigin || req.nextUrl.origin || "";
+  let origin: URL;
+  try {
+    origin = new URL(base);
+  } catch {
+    throw new Error("VELNOR_PUBLIC_URL must be a valid absolute URL.");
+  }
+  if (
+    origin.username || origin.password || origin.pathname !== "/" ||
+    origin.search || origin.hash || (isProduction() && origin.protocol !== "https:")
+  ) {
+    throw new Error("VELNOR_PUBLIC_URL must be a canonical HTTPS origin in production.");
+  }
+  return new URL(req.nextUrl.pathname + req.nextUrl.search, origin).toString();
 }
