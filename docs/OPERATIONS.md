@@ -99,7 +99,7 @@ Storage at `/app/.data`; without a mount, chats, reminders and sealed credential
 die with the container revision.
 
 Preflight checks: `VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY` (32+ characters),
-`VELNOR_TENANT_TOKEN_SECRET` (32+ characters), `VELNOR_PROVISIONING_SECRET` (32+ characters), and `CRON_SECRET` are required;
+`VELNOR_TENANT_TOKEN_SECRET` (32+ characters), `VELNOR_PROVISIONING_SECRET` (32+ characters), `CRON_SECRET`, and a canonical HTTPS `VELNOR_PUBLIC_URL` are required;
 `VELNOR_DATA_DIR`, `TWILIO_AUTH_TOKEN`,
 `SLACK_SIGNING_SECRET` and `SENDBLUE_WEBHOOK_SECRET` warn when absent;
 `VELNOR_EMAIL_ALLOWLIST` is rejected if an entry is not an address or @domain.
