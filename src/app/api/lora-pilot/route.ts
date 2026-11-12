@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";\nimport { authorizeChatTenant } from "@/lib/security/tenant";
 
 const LORA_SERVER_URL = process.env.VELNOR_LORA_PILOT_URL || "http://127.0.0.1:8099";
 
@@ -15,7 +15,7 @@ function readJsonIfExists(filePath: string) {
   return null;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {\n  const tenant = authorizeChatTenant(req.headers.get("authorization"));\n  if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401, headers: { "Cache-Control": "no-store" } });
   const trainingDir = path.join(process.cwd(), "training");
   const velnorDir = path.join(trainingDir, "outputs", "velnor-core-v1");
   const legacyDir = path.join(trainingDir, "outputs", "velnor-behavior-pilot");
@@ -64,7 +64,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as { message?: string };
-    const message = body.message?.trim();
+    const message = typeof body.message === "string" ? body.message.trim() : "";\n    if (message.length > 4000) return NextResponse.json({ error: "Message exceeds the 4000-character limit." }, { status: 413 });
     if (!message) {
       return NextResponse.json(
         { error: "Provide a non-empty 'message' string." },
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
     }
 
     const data = await res.json();
-    return NextResponse.json(data);
+    return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     return NextResponse.json(
       {
