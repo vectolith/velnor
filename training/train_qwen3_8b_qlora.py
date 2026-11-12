@@ -39,6 +39,11 @@ LR = float(os.environ.get("VELNOR_QWEN3_LR", "1e-4"))
 MIN_TOTAL_VRAM_GIB = 14.0
 MIN_FREE_VRAM_GIB = 12.0
 OUT = Path(os.environ.get("VELNOR_QWEN3_OUTPUT", "outputs/qwen3-8b-qlora"))
+# Optional continuation run: resume from an existing adapter directory and carry
+# the previous best validation loss forward so a weaker continuation epoch can
+# never overwrite the better adapter.
+RESUME = os.environ.get("VELNOR_QWEN3_RESUME", "").strip()
+PREV_BEST_LOSS = float(os.environ.get("VELNOR_QWEN3_PREV_BEST_LOSS", "inf"))
 random.seed(SEED)
 torch.manual_seed(SEED)
 
@@ -141,7 +146,14 @@ def main() -> None:
         target_modules=targets,
         task_type="CAUSAL_LM",
     )
-    model = get_peft_model(base, lora_config)
+    if RESUME:
+        resume_dir = Path(RESUME)
+        if not (resume_dir / "adapter_config.json").is_file():
+            raise RuntimeError(f"Resume adapter config missing under {resume_dir}")
+        model = PeftModel.from_pretrained(base, str(resume_dir), is_trainable=True)
+        print(f"[qwen3-8b] Resumed adapter from {resume_dir}", flush=True)
+    else:
+        model = get_peft_model(base, lora_config)
     model.print_trainable_parameters()
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total_params = sum(p.numel() for p in model.parameters())
@@ -169,7 +181,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     best_dir = OUT / "adapter"
     history = []
-    best_loss = float("inf")
+    best_loss = PREV_BEST_LOSS
     best_epoch = 0
     optimizer_step = 0
 
@@ -272,6 +284,8 @@ def main() -> None:
         "dataset": {
             "train_examples": len(TRAIN),
             "heldout_examples": len(HELDOUT),
+            "resumed_from": RESUME or None,
+            "prior_best_loss": None if PREV_BEST_LOSS == float("inf") else PREV_BEST_LOSS,
             "train_source": "training/train_velnor_lora.py:TRAIN",
             "heldout_source": "training/train_velnor_lora.py:HELDOUT",
         },
