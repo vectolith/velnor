@@ -13,6 +13,7 @@ import platform
 import random
 import subprocess
 import time
+import shutil
 from pathlib import Path
 
 import torch
@@ -180,6 +181,14 @@ def main() -> None:
     )
     OUT.mkdir(parents=True, exist_ok=True)
     best_dir = OUT / "adapter"
+    if best_dir.exists():
+        raise RuntimeError(
+            f"Output adapter directory already exists: {best_dir}. Use a fresh run directory."
+        )
+    if RESUME:
+        # Seed the new run with the prior best adapter. If no continuation epoch
+        # beats PREV_BEST_LOSS, final evaluation still has a valid best checkpoint.
+        shutil.copytree(Path(RESUME), best_dir)
     history = []
     best_loss = PREV_BEST_LOSS
     best_epoch = 0
