@@ -15,7 +15,8 @@ This checklist separates repository-level protections from controls that must be
 ## Security smoke tests
 
 - [ ] Unauthenticated requests to /api/chat, /api/settings, /api/siri, /api/tts, and /api/lora-pilot are rejected.
-- [ ] Cron GET and POST requests without the correct CRON_SECRET are rejected even when sent directly to the origin.
+- [ ] Cron GET and POST requests without both the gateway perimeter secret and correct CRON_SECRET are rejected even when sent directly to the origin.
+- [ ] Direct-origin webhook and Google OAuth callback requests without the gateway perimeter secret are rejected; requests through the Worker receive an overwritten x-velnor-secret.
 - [ ] Twilio, Slack, Sendblue, and LoopMessage callbacks reject missing, invalid, and stale credentials/signatures.
 - [ ] A Google OAuth callback with altered, expired, or replayed state is rejected.
 - [ ] Two distinct authenticated tenant identities cannot read or mutate each other's messages, documents, reminders, provider credentials, or OAuth state.
