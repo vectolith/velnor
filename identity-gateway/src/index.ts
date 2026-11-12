@@ -235,6 +235,11 @@ export default {
     const headers = new Headers(request.headers);
     headers.delete("Cf-Access-Jwt-Assertion");
     headers.delete("x-velnor-provisioning-secret");
+    headers.delete("host");
+    headers.delete("x-forwarded-for");
+    headers.delete("x-real-ip");
+    headers.delete("x-forwarded-host");
+    headers.delete("x-forwarded-proto");
 
     if (publicPath) {
       // External providers cannot present an Access assertion. The Worker
