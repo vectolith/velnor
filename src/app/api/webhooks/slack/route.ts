@@ -4,13 +4,14 @@ import { processUserMessage } from "@/lib/ai/agent";
 import { postSlackMessage } from "@/lib/channels/slack";
 import { authorizeSlackRequest } from "@/lib/security/webhookAuth";
 import { inboundWebhookCache, inboundKey } from "@/lib/security/idempotency";
+import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    const rawBody = await req.text();
+    const rawBody = await readRequestBodyLimited(req, 1_048_576);
     const state = getStore();
     const signingSecret = state.config.slackSigningSecret || process.env.SLACK_SIGNING_SECRET || "";
 
@@ -136,6 +137,9 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, accepted: true });
   } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      return NextResponse.json({ error: error.message }, { status: 413 });
+    }
     console.error("Slack webhook error:", error);
     return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
