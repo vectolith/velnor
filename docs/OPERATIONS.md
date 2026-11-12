@@ -119,3 +119,16 @@ parked the same way: its `crons` block was the only thing firing
 `/api/cron/reminders`, so on the VM that job belongs to `velnor-reminders.timer`,
 which `deploy/oci/setup-vm.sh` installs. If you deploy anywhere else, wire that route
 to a scheduler first or reminders will never be delivered.
+
+
+### One-time legacy credential reseal
+
+After setting `VELNOR_SECRET_KEY` and `VELNOR_PROVISIONING_SECRET`, run the migration directly against the origin (not through the public Worker):
+
+```sh
+curl --fail-with-body -X POST \
+  -H "x-velnor-provisioning-secret: $VELNOR_PROVISIONING_SECRET" \
+  "$VELNOR_ORIGIN/api/internal/maintenance/reseal-credentials"
+```
+
+The endpoint enumerates every tenant profile, loads it through the credential migration path, and writes the sealed configuration to SQLite and its JSON recovery mirror. It is blocked by the public identity gateway and requires the separate provisioning secret. Run it once after deployment and retain the response showing the processed profile count. Historical backups and exported copies still require separate rotation or deletion.
