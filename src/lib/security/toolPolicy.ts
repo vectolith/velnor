@@ -35,6 +35,13 @@ export function noteUserMessage(text: string): void {
   const userId = currentUserId();
   const messageSequence = (userMessageSequences.get(userId) || 0) + 1;
   userMessageSequences.set(userId, messageSequence);
+  if (userMessageSequences.size > MAX_PENDING * 10) {
+    const oldest = userMessageSequences.keys().next().value;
+    if (oldest) {
+      userMessageSequences.delete(oldest);
+      lastUserAffirmations.delete(oldest);
+    }
+  }
   lastUserAffirmations.set(userId, {
     affirmative: isAffirmation(text),
     messageSequence,
