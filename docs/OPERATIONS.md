@@ -57,8 +57,8 @@ Provider credentials entered through `POST /api/settings` are sealed with AES-25
 | `POST /api/webhooks/slack` | v0 signature + 300s freshness |
 | `GET/POST /api/chat`, `GET/POST /api/settings`, `POST /api/siri` | signed tenant bearer token; shared deployment secret is an outer gate where enabled |
 | `POST /api/tts` | signed tenant bearer token + shared deployment gate |
-| `GET/POST /api/lora-pilot` | `VELNOR_SHARED_SECRET` |
-| `/api/cron/*` | `Authorization: Bearer $CRON_SECRET` |
+| `GET/POST /api/lora-pilot` | signed tenant bearer token + shared deployment-secret perimeter |
+| `/api/cron/*` | `Authorization: Bearer $CRON_SECRET`, validated in middleware and again in each route handler |
 | `GET /api/health`, `GET /api/webhooks/manifest` | public |
 | `POST /api/internal/tenants/provision` | `x-velnor-provisioning-secret` (identity gateway only) |
 
