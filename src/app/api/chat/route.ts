@@ -13,6 +13,7 @@ import {
 } from "@/lib/tools/workspaceService";
 import { Attachment, ChannelType } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
+import { enforceToolPolicy, noteUserMessage } from "@/lib/security/toolPolicy";
 
 export async function GET(req: NextRequest) {
   const tenant = authorizeChatTenant(req.headers.get("authorization"));
@@ -71,6 +72,23 @@ export async function POST(req: NextRequest) {
   return withVelnorUser(tenant.userId, () => handlePost(body));
 }
 
+function requireActionConfirmation(
+  toolName: "organize_email" | "create_calendar_event",
+  args: Record<string, unknown>,
+  confirmationText: unknown
+): NextResponse | null {
+  // Confirmation is supplied as a separate explicit user affirmation on the
+  // retry request. The policy binds it to the authenticated tenant and exact
+  // normalized action arguments, then consumes it once.
+  if (typeof confirmationText === "string") noteUserMessage(confirmationText);
+  const decision = enforceToolPolicy(toolName, args);
+  if (decision.allowed) return null;
+  return NextResponse.json(
+    { error: decision.reason, confirmation_required: true },
+    { status: 409 }
+  );
+}
+
 async function handlePost(body: any) {
   try {
     const action = body.action || "message";
@@ -94,12 +112,15 @@ async function handlePost(body: any) {
     }
 
     if (action === "organize_email") {
-      await organizeEmail({
+      const args = {
         emailId: body.emailId ? String(body.emailId) : undefined,
         query: body.query ? String(body.query) : undefined,
         action: body.emailAction || "archive",
         label: body.label ? String(body.label) : undefined,
-      });
+      };
+      const confirmation = requireActionConfirmation("organize_email", args, body.confirmationText);
+      if (confirmation) return confirmation;
+      await organizeEmail(args);
       return NextResponse.json({
         emails: getStore().emails.filter((e) => !e.archived),
       });
@@ -129,14 +150,17 @@ async function handlePost(body: any) {
     }
 
     if (action === "create_event") {
-      const ev = await createCalendarEvent({
+      const args = {
         title: String(body.title || "New Event"),
         date: String(body.date || new Date().toISOString().split("T")[0]),
         startTime: String(body.startTime || "10:00"),
         endTime: body.endTime ? String(body.endTime) : undefined,
         attendees: Array.isArray(body.attendees) ? body.attendees : [],
         location: body.location ? String(body.location) : "Google Meet",
-      });
+      };
+      const confirmation = requireActionConfirmation("create_calendar_event", args, body.confirmationText);
+      if (confirmation) return confirmation;
+      const ev = await createCalendarEvent(args);
       return NextResponse.json({ event: ev, calendarEvents: getStore().calendarEvents });
     }
 
@@ -201,4 +225,3 @@ async function handlePost(body: any) {
     );
   }
 }
-
