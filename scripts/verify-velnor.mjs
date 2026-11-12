@@ -167,7 +167,8 @@ if (TWILIO_TOKEN) await check("POST /api/webhooks/imessage with a valid Twilio s
     method: "POST",
     headers: {
       "content-type": "application/x-www-form-urlencoded",
-      "x-twilio-signature": twilioSignature(url, params),
+      "x-twilio-signature": twilioSignature(process.env.VELNOR_PUBLIC_URL ? new URL("/api/webhooks/imessage", process.env.VELNOR_PUBLIC_URL).toString() : url, params),
+      "x-velnor-secret": SHARED_SECRET,
     },
     body: new URLSearchParams(params).toString(),
   });
@@ -179,7 +180,7 @@ if (TWILIO_TOKEN) await check("POST /api/webhooks/imessage with a valid Twilio s
 if (TWILIO_TOKEN) await check("POST /api/webhooks/imessage without a signature is rejected", async () => {
   const res = await fetch(`${BASE}/api/webhooks/imessage`, {
     method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
+    headers: { "content-type": "application/x-www-form-urlencoded", "x-velnor-secret": SHARED_SECRET },
     body: "From=%2B15550100001&Body=ping&NumMedia=0",
   });
   assert([401, 403, 503].includes(res.status), `expected a rejection, got ${res.status}`);
@@ -189,7 +190,7 @@ if (process.env.SENDBLUE_WEBHOOK_SECRET) await check("POST /api/webhooks/imessag
   const payload = JSON.stringify({ number: "+15550100002", content: "ping" });
   const unauthorised = await fetch(`${BASE}/api/webhooks/imessage`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", "x-velnor-secret": SHARED_SECRET },
     body: payload,
   });
   assert(unauthorised.status === 401 || unauthorised.status === 503, `expected auth failure, got ${unauthorised.status}`);
@@ -199,6 +200,7 @@ if (process.env.SENDBLUE_WEBHOOK_SECRET) await check("POST /api/webhooks/imessag
     headers: {
       "content-type": "application/json",
       "x-velnor-webhook-secret": process.env.SENDBLUE_WEBHOOK_SECRET || "",
+      "x-velnor-secret": SHARED_SECRET,
     },
     body: payload,
   });
@@ -218,6 +220,7 @@ if (SLACK_SECRET) await check("POST /api/webhooks/slack with a fresh signature r
       "content-type": "application/x-www-form-urlencoded",
       "x-slack-request-timestamp": timestamp,
       "x-slack-signature": slackSignature(timestamp, rawBody),
+      "x-velnor-secret": SHARED_SECRET,
     },
     body: rawBody,
   });
@@ -300,7 +303,7 @@ await check("GET /api/vcard returns a contact card", async () => {
 });
 
 await check("Google OAuth callback rejects unsigned state", async () => {
-  const res = await fetch(`${BASE}/api/auth/google/callback?code=fake&state=not-signed`);
+  const res = await fetch(`${BASE}/api/auth/google/callback?code=fake&state=not-signed`, { headers: auth });
   assert(res.status === 400, `expected 400 for unsigned OAuth state, got ${res.status}`);
 });
 
