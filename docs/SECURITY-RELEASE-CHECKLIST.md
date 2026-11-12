@@ -28,6 +28,7 @@ This checklist separates repository-level protections from controls that must be
 
 - [ ] Deploy with VELNOR_SECRET_KEY configured so legacy plaintext provider credentials are resealed during tenant hydration.
 - [ ] Verify SQLite and JSON recovery mirrors contain sealed credential values, not plaintext.
+- [ ] After configuring VELNOR_SECRET_KEY, call the operator-only POST /api/internal/maintenance/reseal-credentials endpoint directly on the origin with x-velnor-provisioning-secret to sweep every tenant profile; verify the returned processed count and sealed values in SQLite and JSON mirrors.
 - [ ] Rotate provider credentials if plaintext versions may exist in old backups, snapshots, logs, or external copies. Runtime migration cannot rewrite historical backups.
 - [ ] Back up tenant data before changing encryption keys; key rotation requires a coordinated decrypt-and-reseal migration.
 
