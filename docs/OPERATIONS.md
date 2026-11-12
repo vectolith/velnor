@@ -14,10 +14,11 @@ A webhook user id is derived from the provider channel and stable sender identit
 
 ## Durability, backups and retention
 
-A container filesystem is not durable. On Cloud Run, mount a volume at the data
-directory (`/app/.data`) and run with `--min-instances` set so the instance that
-holds the volume is the one serving requests; otherwise every cold start begins
-from an empty profile. The `Dockerfile` in this repository is the supported build.
+The production OCI deployment mounts the named `velnor-data` Docker volume
+at `/app/.data`. Confirm the volume exists and is mounted before every rollout;
+a container rebuild must never replace the volume. Cloud Run is an alternative
+target and needs its own durable-volume and instance-routing design. The
+`Dockerfile` is the supported application image build.
 
 Backup: snapshot the `.data` directory (SQLite file plus the JSON mirror). The JSON
 mirror exists precisely so a corrupted SQLite file is not the end of a profile.
@@ -42,10 +43,17 @@ Provider credentials entered through `POST /api/settings` are sealed with AES-25
 - Rotating the key makes existing sealed values undecryptable. They are dropped on
   read rather than crashing, which means: rotate, then re-enter the provider keys
   once through `POST /api/settings`.
-- Required production secrets: `VELNOR_SHARED_SECRET` (control plane),
-  `TWILIO_AUTH_TOKEN`, `SLACK_SIGNING_SECRET`, `SENDBLUE_WEBHOOK_SECRET` or
-  `LOOPMESSAGE_WEBHOOK_SECRET`, `CRON_SECRET`, `VELNOR_SECRET_KEY`. Missing ones
-  fail closed with 503 rather than running open.
+- Deployment preflight requires `VELNOR_SHARED_SECRET`,
+  `VELNOR_TENANT_TOKEN_SECRET`, `VELNOR_PROVISIONING_SECRET`,
+  `VELNOR_SECRET_KEY`, `CRON_SECRET`, and canonical HTTPS
+  `VELNOR_PUBLIC_URL`. Generate each secret independently; do not reuse one
+  value across purposes. Generate `VELNOR_SECRET_KEY` with at least 32 random
+  bytes and keep it backed up separately from the data volume.
+- Provider credentials are integration-specific: set `SLACK_BOT_TOKEN` and
+  `SLACK_SIGNING_SECRET`, Twilio credentials, and the Sendblue or LoopMessage
+  secrets only for the providers being enabled. Missing provider credentials
+  must leave that integration disabled or fail closed; never substitute a
+  placeholder secret.
 
 ## Endpoint exposure
 
