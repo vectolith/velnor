@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   return withVelnorUser(tenant.userId, () => updateSettings(body as Record<string, unknown>));
 }
 
-function updateSettings(body: Record<string, unknown>) {
+function updateSettings(body: any) {
   const state = getStore();
 
   if (body.activeProvider) state.config.activeProvider = body.activeProvider;
