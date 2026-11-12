@@ -16,11 +16,11 @@ const REQUIRED = [
   ["VELNOR_PROVISIONING_SECRET", "authorises first-time tenant provisioning by the identity gateway"],
   ["VELNOR_SECRET_KEY", "seals provider keys at rest; without it keys are never written"],
   ["CRON_SECRET", "authorises /api/cron/reminders"],
+  ["VELNOR_PUBLIC_URL", "canonical HTTPS origin for Google OAuth and Twilio webhook signatures"],
 ];
 
 const RECOMMENDED = [
   ["VELNOR_DATA_DIR", "point this at a mounted volume, or state dies with the container"],
-  ["VELNOR_PUBLIC_URL", "recommended so OAuth callback URLs are stable behind reverse proxies"],
   ["TWILIO_AUTH_TOKEN", "without it the Twilio webhook returns 503"],
   ["SLACK_SIGNING_SECRET", "without it the Slack webhook returns 503"],
   ["SLACK_BOT_TOKEN", "the bot cannot post into the channel without it"],
@@ -39,6 +39,15 @@ for (const [name, why] of REQUIRED) {
     problems.push(`VELNOR_SECRET_KEY is only ${value.length} characters; use 32+ random characters`);
   } else if ((name === "VELNOR_TENANT_TOKEN_SECRET" || name === "VELNOR_PROVISIONING_SECRET") && value.length < 32) {
     problems.push(`${name} must contain at least 32 characters`);
+  } else if (name === "VELNOR_PUBLIC_URL") {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+        problems.push("VELNOR_PUBLIC_URL must be a canonical HTTPS origin without credentials, path, query, or fragment");
+      }
+    } catch {
+      problems.push("VELNOR_PUBLIC_URL must be a valid absolute HTTPS origin");
+    }
   }
 }
 
