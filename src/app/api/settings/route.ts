@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getEffectiveKeys, getStore, saveStore, resolveSlackChannel, isValidSlackChannel, withVelnorUser } from "@/lib/store";
 import { authorizeChatTenant } from "@/lib/security/tenant";
+import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 export async function GET(req: NextRequest) {
   const tenant = authorizeChatTenant(req.headers.get("authorization"));
@@ -36,11 +37,22 @@ function buildSettings() {
 export async function POST(req: NextRequest) {
   const tenant = authorizeChatTenant(req.headers.get("authorization"));
   if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401 });
-  const body = await req.json();
-  return withVelnorUser(tenant.userId, () => updateSettings(body));
+  let body: unknown;
+  try {
+    body = JSON.parse(await readRequestBodyLimited(req, 64 * 1024));
+  } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      return NextResponse.json({ error: error.message }, { status: 413 });
+    }
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "JSON body must be an object." }, { status: 400 });
+  }
+  return withVelnorUser(tenant.userId, () => updateSettings(body as Record<string, unknown>));
 }
 
-function updateSettings(body: any) {
+function updateSettings(body: Record<string, unknown>) {
   const state = getStore();
 
   if (body.activeProvider) state.config.activeProvider = body.activeProvider;
@@ -82,8 +94,6 @@ function updateSettings(body: any) {
   }
   if (typeof body.googleClientId === "string") state.config.googleClientId = body.googleClientId.trim();
   if (typeof body.googleClientSecret === "string") state.config.googleClientSecret = body.googleClientSecret.trim();
-  if (typeof body.googleAccessToken === "string") state.config.googleAccessToken = body.googleAccessToken.trim();
-  if (typeof body.googleConnectedEmail === "string") state.config.googleConnectedEmail = body.googleConnectedEmail.trim();
 
   saveStore(state);
   return NextResponse.json({ ok: true });
