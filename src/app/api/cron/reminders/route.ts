@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { dispatchReminderNotification } from "@/lib/scheduler";
-import { getStore } from "@/lib/store";
+import { getStore } from "@/lib/store";\nimport { authorizeCronRequest } from "@/lib/security/webhookAuth";\n\nfunction requireCronAuth(req: NextRequest): NextResponse | null {\n  const decision = authorizeCronRequest(process.env.CRON_SECRET, req.headers.get("authorization")?.replace(/^Bearer\\s+/i, ""));\n  if (decision.ok) return null;\n  return NextResponse.json({ error: decision.error }, { status: decision.status ?? 401, headers: { "Cache-Control": "no-store" } });\n}
 
 export async function POST(req: NextRequest) {
   try {
