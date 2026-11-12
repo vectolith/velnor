@@ -8,7 +8,7 @@ This checklist separates repository-level protections from controls that must be
 - [ ] Verify the Access application's exact AUD tag and team-domain issuer against the Worker variables.
 - [ ] Set VELNOR_PUBLIC_URL to the canonical HTTPS origin used by Google OAuth and Twilio signature verification.
 - [ ] Keep VELNOR_SHARED_SECRET, VELNOR_TENANT_TOKEN_SECRET, VELNOR_PROVISIONING_SECRET, VELNOR_SECRET_KEY, and CRON_SECRET distinct, randomly generated, and stored only in deployment secret managers.
-- [ ] Restrict direct origin ingress. The Cloud Run deployment currently allows unauthenticated network ingress; route-level JWT and webhook/cron checks still apply, but this is not equivalent to a gateway-only origin.
+- [ ] Restrict the OCI origin at both the VCN security list/NSG and host firewall: allow TCP 443 only from the required Cloudflare egress ranges; if TCP 80 is exposed for Caddy ACME, verify it cannot provide an alternate application route; keep 8080 loopback-only. Prove direct-origin API calls cannot bypass the Worker.
 - [ ] Configure platform-edge/shared rate limiting for multi-instance deployments. The in-process limiter is only a per-instance abuse guard.
 - [ ] Verify the identity gateway can reach the origin without routing back through its own public hostname.
 
