@@ -3,6 +3,7 @@ import test from "node:test";
 import crypto from "node:crypto";
 import {
   authorizeCronRequest,
+  authorizeGatewayRequest,
   authorizeJsonWebhook,
   authorizeSlackRequest,
   authorizeTwilioRequest,
@@ -205,6 +206,14 @@ test("twilio signature implements the documented algorithm", () => {
     .update(URL_PATH + "a" + params.a + "b" + params.b)
     .digest("base64");
   assert.equal(computeTwilioSignature("token", URL_PATH, params), expected);
+});
+
+test("gateway perimeter requires its dedicated strong secret", () => {
+  const secret = "dedicated-gateway-secret-with-at-least-32-characters";
+  assert.equal(authorizeGatewayRequest(undefined, secret).status, 503);
+  assert.equal(authorizeGatewayRequest("short", "short").status, 503);
+  assert.equal(authorizeGatewayRequest(secret, "admin-token").status, 401);
+  assert.equal(authorizeGatewayRequest(secret, secret).ok, true);
 });
 
 test("cron endpoints fail closed without a strong secret and reject mismatches", () => {
