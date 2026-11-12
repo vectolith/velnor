@@ -21,6 +21,8 @@ This checklist separates repository-level protections from controls that must be
 - [ ] A Google OAuth callback with altered, expired, or replayed state is rejected.
 - [ ] Two distinct authenticated tenant identities cannot read or mutate each other's messages, documents, reminders, provider credentials, or OAuth state.
 - [ ] Direct requests with spoofed X-Forwarded-For, X-Real-IP, Host, or forwarded-proto headers cannot change the canonical Twilio signature URL or trusted rate-limit identity.
+- [ ] Oversized or chunked JSON bodies are rejected before buffering on chat, settings, Siri, TTS, tenant provisioning, cron, and provider webhook routes.
+- [ ] A stale affirmative from an earlier conversation turn cannot authorize a newly requested sensitive action.
 
 ## Credential migration and rotation
 
