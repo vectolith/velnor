@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { authorizeGatewayRequest } from "@/lib/security/webhookAuth";
 
 interface RateBucket {
   count: number;
@@ -81,7 +82,7 @@ export function middleware(req: NextRequest) {
     // world-writable, which means anyone with the URL can read the user's
     // mail and spend their API credits.
     const sharedSecret =
-      process.env.VELNOR_SHARED_SECRET || process.env.VELNOR_ADMIN_TOKEN || "";
+      process.env.VELNOR_SHARED_SECRET || "";
     // Simulator bypass is strictly development-only. Keep this aligned with
     // webhookAuth.isSimulatorAllowed so a production env flag cannot bypass auth.
     const allowSimulator =
@@ -98,12 +99,9 @@ export function middleware(req: NextRequest) {
       pathname === "/api/auth/google/callback";
 
     if (requiresGatewaySecret && req.method !== "OPTIONS" && process.env.NODE_ENV === "production") {
-      if (!sharedSecret) {
-        return NextResponse.json({ error: "Gateway perimeter is not configured." }, { status: 503 });
-      }
-      const provided = req.headers.get("x-velnor-secret") || "";
-      if (!safeEquals(provided, sharedSecret)) {
-        return NextResponse.json({ error: "Request must pass through the trusted API gateway." }, { status: 401 });
+      const decision = authorizeGatewayRequest(sharedSecret, req.headers.get("x-velnor-secret"));
+      if (!decision.ok) {
+        return NextResponse.json({ error: decision.error }, { status: decision.status ?? 401 });
       }
     }
 
@@ -116,26 +114,14 @@ export function middleware(req: NextRequest) {
     }
 
     if (needsAuth && !allowSimulator && (sharedSecret || process.env.NODE_ENV === "production")) {
-      if (!sharedSecret) {
-        return NextResponse.json(
-          {
-            error:
-              "Server is not secured: set VELNOR_SHARED_SECRET before exposing this deployment.",
-          },
-          { status: 503 }
-        );
-      }
       // Authorization is reserved for the per-user identity JWT verified
-      // by the route handler. The deployment perimeter uses a separate header.
-      const provided =
-        req.headers.get("x-velnor-secret") ||
-        req.headers.get("x-velnor-admin-token") ||
-        req.headers.get("x-velnor-key") ||
-        "";
-      if (!safeEquals(provided, sharedSecret)) {
+      // by the route handler. Only the dedicated deployment secret establishes
+      // the perimeter; admin tokens and legacy key headers are not substitutes.
+      const decision = authorizeGatewayRequest(sharedSecret, req.headers.get("x-velnor-secret"));
+      if (!decision.ok) {
         return NextResponse.json(
-          { error: "Unauthorized: valid VELNOR_SHARED_SECRET required." },
-          { status: 401 }
+          { error: decision.error },
+          { status: decision.status ?? 401 }
         );
       }
     }
