@@ -21,10 +21,9 @@ function safeEquals(a: string, b: string): boolean {
   return diff === 0;
 }
 
-// Prefer Cloudflare's client-IP header, which is overwritten by Cloudflare at
-// its edge. Never trust the left-most X-Forwarded-For value: clients can supply
-// that header themselves. When not behind Cloudflare, use the bearer identity
-// as a stable fallback; unauthenticated traffic shares one conservative bucket.
+// Trust Cloudflare's client-IP header only when the deployment secret proves
+// the request passed through the identity gateway. A direct-origin caller can
+// forge CF-Connecting-IP; untrusted traffic therefore shares one bounded bucket.
 function getRateLimitKey(req: NextRequest, sharedSecret: string): string {
   // Trust Cloudflare's edge-supplied address only after proving this request
   // passed through the gateway that overwrites x-velnor-secret. Direct-origin
