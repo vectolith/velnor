@@ -86,11 +86,11 @@ export async function GET(req: NextRequest) {
       return { email: profile.email };
     });
 
-    return NextResponse.json({ ok: true, status: "connected", email: result.email });
+    return NextResponse.json({ ok: true, status: "connected", email: result.email }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = (error as Error).message;
     const status = message.includes("not active") ? 400 : 500;
     console.error("Google OAuth callback failed:", message);
-    return NextResponse.json({ ok: false, error: "oauth_exchange_failed" }, { status });
+    return NextResponse.json({ ok: false, error: "oauth_exchange_failed" }, { status, headers: { "Cache-Control": "no-store" } });
   }
 }
