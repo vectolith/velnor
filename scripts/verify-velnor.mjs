@@ -326,6 +326,7 @@ await check("every state-touching API route refuses an unauthenticated caller", 
     ["POST", "/api/siri"],
     ["GET", "/api/lora-pilot"],
     ["GET", "/api/cron/reminders"],
+    ["POST", "/api/internal/maintenance/reseal-credentials"],
   ];
   for (const [method, path] of protectedPaths) {
     const res = await fetch(`${BASE}${path}`, {
