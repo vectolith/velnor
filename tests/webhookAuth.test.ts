@@ -1,9 +1,9 @@
+import { authorizeGatewayRequest } from "../src/lib/security/gatewayAuth";
 import assert from "node:assert/strict";
 import test from "node:test";
 import crypto from "node:crypto";
 import {
   authorizeCronRequest,
-  authorizeGatewayRequest,
   authorizeJsonWebhook,
   authorizeSlackRequest,
   authorizeTwilioRequest,
