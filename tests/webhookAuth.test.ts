@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import crypto from "node:crypto";
 import {
-  authorizeCronRequest,\n  authorizeJsonWebhook,
+  authorizeCronRequest,
+  authorizeJsonWebhook,
   authorizeSlackRequest,
   authorizeTwilioRequest,
   computeSlackSignature,
   computeTwilioSignature,
-  isSimulatorAllowed,\n  publicRequestUrl,
+  isSimulatorAllowed,
+  publicRequestUrl,
   verifySlackSignature,
   verifyTwilioSignature,
 } from "../src/lib/security/webhookAuth";
@@ -218,13 +220,17 @@ test("Twilio signature URL ignores spoofable forwarded and Host headers", () => 
   try {
     mutableEnv.NODE_ENV = "production";
     mutableEnv.VELNOR_PUBLIC_URL = "https://api.velnor.ai";
+    const headers = new Map([
+      ["x-forwarded-host", "attacker.example"],
+      ["x-forwarded-proto", "http"],
+      ["host", "attacker.example"],
+    ]);
     const url = publicRequestUrl({
-      headers: { get: (name: string) => ({
-        "x-forwarded-host": "attacker.example",
-        "x-forwarded-proto": "http",
-        host: "attacker.example",
-      } as Record<string, string>)[name] || null },
-      nextUrl: { origin: "http://attacker.example", pathname: "/api/webhooks/imessage", search: "?x=1" },
+      nextUrl: {
+        origin: "http://attacker.example",
+        pathname: "/api/webhooks/imessage",
+        search: "?x=1",
+      },
     });
     assert.equal(url, "https://api.velnor.ai/api/webhooks/imessage?x=1");
   } finally {
