@@ -193,21 +193,6 @@ export function authorizeJsonWebhook(input: {
 }
 
 /**
- * Twilio signs the public URL it posted to. `req.url` is only absolute when the
- * server happens to provide it; under the standalone server and in containers it
- * is a bare path, which silently invalidated every signature. Rebuild it from the
- * forwarded headers instead, falling back to the request's own origin.
- */
-export function publicRequestUrl(req: {
-  headers: { get(name: string): string | null };
-  nextUrl: { protocol: string; host: string; pathname: string; search: string };
-}): string {
-  const forwardedProto = req.headers.get("x-forwarded-proto");
-  const forwardedHost = req.headers.get("x-forwarded-host");
-  const proto = (forwardedProto || req.nextUrl.protocol || "https:").replace(/:$/, "");
-  const host = forwardedHost || req.headers.get("host") || req.nextUrl.host;
-  return `${proto}://${host}${req.nextUrl.pathname}${req.nextUrl.search}`;
-}/**
  * Build the URL Twilio signs from a configured canonical origin. Forwarded and
  * Host headers are attacker-controlled unless every hop is explicitly trusted;
  * never use them to select the signature input in production.
