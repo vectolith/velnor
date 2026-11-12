@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { authorizeGatewayRequest } from "@/lib/security/webhookAuth";
+import { authorizeGatewayRequest } from "@/lib/security/gatewayAuth";
 
 interface RateBucket {
   count: number;
