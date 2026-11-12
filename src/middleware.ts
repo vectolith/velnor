@@ -144,7 +144,7 @@ export function middleware(req: NextRequest) {
           const providedPassword =
             req.headers.get("x-bluebubbles-password") ||
             req.nextUrl.searchParams.get("password") ||
-            req.headers.get("authorization")?.replace(/^Bearer\\s+/i, "") ||
+            req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
             "";
           if (!safeEquals(providedPassword, bluebubblesPassword)) {
             return NextResponse.json(
@@ -209,7 +209,7 @@ export function middleware(req: NextRequest) {
     if (adminToken && pathname === "/api/settings" && req.method === "POST") {
       const provided =
         req.headers.get("x-velnor-admin-token") ||
-        req.headers.get("authorization")?.replace(/^Bearer\\s+/i, "");
+        req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
       if (provided !== adminToken) {
         return NextResponse.json(
           { error: "Unauthorized: valid VELNOR_ADMIN_TOKEN required." },
