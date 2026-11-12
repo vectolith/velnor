@@ -43,8 +43,6 @@ jobs:
           node-version: 22
 
       - name: Install pinned Antigravity CLI and bridge
-        env:
-          AGY_VERSION: "1.5.6"
         run: |
           set -euo pipefail
           mkdir -p "$HOME/.local/bin" "$RUNNER_TEMP/agy-cli" "$RUNNER_TEMP/agent"
