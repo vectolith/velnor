@@ -68,7 +68,11 @@ test("unknown signed identities are refused", () => {
 
 test("invalid signatures are refused", () => {
   const valid = token("tenant-123", {});
-  const tampered = valid.slice(0, -1) + (valid.endsWith("a") ? "b" : "a");
+  const parts = valid.replace(/^Bearer /, "").split(".");
+  // Change a full signature byte rather than the final base64url character:
+  // the last character can contain unused padding bits and decode identically.
+  parts[2] = (parts[2][0] === "a" ? "b" : "a") + parts[2].slice(1);
+  const tampered = "Bearer " + parts.join(".");
   assert.equal(authorizeChatTenant(tampered, [DEFAULT_TENANT, "tenant-123"]).ok, false);
 });
 
