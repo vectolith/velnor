@@ -206,20 +206,6 @@ export function middleware(req: NextRequest) {
       );
     }
 
-    // Optional Admin Token gate for /api/settings mutation in production.
-    const adminToken = process.env.VELNOR_ADMIN_TOKEN;
-    if (adminToken && pathname === "/api/settings" && req.method === "POST") {
-      const provided =
-        req.headers.get("x-velnor-admin-token") ||
-        req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-      if (provided !== adminToken) {
-        return NextResponse.json(
-          { error: "Unauthorized: valid VELNOR_ADMIN_TOKEN required." },
-          { status: 401 }
-        );
-      }
-    }
-
     // Optional Cron Secret gate for /api/cron/reminders in production.
     const cronSecret = process.env.CRON_SECRET;
     if (pathname.startsWith("/api/cron/")) {
