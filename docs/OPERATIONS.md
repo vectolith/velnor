@@ -91,36 +91,59 @@ The repository's current workflow is the source of truth; no manual patch is nee
 
 ## Deploying
 
-`deploy/cloudrun/deploy-cloudrun.ps1` runs `scripts/preflight-deploy.mjs` first and refuses to
-continue when a required secret is missing, because Velnor fails closed: a deploy
-without `VELNOR_SHARED_SECRET` produces a service that answers 503 everywhere and
-looks broken rather than unsecured. Pass `-DataVolume <bucket>` to mount Cloud
-Storage at `/app/.data`; without a mount, chats, reminders and sealed credentials
-die with the container revision.
+Production is the Oracle Cloud VM in `deploy/oci/`. The supported install and
+rebuild path is `deploy/oci/setup-vm.sh`; the VM runs the application on
+`127.0.0.1:8080`, with Caddy terminating TLS on ports 80/443 and a named Docker
+volume mounted at `/app/.data`. Do not publish port 8080 or use
+`docker compose down -v` on a live installation.
 
-Preflight checks: `VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY` (32+ characters),
-`VELNOR_TENANT_TOKEN_SECRET` (32+ characters), `VELNOR_PROVISIONING_SECRET` (32+ characters), `CRON_SECRET`, and a canonical HTTPS `VELNOR_PUBLIC_URL` are required;
-`VELNOR_DATA_DIR`, `TWILIO_AUTH_TOKEN`,
-`SLACK_SIGNING_SECRET` and `SENDBLUE_WEBHOOK_SECRET` warn when absent;
-`VELNOR_EMAIL_ALLOWLIST` is rejected if an entry is not an address or @domain.
+Before first use, set the following on the VM in `deploy/oci/.env`:
+- The generated `VELNOR_SHARED_SECRET`, `VELNOR_TENANT_TOKEN_SECRET`,
+  `VELNOR_PROVISIONING_SECRET`, `VELNOR_SECRET_KEY`, and `CRON_SECRET`.
+- `VELNOR_HOST` to the origin hostname served by Caddy.
+- `VELNOR_PUBLIC_URL` to the canonical public API origin, normally
+  `https://api.velnor.ai`; this is the URL used for Google OAuth and Twilio
+  signature reconstruction, not necessarily the VM's origin hostname.
+- Provider credentials and signing secrets for each integration being enabled.
 
-Run it locally before any rollout:
+Run the production preflight before rollout. It requires all six values below;
+the command deliberately uses placeholders and must be run in a protected shell,
+not committed to the repository:
 
+```sh
+VELNOR_SHARED_SECRET=<from-secret-manager> \
+VELNOR_SECRET_KEY=<from-secret-manager> \
+VELNOR_TENANT_TOKEN_SECRET=<from-secret-manager> \
+VELNOR_PROVISIONING_SECRET=<from-secret-manager> \
+CRON_SECRET=<from-secret-manager> \
+VELNOR_PUBLIC_URL=https://api.velnor.ai \
+NODE_ENV=production node scripts/preflight-deploy.mjs
 ```
-VELNOR_SHARED_SECRET=... VELNOR_SECRET_KEY=... VELNOR_TENANT_TOKEN_SECRET=... VELNOR_PROVISIONING_SECRET=... CRON_SECRET=... node scripts/preflight-deploy.mjs
-```
 
-## Where things run
+The Cloudflare Worker in `identity-gateway/` fronts `api.velnor.ai/api/*`.
+Configure a Cloudflare Access self-hosted application and an explicit allow
+policy for that hostname. Set the Worker variables
+`CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUD`, and `VELNOR_ORIGIN`; store
+`VELNOR_SHARED_SECRET`, `VELNOR_TENANT_TOKEN_SECRET`, and
+`VELNOR_PROVISIONING_SECRET` as Worker secrets. `VELNOR_ORIGIN` must resolve
+directly to the OCI origin and must not point back to `api.velnor.ai` or another
+hostname routed through the same Worker. Deploy with the route in
+`identity-gateway/wrangler.toml`, then verify an actual Access login and
+provider webhook callbacks.
 
-Production is a single Oracle Cloud VM (`deploy/oci/`), documented in
-`deploy/oci/README.md`. `deploy/cloudrun/` is the Cloud Run alternative, kept for as
-long as it works; it is not the deployment of record. `deploy/vercel/vercel.json` is
-parked the same way: its `crons` block was the only thing firing
-`/api/cron/reminders`, so on the VM that job belongs to `velnor-reminders.timer`,
-which `deploy/oci/setup-vm.sh` installs. If you deploy anywhere else, wire that route
-to a scheduler first or reminders will never be delivered.
+Restrict OCI origin ingress so TCP 443 is reachable only from the Cloudflare
+egress ranges used by the Worker; verify both the VCN security list/NSG and the
+VM host firewall. If TCP 80 remains open for Caddy's ACME HTTP validation, it
+must only serve the redirect/challenge path and must not provide an alternate
+application route. Keep port 8080 bound to loopback. Prove direct-origin requests
+cannot bypass the gateway before enabling production traffic.
 
+Configure shared/platform-edge rate limiting for the public API. The application's
+in-process limiter is a bounded per-instance abuse guard, not a global quota.
 
+`deploy/cloudrun/` is an alternative deployment target, not the production
+deployment of record. If it is used, its durable-volume, ingress, scheduler, and
+rate-limit requirements must be independently configured and verified.
 ### One-time legacy credential reseal
 
 After setting `VELNOR_SECRET_KEY` and `VELNOR_PROVISIONING_SECRET`, run the migration directly against the origin (not through the public Worker):
