@@ -202,7 +202,7 @@ export default {
     if (request.method === "OPTIONS") return fetch(request);
     // Tenant provisioning is an internal control-plane operation. The Worker
     // invokes it directly against VELNOR_ORIGIN with its separate secret.
-    if (incoming.pathname === "/api/internal/tenants/provision") {
+    if (incoming.pathname.startsWith("/api/internal/")) {
       return jsonError("Not found.", 404);
     }
 
