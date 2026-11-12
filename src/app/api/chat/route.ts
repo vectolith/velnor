@@ -14,6 +14,7 @@ import {
 import { Attachment, ChannelType } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
 import { enforceToolPolicy, noteUserMessage } from "@/lib/security/toolPolicy";
+import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 export async function GET(req: NextRequest) {
   const tenant = authorizeChatTenant(req.headers.get("authorization"));
@@ -57,17 +58,22 @@ function buildSnapshot() {
 }
 
 export async function POST(req: NextRequest) {
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-  // User identity must come exclusively from the verified bearer token.
-  // Body fields and legacy tenant headers are untrusted input, never credentials.
+  // Authenticate before reading an attacker-controlled request body.
   const tenant = authorizeChatTenant(req.headers.get("authorization"));
   if (!tenant.ok) {
     return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 403 });
+  }
+  let body: any;
+  try {
+    body = JSON.parse(await readRequestBodyLimited(req, 5 * 1024 * 1024));
+  } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      return NextResponse.json({ error: error.message }, { status: 413 });
+    }
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "JSON body must be an object." }, { status: 400 });
   }
   return withVelnorUser(tenant.userId, () => handlePost(body));
 }
