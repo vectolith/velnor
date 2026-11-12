@@ -25,12 +25,14 @@ function safeEquals(a: string, b: string): boolean {
 // its edge. Never trust the left-most X-Forwarded-For value: clients can supply
 // that header themselves. When not behind Cloudflare, use the bearer identity
 // as a stable fallback; unauthenticated traffic shares one conservative bucket.
-function getRateLimitKey(req: NextRequest): string {
-  const cloudflareIp = req.headers.get("cf-connecting-ip")?.trim();
-  if (cloudflareIp) return "cf:" + cloudflareIp;
-  const authorization = req.headers.get("authorization") || "";
-  if (authorization) return "auth:" + authorization;
-  return "anonymous";
+function getRateLimitKey(req: NextRequest, sharedSecret: string): string {
+  // Trust Cloudflare's edge-supplied address only after proving this request
+  // passed through the gateway that overwrites x-velnor-secret. Direct-origin
+  // callers can forge CF-Connecting-IP, so they share the anonymous bucket.
+  const providedSecret = req.headers.get("x-velnor-secret") || "";
+  const trustedGateway = sharedSecret.length >= 32 && safeEquals(providedSecret, sharedSecret);
+  const cloudflareIp = trustedGateway ? req.headers.get("cf-connecting-ip")?.trim() : "";
+  return cloudflareIp ? "cf:" + cloudflareIp : "anonymous";
 }
 
 function pruneRateBuckets(now: number): void {
@@ -90,6 +92,21 @@ export function middleware(req: NextRequest) {
     const needsAuth = PROTECTED.some(
       (route) => route.path === pathname && route.methods.includes(req.method)
     );
+    const requiresGatewaySecret =
+      pathname === "/api/webhooks/imessage" ||
+      pathname === "/api/webhooks/slack" ||
+      pathname.startsWith("/api/cron/") ||
+      pathname === "/api/auth/google/callback";
+
+    if (requiresGatewaySecret && req.method !== "OPTIONS" && process.env.NODE_ENV === "production") {
+      if (!sharedSecret) {
+        return NextResponse.json({ error: "Gateway perimeter is not configured." }, { status: 503 });
+      }
+      const provided = req.headers.get("x-velnor-secret") || "";
+      if (!safeEquals(provided, sharedSecret)) {
+        return NextResponse.json({ error: "Request must pass through the trusted API gateway." }, { status: 401 });
+      }
+    }
 
     const pilotUrl = process.env.VELNOR_LORA_PILOT_URL;
     if (pilotUrl && !isValidPilotUrl(pilotUrl)) {
@@ -178,7 +195,7 @@ export function middleware(req: NextRequest) {
     }
 
     const now = Date.now();
-    const key = getRateLimitKey(req);
+    const key = getRateLimitKey(req, sharedSecret);
     let existing = rateBuckets.get(key);
     if (!existing || now > existing.resetAt) {
       if (rateBuckets.size >= MAX_RATE_BUCKETS) pruneRateBuckets(now);
