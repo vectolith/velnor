@@ -1,28 +1,15 @@
 """
-Velnor Core v1 — Multi-Domain LoRA Fine-Tuning & Verification Pipeline
+Velnor General v1 — General-Purpose rsLoRA Fine-Tuning & Verification
 =====================================================================
-Trains a Rank-Stabilized LoRA (rsLoRA) adapter on `HuggingFaceTB/SmolLM2-135M-Instruct`
-(r=8, alpha=16, dropout=0.05, q/k/v/o projections) across a 12-domain, 138-example
-executive intelligence curriculum with 20 held-out validation examples across all
-domains. Override the base model with VELNOR_BASE_MODEL.
+Trains an rsLoRA adapter on Qwen2.5-1.5B-Instruct by default, using a
+cross-domain curriculum that retains software engineering and security
+while adding education, business, communication, research, creative work,
+personal productivity, data science, health information, and safe agent use.
 
-  1. Headless Messaging Identity (`Velnor` by Vectolith; iMessage, SMS, Siri, Slack)
-  2. Quantitative Reasoning, Math & Financial Modeling (ARR/runway, compound growth, latency percentiles)
-  3. Software Engineering, Systems Architecture & Debugging (TypeScript, Python, SQL, HMAC, concurrency)
-  4. Executive Inbox Triage & Communication Synthesis (priority sorting, action extraction, replies)
-  5. Calendar Scheduling & Conflict Resolution (timezone math, overlap resolution, .ics generation)
-  6. Document Intelligence & Vector RAG Grounding (strict passage synthesis, conflict detection)
-  7. Strategic First-Principles Analysis & Decision Making (build-vs-buy, risk matrices, tradeoffs)
-  8. Travel Logistics & Itinerary Engineering (weather-aware routing, transit buffers, verified spots)
-  9. Honest Execution Verification & Epistemic Humility (zero fabricated receipts or tool states)
- 10. Credential Hygiene & Cryptographic Isolation (refusing API keys, passwords, seed phrases, CVVs)
- 11. Multi-Tenant & Workspace Isolation (strictly isolating user handles, memories, and files)
- 12. Consequential Action Gates & Safety Boundaries (requiring confirmation before sends/deletes)
-
-Saves the BEST held-out validation checkpoint (`val_loss`) to `outputs/velnor-general-v1/adapter`
-to prevent late-epoch overfitting. Sample generations are graded by the objective
-rubric in `grade_generations.py` for both the base and the tuned model, so the report
-records measured behaviour (arithmetic, refusal, fabrication) instead of prose claims.
+The full curriculum is used by default. VELNOR_FAST_TRAIN=1 enables only a
+small smoke run and must not be used for release evaluation. GPU execution
+is required by default; VELNOR_ALLOW_CPU=1 is reserved for local smoke tests.
+Set VELNOR_BASE_MODEL to override the base model.
 """
 
 import hashlib, json, math, os, platform, random, subprocess, time, shutil
@@ -39,6 +26,9 @@ SEED = 42
 random.seed(SEED)
 torch.manual_seed(SEED)
 torch.set_num_threads(os.cpu_count() or 4)
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if DEVICE.type == "cuda":
+    torch.backends.cuda.matmul.allow_tf32 = True
 
 ROOT = Path(__file__).resolve().parent
 LOCAL_1B_2B = ROOT / "models" / "qwen2.5-1.5b-instruct"
@@ -51,7 +41,11 @@ if not MODEL_ID:
         MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct"
 
 _is_1b = "1.5b" in str(MODEL_ID).lower() or "qwen" in str(MODEL_ID).lower()
-_load_dtype = torch.bfloat16 if _is_1b else torch.float32
+_load_dtype = (
+    torch.bfloat16 if DEVICE.type == "cuda" and torch.cuda.is_bf16_supported()
+    else torch.float16 if DEVICE.type == "cuda"
+    else torch.float32
+)
 _LOAD_KW = {"dtype": _load_dtype} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": _load_dtype}
 OUT = ROOT / "outputs" / "velnor-general-v1"
 
@@ -533,9 +527,9 @@ def build_example(tokenizer, user_text: str, assistant_text: str, max_len: int =
     full_ids = full_ids[:max_len]
     labels = [-100] * min(len(prefix_ids), len(full_ids)) + full_ids[len(prefix_ids):]
     return {
-        "input_ids": torch.tensor([full_ids], dtype=torch.long),
-        "attention_mask": torch.tensor([[1] * len(full_ids)], dtype=torch.long),
-        "labels": torch.tensor([labels], dtype=torch.long),
+        "input_ids": torch.tensor([full_ids], dtype=torch.long, device=DEVICE),
+        "attention_mask": torch.tensor([[1] * len(full_ids)], dtype=torch.long, device=DEVICE),
+        "labels": torch.tensor([labels], dtype=torch.long, device=DEVICE),
     }
 
 
@@ -584,7 +578,7 @@ def generate_reply(model, tokenizer, prompt: str, max_new_tokens: int = 64) -> s
     enc = tokenizer.apply_chat_template(
         msgs, tokenize=True, add_generation_prompt=True, return_tensors="pt"
     )
-    input_ids = enc if isinstance(enc, torch.Tensor) else enc["input_ids"]
+    input_ids = (enc if isinstance(enc, torch.Tensor) else enc["input_ids"]).to(DEVICE)
     with torch.no_grad():
         out = model.generate(
             input_ids=input_ids,
