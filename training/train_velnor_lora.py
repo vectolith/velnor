@@ -897,8 +897,8 @@ def main():
         "adapter_path": str(adapter_dir),
     }
 
-    with open(ROOT / "pilot_report.json", "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=2)
+    # Keep the committed historical pilot report immutable. Every new run writes
+    # only into its versioned output directory.
     with open(OUT / "report.json", "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
