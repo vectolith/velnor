@@ -1,6 +1,6 @@
 """Local HTTP inference server for Velnor (experimental general-purpose instruction model + rsLoRA).
-Exposes POST http://127.0.0.1:8099/v1/chat for live Velnor multi-domain reasoning,
-quantitative analysis, software architecture, and security inference.
+Exposes POST http://127.0.0.1:8099/v1/chat for experimental general-purpose assistance,
+including education, business, research, creative, everyday, and technical tasks.
 """
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
