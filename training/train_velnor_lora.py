@@ -615,11 +615,11 @@ def main():
             flush=True,
         )
 
-    fast_mode = os.environ.get("VELNOR_FAST_TRAIN", "1") == "1"
+    fast_mode = os.environ.get("VELNOR_FAST_TRAIN", "0") == "1"
     if fast_mode and len(TRAIN) > 36:
-        step = max(1, len(TRAIN) // 36)
-        train_pool = TRAIN[::step][:36]
-        val_pool = HELDOUT[:6]
+        # Fast smoke mode is opt-in and must not be used for release evaluation.
+        train_pool = random.sample(TRAIN, 36)
+        val_pool = HELDOUT
     else:
         train_pool = TRAIN
         val_pool = HELDOUT
