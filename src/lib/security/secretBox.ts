@@ -105,5 +105,5 @@ export function openRecord<T extends Record<string, unknown>>(record: T): T {
 }
 
 export function isCredentialField(field: string): boolean {
-  return /(apiKey|accessToken|refreshToken|authToken|clientSecret|signingSecret|botToken|codeVerifier|secret|password|pin)$/i.test(field);
+  return /^(loopMessageAuthKey|loopMessageSecretKey)$/i.test(field) || /(apiKey|accessToken|refreshToken|authToken|clientSecret|signingSecret|botToken|codeVerifier|secret|password|pin)$/i.test(field);
 }
