@@ -122,7 +122,6 @@ tests/              unit, E2E and deployment-contract suites
 scripts/            operator tools: preflight, Slack app manifest, verify suite
 deploy/oci/         production: compose stack, Caddyfile, VM setup, reminder timer
 deploy/cloudrun/    alternative: PowerShell deploy script for Cloud Run
-deploy/vercel/      parked cron config from the Vercel era
 docs/               operations runbook, engineering review, maintainer patches
 training/           LoRA training and evaluation scripts (not part of the service)
 public/             static assets served by the app
