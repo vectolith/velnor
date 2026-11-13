@@ -47,8 +47,17 @@ export function resolveWritableDataDir(): string {
   return tmpDir;
 }
 
-const DATA_DIR = resolveWritableDataDir();
-const SQLITE_PATH = path.join(DATA_DIR, "velnor.db");
+let resolvedDataDir: string | null = null;
+function getDataDir(): string {
+  // Resolve storage only when a request actually accesses persistence. Next.js
+  // evaluates route modules during `next build`, where production volumes do
+  // not exist and must not be required.
+  if (!resolvedDataDir) resolvedDataDir = resolveWritableDataDir();
+  return resolvedDataDir;
+}
+function getSqlitePath(): string {
+  return path.join(getDataDir(), "velnor.db");
+}
 
 let sqliteInstance: any = null;
 let sqliteSupported: boolean | null = null;
@@ -62,7 +71,7 @@ function getSqliteDb() {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const sqlite = require("node:sqlite");
     if (sqlite && sqlite.DatabaseSync) {
-      const db = new sqlite.DatabaseSync(SQLITE_PATH);
+      const db = new sqlite.DatabaseSync(getSqlitePath());
       db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;");
       db.exec(`
         CREATE TABLE IF NOT EXISTS kv_state (
@@ -145,7 +154,7 @@ export function getDatabaseEngineStatus(): {
   const db = getSqliteDb();
   return {
     engine: db ? "node:sqlite" : "JSON fallback",
-    dbPath: db ? SQLITE_PATH : path.join(DATA_DIR, "velnor-store.json"),
-    writableDir: DATA_DIR,
+    dbPath: db ? getSqlitePath() : path.join(getDataDir(), "velnor-store.json"),
+    writableDir: getDataDir(),
   };
 }
