@@ -22,7 +22,7 @@ The model is an untrusted planner. Authentication, tenant isolation, tool permis
 
 ## Current training implementation
 
-The current script trains an rsLoRA adapter using **Qwen2.5-1.5B-Instruct** by default. Set `VELNOR_BASE_MODEL` to override the model identifier or local model path. The default is a general instruction model rather than a coder-specialised checkpoint, which better matches the broad product objective.
+The compact fallback script `train_velnor_lora.py` trains an rsLoRA adapter using **Qwen2.5-1.5B-Instruct** by default. Set `VELNOR_BASE_MODEL` to override the model identifier or local model path. The preferred high-capacity route is `train_qwen3_8b_qlora.py`: **Qwen3-8B with 4-bit NF4 QLoRA**, gradient checkpointing, and a free-GPU preflight requiring 14 GiB total / 12 GiB free VRAM. Both paths consume the same expanded curriculum and held-out set.
 
 The curriculum combines:
 - 138 existing examples covering engineering, quantitative reasoning, research, productivity, security, and agent boundaries, plus 150 general-purpose examples (15 each across 10 additional domains), for 288 training examples total.
@@ -46,11 +46,14 @@ The added JSONL records are synthetic original examples marked `CC0-1.0`. The sc
 
 The committed `pilot_report.json` is a historical run using `Qwen/Qwen2.5-Coder-1.5B-Instruct` on CPU with 138 training examples and a six-check rubric. It predates the general-purpose curriculum and the new evaluation harness. Its metrics are **not** results for the new dataset, new base-model default, or expanded benchmark.
 
-No new training run or model weights are included in this change. A candidate checkpoint must be trained and evaluated on the intended free GPU environment before any quality or deployment claim is made.
+No new training run or model weights are included in this change. The Qwen3 continuation path deliberately evaluates the resumed adapter against the new held-out split and resets checkpoint selection to that measured baseline; the previous run's validation loss is retained only as historical metadata, not compared across different datasets. A candidate checkpoint must be trained and evaluated on the intended free GPU environment before any quality or deployment claim is made.
 
 ## Files
 
-- `train_velnor_lora.py`: rsLoRA training, validation, generation, and provenance reporting.
+- `train_velnor_lora.py`: compact 1.5B rsLoRA training path and shared curriculum helpers.
+- `train_qwen3_8b_qlora.py`: preferred 8B QLoRA training and continuation path.
+- `requirements-gpu.txt` and `requirements-qwen3-qlora.txt`: GPU-runtime dependencies that preserve the CUDA-enabled PyTorch supplied by the runtime.
+- `Velnor_Qwen3_8B_General_Free_GPU.ipynb`: preferred free-GPU Qwen3-8B notebook; resumes the prior Drive adapter if present.
 - `general_curriculum.jsonl`: 150 original general-purpose instruction examples, balanced at 15 per domain.
 - `Velnor_General_1.5B_Free_GPU.ipynb`: Colab-compatible notebook for a free CUDA GPU run and artifact export.
 - `grade_generations.py`: 27 deterministic cross-domain generation checks.
