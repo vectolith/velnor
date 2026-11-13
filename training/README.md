@@ -31,7 +31,7 @@ The curriculum combines:
 
 The added JSONL records are synthetic original examples marked `CC0-1.0`. The script records the external dataset SHA-256 in the generated report. Review the dataset and licensing metadata before adding any third-party material.
 
-**Training is full-curriculum by default.** `VELNOR_FAST_TRAIN=1` opts into a 36-example smoke run and must not be used to produce or promote a release checkpoint.
+**Training is full-curriculum by default.** `VELNOR_FAST_TRAIN=1` opts into a 36-example smoke run and must not be used to produce or promote a release checkpoint. The trainer requires CUDA by default and checks for at least 8 GiB of free GPU memory before loading the model. `VELNOR_ALLOW_CPU=1` bypasses that guard only for local smoke tests; CPU runs are not valid release training.
 
 ## Evaluation requirements
 
@@ -56,17 +56,25 @@ No new training run or model weights are included in this change. A candidate ch
 - `pilot_report.json`: historical experiment report; not the result of the new curriculum.
 - `serve_adapter.py`: opt-in local adapter endpoint at `http://127.0.0.1:8099/v1/chat`.
 
-## Usage
+## Verification and usage
+
+Run the lightweight data/evaluator contract tests before training:
+
+```bash
+python -m unittest discover -s training -p 'test_*.py'
+```
+
+Use a free CUDA GPU runtime with the matching NVIDIA driver. Install the GPU-capable dependencies, then run the full curriculum:
 
 ```bash
 cd training
 python3 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
-VELNOR_BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct ./.venv/bin/python train_velnor_lora.py
+VELNOR_BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct ./.venv/bin/python training/train_velnor_lora.py
 ```
 
 For a short smoke run only:
 
 ```bash
-VELNOR_FAST_TRAIN=1 ./.venv/bin/python train_velnor_lora.py
+VELNOR_FAST_TRAIN=1 VELNOR_ALLOW_CPU=1 ./.venv/bin/python training/train_velnor_lora.py
 ```
