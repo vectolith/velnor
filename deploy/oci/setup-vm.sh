@@ -154,8 +154,8 @@ fi
 printf '\nStack is running. Public URL once TLS is issued: https://%s\n' "$host"
 
 say "6/6 Scheduling the reminder sweep"
-# vercel.json used to fire /api/cron/reminders every 15 minutes. Nothing does that
-# on a plain VM, so reminders would sit in state and never be delivered.
+# A plain VM needs its own scheduler; without this systemd timer, reminders
+# would remain queued and never be delivered.
 cat > /etc/systemd/system/velnor-reminders.service <<UNIT
 [Unit]
 Description=Velnor reminder sweep
