@@ -1,45 +1,63 @@
-# Velnor Domain LoRA (`training/`)
+# Velnor model training
 
-LoRA fine-tuning harness for the behaviour layer of Velnor (`velnor-coder-v2`), built on
-`HuggingFaceTB/SmolLM2-135M-Instruct` (135.4M params), trained on CPU in float32.
+This directory contains experimental LoRA training and evaluation code. Treat each run as a separately versioned experiment; do not infer the active production model from a project name or from a training notebook elsewhere.
 
-## What actually runs
+## Product-level training objective
 
-Read from `train_velnor_lora.py`; the report is generated from these objects at runtime,
-so the numbers cannot drift from the code:
+Velnor is intended to serve **everyone**, not only software engineers or developers. Engineering is a core strength, but the model curriculum must also support students, educators, business owners, professionals, creators, researchers, and everyday users.
 
-| | |
-|---|---|
-| Base model | `HuggingFaceTB/SmolLM2-135M-Instruct` (override with `VELNOR_BASE_MODEL`) |
-| Adapter | rsLoRA, r=8, alpha=16, dropout=0.05, `q_proj k_proj v_proj o_proj` |
-| Trainable params | 921,600 of 135,436,608 (0.68%) |
-| Curriculum | 138 examples across 12 domains, 20 held-out validation examples |
-| Schedule | 3 epochs, grad accum 2, AdamW, peak LR 4e-4 to 4e-5 cosine, warmup 8% |
-| Sequence length | 384 tokens, assistant-only loss masking |
-| Checkpoint | best held-out val_loss writes `outputs/velnor-coder-v2/adapter` |
+The target capability areas are:
+
+1. General reasoning, instruction following, planning, and practical problem solving.
+2. Software engineering, programming, debugging, architecture, testing, and security-aware development.
+3. Education, tutoring, explanations, study support, and learning at different skill levels.
+4. Business and professional work, including research, analysis, writing, operations, and planning.
+5. Creative ideation, content development, and structured creative workflows.
+6. Research and information synthesis with source-grounded answers and calibrated uncertainty.
+7. Tool-use planning, structured function selection, multi-step execution, and error recovery.
+8. Multimodal understanding and assistance where supported by the selected base model and runtime.
+9. Safe behaviour: privacy protection, prompt-injection resistance, refusal of disallowed requests, and strict respect for external permission checks.
+
+## Training and release principles
+
+- Keep the model general-purpose; do not let the coding or executive-assistant domains dominate the data mixture.
+- Use a balanced, documented curriculum with examples spanning novice through expert levels and varied real-world contexts.
+- Record dataset provenance, licensing, collection method, deduplication, privacy review, and train/validation/test separation.
+- Prevent evaluation contamination and keep held-out tests private from training.
+- Evaluate the unadapted base, pre-continuation adapter, and candidate checkpoint using the same deterministic prompts, decoding settings, and scoring rubric.
+- Measure task success and quality, not just training or validation loss. Include tool-selection accuracy, factuality, calibration, instruction adherence, and safety/permission-boundary tests.
+- Run regression tests after every training change and reject checkpoints that improve one domain while materially degrading others.
+- Treat the model as an untrusted planner. Authentication, tenant isolation, tool permissions, approvals, and irreversible-action controls remain in the runtime and security layer.
+
+## Current repository experiment (verified from source)
+
+The committed training harness currently describes a 135.4M-parameter
+`HuggingFaceTB/SmolLM2-135M-Instruct` base model, rsLoRA adapter, and a small
+12-domain curriculum (138 examples, 20 held-out validation examples). It is a
+small behaviour-layer experiment, not evidence of a broadly capable production
+model and not the same thing as an 8B Qwen3 experiment.
+
+Read `train_velnor_lora.py`, `pilot_report.json`, and `grade_generations.py`
+for the exact code and reported results. The report's base-versus-tuned comparison
+must be checked for methodological validity before using it as a quality claim.
+A smaller adapter can test training infrastructure and behaviour shaping; it
+cannot by itself establish robust general reasoning or autonomous competence.
 
 ## Files
 
-- `download_base_model.py` fetches the base model to `models/smollm2-135m`.
+- `download_base_model.py` fetches the configured base model.
 - `train_velnor_lora.py` is the training and evaluation run.
-- `grade_generations.py` applies an objective rubric to sample generations: net burn
-  arithmetic, constant-time HMAC advice, secret refusal, no fabricated booking receipts.
-  The base model and the tuned model are both graded and the counts land in the report
-  under `eval`. Grade any report with `python grade_generations.py pilot_report.json`.
-- `serve_adapter.py` runs the local endpoint at `http://127.0.0.1:8099/v1/chat` serving
-  base + adapter, bridged to Velnor at `/api/lora-pilot`.
-- `pilot_report.json` is the committed run: loss curve, provenance (git commit,
-  torch/transformers/peft versions, device, seed), rubric scores, generations.
+- `grade_generations.py` applies an objective rubric to sample generations.
+- `serve_adapter.py` runs the opt-in local adapter endpoint at `http://127.0.0.1:8099/v1/chat`.
+- `pilot_report.json` records the committed pilot run, provenance, and evaluation output.
 
 ## Usage
 
-    cd training
-    python3 -m venv .venv
-    ./.venv/bin/pip install -r requirements.txt
-    ./.venv/bin/python download_base_model.py
-    ./.venv/bin/python train_velnor_lora.py
-    ./.venv/bin/python serve_adapter.py
-
-A 135M adapter encodes tone and refusals. It does not turn the base model into a
-reasoning engine, and `grade_generations.py` exists to keep that visible: read `eval.base`
-and `eval.tuned` before trusting any quality claim about it.
+```bash
+cd training
+python3 -m venv .venv
+./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python download_base_model.py
+./.venv/bin/python train_velnor_lora.py
+./.venv/bin/python serve_adapter.py
+```
