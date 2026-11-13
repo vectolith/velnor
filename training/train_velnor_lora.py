@@ -35,12 +35,11 @@ LOCAL_1B_2B = ROOT / "models" / "qwen2.5-1.5b-instruct"
 # Base model: uses local model or environment override
 MODEL_ID = os.environ.get("VELNOR_BASE_MODEL")
 if not MODEL_ID:
-    if LOCAL_1B_2B.exists() and (LOCAL_1B_2B / "model.safetensors").exists():
+    if LOCAL_1B_2B.exists() and ((LOCAL_1B_2B / "model.safetensors").exists() or (LOCAL_1B_2B / "config.json").exists()):
         MODEL_ID = str(LOCAL_1B_2B)
     else:
         MODEL_ID = "Qwen/Qwen2.5-1.5B-Instruct"
 
-_is_1b = "1.5b" in str(MODEL_ID).lower() or "qwen" in str(MODEL_ID).lower()
 _load_dtype = (
     torch.bfloat16 if DEVICE.type == "cuda" and torch.cuda.is_bf16_supported()
     else torch.float16 if DEVICE.type == "cuda"
@@ -873,8 +872,9 @@ def main():
         "base_generations": base_generations,
         "trainable_params": trainable,
         "total_params": total_p,
-        "train_examples": len(TRAIN),
-        "val_examples": len(HELDOUT),
+        "train_examples": len(train_pool),
+        "curriculum_examples": len(TRAIN),
+        "val_examples": len(val_pool),
         "domains_covered": summary["domains_covered"],
         "curriculum": summary,
         "dataset_manifest": {
