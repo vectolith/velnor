@@ -16,10 +16,10 @@ class GeneralCurriculumTests(unittest.TestCase):
             for line in (ROOT / "general_curriculum.jsonl").read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
-        self.assertEqual(len(rows), 50)
+        self.assertEqual(len(rows), 150)
         counts = Counter(row["domain"] for row in rows)
         self.assertEqual(len(counts), 10)
-        self.assertEqual(set(counts.values()), {5})
+        self.assertEqual(set(counts.values()), {15})
         for row in rows:
             self.assertTrue(row["prompt"].strip())
             self.assertTrue(row["answer"].strip())
