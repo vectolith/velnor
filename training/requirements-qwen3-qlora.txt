@@ -1,0 +1,3 @@
+# Qwen3-8B 4-bit NF4 QLoRA dependencies; keep the runtime's CUDA torch.
+-r requirements-gpu.txt
+bitsandbytes>=0.45.0,<1.0
