@@ -126,7 +126,7 @@ test("legacy plaintext credentials in SQLite are resealed during hydration", asy
   assert.ok(fs.existsSync(jsonPath), "hydration did not rewrite the JSON recovery mirror");
   const persisted = fs.readFileSync(jsonPath, "utf8");
   assert.ok(!persisted.includes("legacy-loopmessage-auth-key"), "legacy secret remained plaintext on disk");
-  assert.match(persisted, /v1:/, "legacy secret was not resealed");
+  assert.match(persisted, /v2:/, "legacy secret was not resealed with the active key format");
   const sqliteBytes = fs.readFileSync(path.join(testRoot, ".data", "velnor.db"), "latin1");
   assert.ok(!sqliteBytes.includes("legacy-loopmessage-auth-key"), "SQLite still contains the legacy plaintext secret");
 });
