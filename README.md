@@ -93,7 +93,7 @@ After Slack issues the app:
 That paste step can be scripted instead, once you have an app configuration token:
 
 ```bash
-SLACK_CONFIG_TOKEN=xoxe-... node --import tsx scripts/create-slack-app.mjs \\
+SLACK_CONFIG_TOKEN=xoxe-... node --import tsx scripts/create-slack-app.mjs \
   --base-url https://your-deployment
 ```
 
