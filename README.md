@@ -1,6 +1,28 @@
-# Velnor — Headless Personal AI Agent by Vectolith
+# Velnor — General-Purpose AI Agent Platform by Vectolith
 
-**Velnor** (engineered by **[Vectolith](https://github.com/vectolith)**) is a headless, messaging-only executive AI agent powered by the fine-tuned **`velnor-core-v1`** rsLoRA model (12-domain executive intelligence curriculum) and multi-provider AI routing. It operates strictly through native messaging channels (**Apple iMessage, SMS, Siri Shortcuts, and Slack**) with no web chat UI or frontend application.
+**Velnor** (engineered by **[Vectolith](https://github.com/vectolith)**) is a general-purpose AI agent platform intended to help people across technical and non-technical fields think, learn, create, build, solve problems, and get work done. Engineering and software development are important strengths, not the limits of the product. Velnor combines multi-provider AI routing, grounded information retrieval, multimodal capabilities, integrations, and an evolving model-training programme.
+
+Velnor currently operates through messaging channels and service APIs, including Apple iMessage, SMS, Siri Shortcuts, and Slack. The current repository does not yet provide a general public web-chat frontend; product direction and implemented delivery surfaces are documented separately.
+
+## Product and intelligence objective
+
+Velnor is for **everyone**, including developers, engineers, students, educators, business owners, professionals, creators, and everyday users. Its intelligence roadmap is deliberately broad:
+
+1. **General reasoning and problem solving** — understand goals, ask useful clarifying questions, compare options, explain concepts, and develop practical plans.
+2. **Technical intelligence** — programming, software architecture, debugging, testing, cybersecurity fundamentals, mathematics, and scientific reasoning.
+3. **Professional and business assistance** — research, writing, analysis, operations, planning, and workflow support.
+4. **Learning and education** — tutoring, step-by-step explanations, study support, and adapting explanations to a person's knowledge level.
+5. **Creative work** — ideation, drafting, content development, and support for creative production.
+6. **Agentic task execution** — decompose requests into steps, select appropriate connected tools, execute only authorised actions, report outcomes, and recover safely from errors.
+7. **Context-aware communication** — use relevant permitted context, communicate clearly, and adapt technical depth without stereotyping or excluding users.
+
+The model is one component of this platform, not the whole product. The intended separation is:
+
+- **Intelligence/model:** interprets requests, reasons, plans, and proposes tool calls.
+- **Agent runtime:** validates tool schemas, coordinates multi-step work, manages state, handles retries, and reports results.
+- **Security and policy core:** authenticates users, enforces tenant isolation and least-privilege permissions, obtains approvals where required, and records auditable actions.
+
+The model must never be treated as the authority for access control. The runtime and security core—not model-generated text—decide whether an action is permitted.
 
 ## Core Capabilities
 
@@ -23,6 +45,16 @@
    - The local PyTorch/PEFT LoRA daemon (`training/serve_adapter.py`, port `8099`) is opt-in via `VELNOR_LOCAL_LORA=1`; it never silently answers a real request.
 7. **Per-User Tenancy**
    - Every channel handle gets its own state (messages, reminders, memories, documents, usage), persisted per tenant in SQLite and `.data/users/<id>.json`. Requests are scoped with `withVelnorUser()`; no cross-tenant reads.
+
+## Model training principles and evaluation
+
+Training should improve broadly useful capabilities rather than optimise Velnor exclusively for coding or executive-assistant tasks. The curriculum should grow across general reasoning, instruction following, technical work, education, business and professional workflows, creative tasks, research, multimodal understanding, and safe tool use.
+
+Each capability area needs held-out evaluation tasks. Track task success, factuality and citation quality where relevant, instruction adherence, calibration and uncertainty, tool-selection accuracy, safe refusal, permission-boundary compliance, and regression against the unadapted base model. Compare base and tuned models under the same deterministic evaluation harness. Do not promote a checkpoint based on training loss alone.
+
+Dataset quality, provenance, licensing, privacy, deduplication, contamination checks, and representation across skill levels and user groups are release requirements. Keep high-impact decisions and access-control enforcement outside the model.
+
+**Important status distinction:** this is the product and training objective, not a claim that the current adapter already has general-purpose competence. Consult `training/README.md` and the run reports for the exact model, dataset, hardware, and verified results of each training experiment.
 
 ## Headless Webhook & API Endpoints
 
@@ -61,7 +93,7 @@ After Slack issues the app:
 That paste step can be scripted instead, once you have an app configuration token:
 
 ```bash
-SLACK_CONFIG_TOKEN=xoxe-... node --import tsx scripts/create-slack-app.mjs \
+SLACK_CONFIG_TOKEN=xoxe-... node --import tsx scripts/create-slack-app.mjs \\
   --base-url https://your-deployment
 ```
 
