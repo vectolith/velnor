@@ -474,7 +474,7 @@ def curriculum_report():
     from collections import Counter
 
     src = Path(__file__).read_text(encoding="utf-8")
-    sections = re.findall(r"^\\s*#\\s*(\\d+)\\.\\s*(.+?)\\s*\\((\\d+) examples\\)", src, re.M)
+    sections = re.findall(r"^\s*#\s*(\d+)\.\s*(.+?)\s*\((\d+) examples\)", src, re.M)
     embedded_domains = [
         {"domain": name.strip(), "declared_examples": int(count)}
         for _, name, count in sections
