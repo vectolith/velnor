@@ -71,10 +71,10 @@ jobs:
 
       - name: Validate general-purpose curriculum and evaluation contracts
         run: |
-          python3 -m py_compile training/train_velnor_lora.py training/serve_adapter.py training/grade_generations.py
+          python3 -m py_compile training/train_velnor_lora.py training/train_qwen3_8b_qlora.py training/serve_adapter.py training/grade_generations.py
           python3 -m unittest discover -s training -p 'test_*.py'
           python3 training/grade_generations.py training/pilot_report.json
-          python3 -c "import json; json.load(open('training/Velnor_General_1.5B_Free_GPU.ipynb', encoding='utf-8'))"
+          python3 -c "import json; [json.load(open(path, encoding='utf-8')) for path in ['training/Velnor_General_1.5B_Free_GPU.ipynb', 'training/Velnor_Qwen3_8B_General_Free_GPU.ipynb']]"
 
   identity-gateway-bundle:
     runs-on: ubuntu-latest
