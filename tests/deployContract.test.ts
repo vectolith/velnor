@@ -86,7 +86,7 @@ test("the VM env template can satisfy the preflight", () => {
 const ociScript = (name: string) =>
   readFileSync(new URL(`../deploy/oci/${name}`, import.meta.url), "utf8");
 
-test("the VM runs the reminder sweep that vercel.json used to schedule", () => {
+test("the VM installs a recurring reminder sweep", () => {
   const setup = ociScript("setup-vm.sh");
   assert.match(setup, /velnor-reminders\.timer/, "no timer is installed");
   assert.match(setup, /OnUnitActiveSec=15min/, "the sweep cadence changed without review");
