@@ -70,7 +70,7 @@ Use a free CUDA GPU runtime with the matching NVIDIA driver. Install the GPU-cap
 cd training
 python3 -m venv .venv
 ./.venv/bin/pip install -r requirements.txt
-VELNOR_BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct ./.venv/bin/python training/train_velnor_lora.py
+VELNOR_BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct ./.venv/bin/python train_velnor_lora.py
 ```
 
 For a short smoke run only:
