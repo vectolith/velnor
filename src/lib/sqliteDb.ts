@@ -154,7 +154,7 @@ export function getDatabaseEngineStatus(): {
   const db = getSqliteDb();
   return {
     engine: db ? "node:sqlite" : "JSON fallback",
-    dbPath: db ? SQLITE_PATH : path.join(getDataDir(), "velnor-store.json"),
+    dbPath: db ? getSqlitePath() : path.join(getDataDir(), "velnor-store.json"),
     writableDir: getDataDir(),
   };
 }
