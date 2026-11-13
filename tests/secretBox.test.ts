@@ -50,7 +50,7 @@ test("a tampered ciphertext is rejected, not silently trusted", () => {
     const sealed = sealRecord({ openaiApiKey: "sk-test" });
     const tampered = sealed.openaiApiKey.slice(0, -4) + "AAAA";
     const opened = openRecord({ openaiApiKey: tampered });
-    assert.equal(opened.openaiApiKey, "", "undecryptable values are dropped");
+    assert.throws(() => openRecord({ openaiApiKey: tampered }), /Unsupported|malformed|authenticate|Unsupported state|Unsupported message/i);
   } finally {
     if (original === undefined) delete env.VELNOR_SECRET_KEY;
     else env.VELNOR_SECRET_KEY = original;
@@ -72,5 +72,39 @@ test("credential field detection matches the config keys Velnor actually stores"
   }
   for (const field of ["geminiModel", "treasury", "activeProvider", "loopMessageFromNumber"]) {
     assert.equal(isCredentialField(field), false, `${field} should not be sealed`);
+  }
+});
+
+
+test("keyring supports decrypting old key versions and resealing with the active key", () => {
+  const env = process.env as Record<string, string | undefined>;
+  const oldRing = env.VELNOR_SECRET_KEYRING_JSON;
+  const oldLegacy = env.VELNOR_SECRET_KEY;
+  try {
+    env.VELNOR_SECRET_KEYRING_JSON = JSON.stringify({ activeKeyId: "old", keys: { old: "old-key-material-at-least-16" } });
+    const previous = sealRecord({ openaiApiKey: "sk-rotation-test" }).openaiApiKey;
+    env.VELNOR_SECRET_KEYRING_JSON = JSON.stringify({ activeKeyId: "new", keys: { old: "old-key-material-at-least-16", new: "new-key-material-at-least-16" } });
+    const opened = openRecord({ openaiApiKey: previous });
+    assert.equal(opened.openaiApiKey, "sk-rotation-test");
+    const rotated = sealRecord(opened).openaiApiKey;
+    assert.match(rotated, /^v2:new:/);
+    assert.equal(openRecord({ openaiApiKey: rotated }).openaiApiKey, "sk-rotation-test");
+  } finally {
+    if (oldRing === undefined) delete env.VELNOR_SECRET_KEYRING_JSON; else env.VELNOR_SECRET_KEYRING_JSON = oldRing;
+    if (oldLegacy === undefined) delete env.VELNOR_SECRET_KEY; else env.VELNOR_SECRET_KEY = oldLegacy;
+  }
+});
+
+test("missing key version throws instead of silently dropping credential data", () => {
+  const env = process.env as Record<string, string | undefined>;
+  const oldRing = env.VELNOR_SECRET_KEYRING_JSON;
+  const oldLegacy = env.VELNOR_SECRET_KEY;
+  try {
+    env.VELNOR_SECRET_KEYRING_JSON = JSON.stringify({ activeKeyId: "new", keys: { new: "new-key-material-at-least-16" } });
+    delete env.VELNOR_SECRET_KEY;
+    assert.throws(() => openRecord({ openaiApiKey: "v2:retired:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }), /key 'retired' is unavailable/);
+  } finally {
+    if (oldRing === undefined) delete env.VELNOR_SECRET_KEYRING_JSON; else env.VELNOR_SECRET_KEYRING_JSON = oldRing;
+    if (oldLegacy === undefined) delete env.VELNOR_SECRET_KEY; else env.VELNOR_SECRET_KEY = oldLegacy;
   }
 });
