@@ -26,7 +26,7 @@ The current script trains an rsLoRA adapter using **Qwen2.5-1.5B-Instruct** by d
 
 The curriculum combines:
 - 138 existing examples covering engineering, quantitative reasoning, research, productivity, security, and agent boundaries.
-- 50 additional original examples in `general_curriculum.jsonl`, covering general reasoning, education, business, writing, research, creative work, personal productivity, data science, health information, and safe agent use.
+- 1150 additional original examples in `general_curriculum.jsonl`, covering general reasoning, education, business, writing, research, creative work, personal productivity, data science, health information, and safe agent use.
 - 30 held-out language-model validation examples in the training script. The separate generation benchmark in `grade_generations.py` contains 27 deterministic checks across multiple domains.
 
 The added JSONL records are synthetic original examples marked `CC0-1.0`. The script records the external dataset SHA-256 in the generated report. Review the dataset and licensing metadata before adding any third-party material.
@@ -51,7 +51,7 @@ No new training run or model weights are included in this change. A candidate ch
 ## Files
 
 - `train_velnor_lora.py`: rsLoRA training, validation, generation, and provenance reporting.
-- `general_curriculum.jsonl`: 50 original general-purpose instruction examples.
+- `general_curriculum.jsonl`: 150 original general-purpose instruction examples.
 - `grade_generations.py`: 27 deterministic cross-domain generation checks.
 - `pilot_report.json`: historical experiment report; not the result of the new curriculum.
 - `serve_adapter.py`: opt-in local adapter endpoint at `http://127.0.0.1:8099/v1/chat`.
