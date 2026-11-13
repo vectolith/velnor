@@ -40,10 +40,16 @@ export interface VelnorState {
   };
 }
 
-const DATA_DIR =
-  (process.env.VELNOR_DATA_DIR && process.env.VELNOR_DATA_DIR.trim()) ||
-  resolveWritableDataDir();
-const USERS_DIR = path.join(DATA_DIR, "users");
+let resolvedUsersDir: string | null = null;
+function getUsersDir(): string {
+  if (!resolvedUsersDir) {
+    const dataDir =
+      (process.env.VELNOR_DATA_DIR && process.env.VELNOR_DATA_DIR.trim()) ||
+      resolveWritableDataDir();
+    resolvedUsersDir = path.join(dataDir, "users");
+  }
+  return resolvedUsersDir;
+}
 const ROOT_USER = "default";
 
 /** Where Slack replies and reminders land when a profile has not overridden it. */
@@ -109,7 +115,7 @@ export function resolveUserId(channel: ChannelType | string, handle?: string): s
 }
 
 function stateFile(userId: string): string {
-  return path.join(USERS_DIR, userId + ".json");
+  return path.join(getUsersDir(), userId + ".json");
 }
 
 function sqliteKey(userId: string): string {
@@ -250,7 +256,8 @@ function saveStateForUser(userId: string, state: VelnorState): void {
   const sqliteSaved = saveStateToSqlite(persisted, sqliteKey(id));
   let jsonSaved = false;
   try {
-    if (!fs.existsSync(USERS_DIR)) fs.mkdirSync(USERS_DIR, { recursive: true });
+    const usersDir = getUsersDir();
+    if (!fs.existsSync(usersDir)) fs.mkdirSync(usersDir, { recursive: true });
     fs.writeFileSync(stateFile(id), JSON.stringify(persisted, null, 2), "utf-8");
     jsonSaved = true;
   } catch (err) {
@@ -320,7 +327,7 @@ export function listUserIds(): string[] {
   const ids = new Set<string>([...cache().keys(), ...listStateKeysFromSqlite()]);
   try {
     if (fs.existsSync(USERS_DIR)) {
-      for (const file of fs.readdirSync(USERS_DIR)) {
+      for (const file of fs.readdirSync(getUsersDir())) {
         if (file.endsWith(".json")) ids.add(file.slice(0, -5));
       }
     }
