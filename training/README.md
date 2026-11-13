@@ -25,8 +25,8 @@ The model is an untrusted planner. Authentication, tenant isolation, tool permis
 The current script trains an rsLoRA adapter using **Qwen2.5-1.5B-Instruct** by default. Set `VELNOR_BASE_MODEL` to override the model identifier or local model path. The default is a general instruction model rather than a coder-specialised checkpoint, which better matches the broad product objective.
 
 The curriculum combines:
-- 138 existing examples covering engineering, quantitative reasoning, research, productivity, security, and agent boundaries.
-- 1150 additional original examples in `general_curriculum.jsonl`, covering general reasoning, education, business, writing, research, creative work, personal productivity, data science, health information, and safe agent use.
+- 138 existing examples covering engineering, quantitative reasoning, research, productivity, security, and agent boundaries, plus 150 general-purpose examples (15 each across 10 additional domains), for 288 training examples total.
+- 150 additional original examples in `general_curriculum.jsonl`, covering general reasoning, education, business, writing, research, creative work, personal productivity, data science, health information, and safe agent use.
 - 30 held-out language-model validation examples in the training script. The separate generation benchmark in `grade_generations.py` contains 27 deterministic checks across multiple domains.
 
 The added JSONL records are synthetic original examples marked `CC0-1.0`. The script records the external dataset SHA-256 in the generated report. Review the dataset and licensing metadata before adding any third-party material.
@@ -51,7 +51,8 @@ No new training run or model weights are included in this change. A candidate ch
 ## Files
 
 - `train_velnor_lora.py`: rsLoRA training, validation, generation, and provenance reporting.
-- `general_curriculum.jsonl`: 150 original general-purpose instruction examples.
+- `general_curriculum.jsonl`: 150 original general-purpose instruction examples, balanced at 15 per domain.
+- `Velnor_General_1.5B_Free_GPU.ipynb`: Colab-compatible notebook for a free CUDA GPU run and artifact export.
 - `grade_generations.py`: 27 deterministic cross-domain generation checks.
 - `pilot_report.json`: historical experiment report; not the result of the new curriculum.
 - `serve_adapter.py`: opt-in local adapter endpoint at `http://127.0.0.1:8099/v1/chat`.
@@ -76,5 +77,5 @@ VELNOR_BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct ./.venv/bin/python train_velnor_lor
 For a short smoke run only:
 
 ```bash
-VELNOR_FAST_TRAIN=1 VELNOR_ALLOW_CPU=1 ./.venv/bin/python training/train_velnor_lora.py
+VELNOR_FAST_TRAIN=1 VELNOR_ALLOW_CPU=1 ./.venv/bin/python train_velnor_lora.py
 ```
