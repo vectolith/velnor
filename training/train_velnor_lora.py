@@ -837,7 +837,7 @@ def main():
 
     report = {
         "model_name": "velnor-general-v1",
-        "base_model": base.config.name_or_path,
+        "base_model": MODEL_ID,
         "base_model_repo": MODEL_ID if not os.path.isabs(MODEL_ID) else "local checkout",
         "method": method,
         "provenance": {
