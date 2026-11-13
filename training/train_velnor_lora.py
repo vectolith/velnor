@@ -772,6 +772,11 @@ def main():
         f"[velnor-general-v1] Reloading best checkpoint from Epoch {best_epoch} (val_loss={best_val_loss:.4f})...",
         flush=True,
     )
+    # Release the training model before loading a fresh base for checkpoint evaluation.
+    # This avoids holding two full 1.5B model copies in free-GPU memory.
+    del model, base
+    if DEVICE.type == "cuda":
+        torch.cuda.empty_cache()
     clean_base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW).to(DEVICE)
     best_model = PeftModel.from_pretrained(clean_base, str(adapter_dir))
 
