@@ -326,7 +326,7 @@ export function getEffectiveKeys(state: VelnorState) {
 export function listUserIds(): string[] {
   const ids = new Set<string>([...cache().keys(), ...listStateKeysFromSqlite()]);
   try {
-    if (fs.existsSync(USERS_DIR)) {
+    if (fs.existsSync(getUsersDir())) {
       for (const file of fs.readdirSync(getUsersDir())) {
         if (file.endsWith(".json")) ids.add(file.slice(0, -5));
       }
