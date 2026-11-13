@@ -49,7 +49,6 @@ test("a tampered ciphertext is rejected, not silently trusted", () => {
   try {
     const sealed = sealRecord({ openaiApiKey: "sk-test" });
     const tampered = sealed.openaiApiKey.slice(0, -4) + "AAAA";
-    const opened = openRecord({ openaiApiKey: tampered });
     assert.throws(() => openRecord({ openaiApiKey: tampered }), /Unsupported|malformed|authenticate|Unsupported state|Unsupported message/i);
   } finally {
     if (original === undefined) delete env.VELNOR_SECRET_KEY;
