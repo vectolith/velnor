@@ -596,12 +596,29 @@ def generate_reply(model, tokenizer, prompt: str, max_new_tokens: int = 64) -> s
 
 def main():
     t0 = time.time()
-    print(f"[velnor-general-v1] Loading base model: {MODEL_ID}", flush=True)
+    if DEVICE.type != "cuda" and os.environ.get("VELNOR_ALLOW_CPU", "0") != "1":
+        raise RuntimeError(
+            "A CUDA GPU is required by default. Use a free GPU runtime; "
+            "VELNOR_ALLOW_CPU=1 is only for local smoke tests, not training runs."
+        )
+    gpu_name = torch.cuda.get_device_name(0) if DEVICE.type == "cuda" else None
+    gpu_free_gb = gpu_total_gb = None
+    if DEVICE.type == "cuda":
+        free_bytes, total_bytes = torch.cuda.mem_get_info()
+        gpu_free_gb = round(free_bytes / (1024 ** 3), 2)
+        gpu_total_gb = round(total_bytes / (1024 ** 3), 2)
+        min_free_gb = float(os.environ.get("VELNOR_MIN_GPU_FREE_GB", "8"))
+        if gpu_free_gb < min_free_gb:
+            raise RuntimeError(
+                f"Only {gpu_free_gb} GiB GPU memory is free; "
+                f"VELNOR_MIN_GPU_FREE_GB requires {min_free_gb} GiB."
+            )
+    print(f"[velnor-general-v1] Loading base model: {MODEL_ID} on {DEVICE}", flush=True)
     tok = AutoTokenizer.from_pretrained(MODEL_ID)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
-    base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
+    base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW).to(DEVICE)
     lora_cfg = LoraConfig(
         r=8,
         lora_alpha=16,
@@ -755,7 +772,7 @@ def main():
         f"[velnor-general-v1] Reloading best checkpoint from Epoch {best_epoch} (val_loss={best_val_loss:.4f})...",
         flush=True,
     )
-    clean_base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
+    clean_base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW).to(DEVICE)
     best_model = PeftModel.from_pretrained(clean_base, str(adapter_dir))
 
     post_val_loss = best_val_loss
@@ -823,8 +840,8 @@ def main():
             "trained_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "host": f"{platform.system()} {platform.machine()}",
             "cpu_count": os.cpu_count(),
-            "device": "cpu",
-            "dtype": "bfloat16" if _is_1b else "float32",
+            "device": str(DEVICE),\n            "gpu_name": gpu_name,\n            "gpu_free_gb_before_load": gpu_free_gb,\n            "gpu_total_gb": gpu_total_gb,
+            "dtype": str(_load_dtype).replace("torch.", ""),
             "torch": torch.__version__,
             "transformers": transformers.__version__,
             "peft": peft.__version__,
