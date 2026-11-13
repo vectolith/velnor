@@ -71,6 +71,13 @@ class GeneralCurriculumTests(unittest.TestCase):
             "It arrives at 17:13.",
         ))
 
+    def test_qwen3_continuation_uses_current_validation_and_unadapted_base(self):
+        script = (ROOT / "train_qwen3_8b_qlora.py").read_text(encoding="utf-8")
+        self.assertIn("with model.disable_adapter():", script)
+        self.assertIn("best_loss = pre_val_loss", script)
+        self.assertIn('"prior_loss_used_for_selection": False', script)
+        self.assertIn("general_curriculum_sha256", script)
+
 
 if __name__ == "__main__":
     unittest.main()
