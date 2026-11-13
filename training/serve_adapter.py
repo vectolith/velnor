@@ -1,4 +1,4 @@
-"""Local HTTP inference server for Velnor (1.5B Quantitative Reasoning & Coding Model + rsLoRA).
+"""Local HTTP inference server for Velnor (experimental general-purpose instruction model + rsLoRA).
 Exposes POST http://127.0.0.1:8099/v1/chat for live Velnor multi-domain reasoning,
 quantitative analysis, software architecture, and security inference.
 """
@@ -17,10 +17,11 @@ from train_velnor_lora import SYS as SYSTEM_INSTRUCTION
 ROOT = Path(__file__).resolve().parent
 PORT = int(os.environ.get("VELNOR_PORT", 8099))
 
-LOCAL_1B_2B = ROOT / "models" / "qwen2.5-coder-1.5b"
+LOCAL_1B_2B = ROOT / "models" / "qwen2.5-1.5b-instruct"
 LOCAL_LEGACY = ROOT / "models" / "smollm2-135m"
 
 CANDIDATE_ADAPTERS = [
+    ROOT / "outputs" / "velnor-general-v1" / "adapter",
     ROOT / "outputs" / "velnor-coder-v2" / "adapter",
     ROOT / "outputs" / "velnor-core-v1" / "adapter",
     ROOT / "outputs" / "velnor-behavior-pilot" / "adapter",
@@ -30,7 +31,7 @@ CANDIDATE_ADAPTERS = [
 def select_model():
     if (LOCAL_1B_2B / "model.safetensors").exists() or (LOCAL_1B_2B / "config.json").exists():
         model_path = str(LOCAL_1B_2B)
-        label = "Velnor 1.5B Coder (Qwen2.5-Coder-1.5B-Instruct)"
+        label = "Velnor General 1.5B (Qwen2.5-1.5B-Instruct)"
         is_1b_2b = True
     else:
         active_adapter = next((p for p in CANDIDATE_ADAPTERS if (p / "adapter_config.json").exists()), None)
@@ -38,10 +39,10 @@ def select_model():
             cfg = json.loads((active_adapter / "adapter_config.json").read_text(encoding="utf-8"))
             model_path = cfg.get("base_model_name_or_path", str(LOCAL_LEGACY))
             label = f"{active_adapter.parent.name} ({model_path} + rsLoRA)"
-            is_1b_2b = False
+            is_1b_2b = "1.5b" in model_path.lower() or "qwen" in model_path.lower()
         else:
-            model_path = str(LOCAL_LEGACY) if LOCAL_LEGACY.exists() else "Qwen/Qwen2.5-Coder-1.5B-Instruct"
-            label = "Velnor 1.5B Quantitative Engine"
+            model_path = "Qwen/Qwen2.5-1.5B-Instruct"
+            label = "Velnor General 1.5B Base"
             is_1b_2b = True
 
     return model_path, label, is_1b_2b
@@ -64,7 +65,7 @@ _LOAD_KW = {"dtype": load_dtype} if int(transformers.__version__.split(".")[0]) 
 
 base_model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, **_LOAD_KW)
 
-adapter_dir = ROOT / "outputs" / "velnor-coder-v2" / "adapter"
+adapter_dir = ROOT / "outputs" / "velnor-general-v1" / "adapter"
 if (adapter_dir / "adapter_config.json").exists():
     try:
         model = PeftModel.from_pretrained(base_model, str(adapter_dir))
@@ -98,7 +99,7 @@ class Handler(BaseHTTPRequestHandler):
                     "assistant": "Velnor",
                     "organization": "Vectolith",
                     "model": MODEL_LABEL,
-                    "tier": "1.5B Quantitative Engine" if IS_1B_2B else "Compact Pilot",
+                    "tier": "General-purpose 1.5B experimental model" if IS_1B_2B else "Compact experimental pilot",
                     "bfloat16": IS_1B_2B,
                 }
             ).encode("utf-8")
@@ -152,7 +153,8 @@ class Handler(BaseHTTPRequestHandler):
                 "reply": reply,
                 "assistant": "Velnor",
                 "model": MODEL_LABEL,
-                "production_ready": True,
+                "production_ready": False,
+                "deployment_status": "experimental_unvalidated_checkpoint",
             }
         ).encode("utf-8")
         self.send_response(200)
