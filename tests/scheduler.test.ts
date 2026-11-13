@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { withVelnorUser, getStore } from "../src/lib/store";
-import { createReminder } from "../src/lib/tools/workspaceService";
-import { dispatchReminderNotification } from "../src/lib/scheduler";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 process.env.VELNOR_SECRET_KEY ||= "test-secret-key-for-store-suite-32-bytes";
 
 test("reminder dispatch traverses tenant partitions without mixing their state", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-scheduler-"));
+  process.env.VELNOR_DATA_DIR = dir;
+  const { withVelnorUser, getStore } = await import("../src/lib/store");
+  const { createReminder } = await import("../src/lib/tools/workspaceService");
+  const { dispatchReminderNotification } = await import("../src/lib/scheduler");
   await withVelnorUser("scheduler-tenant-a", () => {
     createReminder({ text: "tenant A reminder", dueAt: new Date(Date.now() - 1000).toISOString(), channel: "imessage", recipient: "" });
   });
@@ -29,4 +34,5 @@ test("reminder dispatch traverses tenant partitions without mixing their state",
   assert.equal(b.some((item) => item.text === "tenant A reminder"), false);
   assert.equal(a.find((item) => item.text === "future tenant A reminder")?.completed, false);
   assert.equal(dispatched.some((item) => item.reminder.text === "future tenant A reminder"), false);
+  fs.rmSync(dir, { recursive: true, force: true });
 });
