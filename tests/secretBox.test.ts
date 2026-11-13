@@ -21,6 +21,27 @@ test("credentials round-trip through the sealer", () => {
   }
 });
 
+test("LoopMessage authKey and secretKey fields are encrypted at rest", () => {
+  const env = process.env as Record<string, string | undefined>;
+  const original = env.VELNOR_SECRET_KEY;
+  env.VELNOR_SECRET_KEY = KEY;
+  try {
+    const credentials = {
+      loopMessageAuthKey: "loop-auth-value",
+      loopMessageSecretKey: "loop-secret-value",
+      loopMessageFromNumber: "+15555550123",
+    };
+    const sealed = sealRecord(credentials);
+    assert.equal(isSealed(sealed.loopMessageAuthKey), true);
+    assert.equal(isSealed(sealed.loopMessageSecretKey), true);
+    assert.equal(sealed.loopMessageFromNumber, credentials.loopMessageFromNumber);
+    assert.deepEqual(openRecord(sealed), credentials);
+  } finally {
+    if (original === undefined) delete env.VELNOR_SECRET_KEY;
+    else env.VELNOR_SECRET_KEY = original;
+  }
+});
+
 test("a tampered ciphertext is rejected, not silently trusted", () => {
   const env = process.env as Record<string, string | undefined>;
   const original = env.VELNOR_SECRET_KEY;
@@ -37,10 +58,19 @@ test("a tampered ciphertext is rejected, not silently trusted", () => {
 });
 
 test("credential field detection matches the config keys Velnor actually stores", () => {
-  for (const field of ["geminiApiKey", "openaiApiKey", "googleAccessToken", "slackSigningSecret", "twilioAuthToken", "sendblueApiSecret"]) {
+  for (const field of [
+    "geminiApiKey",
+    "openaiApiKey",
+    "googleAccessToken",
+    "slackSigningSecret",
+    "twilioAuthToken",
+    "sendblueApiSecret",
+    "loopMessageAuthKey",
+    "loopMessageSecretKey",
+  ]) {
     assert.equal(isCredentialField(field), true, `${field} should be treated as a credential`);
   }
-  for (const field of ["geminiModel", "treasury", "activeProvider"]) {
+  for (const field of ["geminiModel", "treasury", "activeProvider", "loopMessageFromNumber"]) {
     assert.equal(isCredentialField(field), false, `${field} should not be sealed`);
   }
 });

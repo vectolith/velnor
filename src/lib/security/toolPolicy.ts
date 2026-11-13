@@ -15,10 +15,17 @@ const MAX_PENDING = 200;
 interface PendingAction {
   fingerprint: string;
   expiresAt: number;
+  messageSequenceAtCreation: number;
+}
+
+interface UserAffirmation {
+  affirmative: boolean;
+  messageSequence: number;
 }
 
 const pending = new Map<string, PendingAction>();
-const lastUserAffirmations = new Map<string, boolean>();
+const lastUserAffirmations = new Map<string, UserAffirmation>();
+const userMessageSequences = new Map<string, number>();
 
 function scopedKey(toolName: string): string {
   return currentUserId() + ":" + toolName;
@@ -26,7 +33,19 @@ function scopedKey(toolName: string): string {
 
 export function noteUserMessage(text: string): void {
   const userId = currentUserId();
-  lastUserAffirmations.set(userId, isAffirmation(text));
+  const messageSequence = (userMessageSequences.get(userId) || 0) + 1;
+  userMessageSequences.set(userId, messageSequence);
+  if (userMessageSequences.size > MAX_PENDING * 10) {
+    const oldest = userMessageSequences.keys().next().value;
+    if (oldest) {
+      userMessageSequences.delete(oldest);
+      lastUserAffirmations.delete(oldest);
+    }
+  }
+  lastUserAffirmations.set(userId, {
+    affirmative: isAffirmation(text),
+    messageSequence,
+  });
   if (lastUserAffirmations.size > MAX_PENDING * 10) {
     const oldest = lastUserAffirmations.keys().next().value;
     if (oldest) lastUserAffirmations.delete(oldest);
@@ -65,9 +84,11 @@ export function enforceToolPolicy(
     entry &&
     entry.expiresAt > now &&
     entry.fingerprint === fingerprint &&
-    lastUserAffirmations.get(userId) === true
+    lastUserAffirmations.get(userId)?.affirmative === true &&
+    lastUserAffirmations.get(userId)!.messageSequence > entry.messageSequenceAtCreation
   ) {
     pending.delete(key);
+    lastUserAffirmations.delete(userId);
     return { allowed: true };
   }
 
@@ -80,7 +101,11 @@ export function enforceToolPolicy(
     }
   }
 
-  pending.set(key, { fingerprint, expiresAt: now + PENDING_TTL_MS });
+  pending.set(key, {
+    fingerprint,
+    expiresAt: now + PENDING_TTL_MS,
+    messageSequenceAtCreation: userMessageSequences.get(userId) || 0,
+  });
   return {
     allowed: false,
     reason:
@@ -93,6 +118,7 @@ export function enforceToolPolicy(
 export function resetToolPolicy(): void {
   pending.clear();
   lastUserAffirmations.clear();
+  userMessageSequences.clear();
 }
 
 export function pendingCount(): number {

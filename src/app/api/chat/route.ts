@@ -13,6 +13,8 @@ import {
 } from "@/lib/tools/workspaceService";
 import { Attachment, ChannelType } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
+import { enforceToolPolicy, noteUserMessage } from "@/lib/security/toolPolicy";
+import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 export async function GET(req: NextRequest) {
   const tenant = authorizeChatTenant(req.headers.get("authorization"));
@@ -56,19 +58,41 @@ function buildSnapshot() {
 }
 
 export async function POST(req: NextRequest) {
-  let body: any;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-  // User identity must come exclusively from the verified bearer token.
-  // Body fields and legacy tenant headers are untrusted input, never credentials.
+  // Authenticate before reading an attacker-controlled request body.
   const tenant = authorizeChatTenant(req.headers.get("authorization"));
   if (!tenant.ok) {
     return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 403 });
   }
+  let body: any;
+  try {
+    body = JSON.parse(await readRequestBodyLimited(req, 5 * 1024 * 1024));
+  } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      return NextResponse.json({ error: error.message }, { status: 413 });
+    }
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "JSON body must be an object." }, { status: 400 });
+  }
   return withVelnorUser(tenant.userId, () => handlePost(body));
+}
+
+function requireActionConfirmation(
+  toolName: "organize_email" | "create_calendar_event",
+  args: Record<string, unknown>,
+  confirmationText: unknown
+): NextResponse | null {
+  // Confirmation is supplied as a separate explicit user affirmation on the
+  // retry request. The policy binds it to the authenticated tenant and exact
+  // normalized action arguments, then consumes it once.
+  if (typeof confirmationText === "string") noteUserMessage(confirmationText);
+  const decision = enforceToolPolicy(toolName, args);
+  if (decision.allowed) return null;
+  return NextResponse.json(
+    { error: decision.reason, confirmation_required: true },
+    { status: 409 }
+  );
 }
 
 async function handlePost(body: any) {
@@ -94,12 +118,15 @@ async function handlePost(body: any) {
     }
 
     if (action === "organize_email") {
-      await organizeEmail({
+      const args = {
         emailId: body.emailId ? String(body.emailId) : undefined,
         query: body.query ? String(body.query) : undefined,
         action: body.emailAction || "archive",
         label: body.label ? String(body.label) : undefined,
-      });
+      };
+      const confirmation = requireActionConfirmation("organize_email", args, body.confirmationText);
+      if (confirmation) return confirmation;
+      await organizeEmail(args);
       return NextResponse.json({
         emails: getStore().emails.filter((e) => !e.archived),
       });
@@ -129,14 +156,17 @@ async function handlePost(body: any) {
     }
 
     if (action === "create_event") {
-      const ev = await createCalendarEvent({
+      const args = {
         title: String(body.title || "New Event"),
         date: String(body.date || new Date().toISOString().split("T")[0]),
         startTime: String(body.startTime || "10:00"),
         endTime: body.endTime ? String(body.endTime) : undefined,
         attendees: Array.isArray(body.attendees) ? body.attendees : [],
         location: body.location ? String(body.location) : "Google Meet",
-      });
+      };
+      const confirmation = requireActionConfirmation("create_calendar_event", args, body.confirmationText);
+      if (confirmation) return confirmation;
+      const ev = await createCalendarEvent(args);
       return NextResponse.json({ event: ev, calendarEvents: getStore().calendarEvents });
     }
 
@@ -201,4 +231,3 @@ async function handlePost(body: any) {
     );
   }
 }
-

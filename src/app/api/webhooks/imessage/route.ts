@@ -13,6 +13,7 @@ import { processUserMessage } from "@/lib/ai/agent";
 import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
 import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
+import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 const MAX_INPUT_CHARS = 8000;
 
@@ -44,7 +45,15 @@ export async function POST(req: NextRequest) {
 
   try {
     if (contentType.includes("application/json")) {
-      const rawJsonBody = await req.text();
+      let rawJsonBody: string;
+      try {
+        rawJsonBody = await readRequestBodyLimited(req, 1_048_576);
+      } catch (error) {
+        if (error instanceof PayloadTooLargeError) {
+          return NextResponse.json({ error: error.message }, { status: 413 });
+        }
+        throw error;
+      }
       try {
         jsonPayload = JSON.parse(rawJsonBody);
       } catch {
@@ -81,7 +90,16 @@ export async function POST(req: NextRequest) {
     // 1. TWILIO SMS / MMS WEBHOOK (application/x-www-form-urlencoded)
     // =========================================================================
     if (contentType.includes("application/x-www-form-urlencoded")) {
-      const formData = await req.formData();
+      let rawFormBody: string;
+      try {
+        rawFormBody = await readRequestBodyLimited(req, 512 * 1024);
+      } catch (error) {
+        if (error instanceof PayloadTooLargeError) {
+          return NextResponse.json({ error: error.message }, { status: 413 });
+        }
+        throw error;
+      }
+      const formData = new URLSearchParams(rawFormBody);
       const paramsMap: Record<string, string> = {};
       formData.forEach((val, key) => {
         paramsMap[key] = String(val);

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getStore, listUserIds, sanitizeUserId, saveStore, withVelnorUser } from "@/lib/store";
+import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 export const runtime = "nodejs";
 
@@ -26,17 +27,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const contentLength = Number(req.headers.get("content-length") || 0);
-  if (contentLength > 4096) {
-    return NextResponse.json({ error: "Request body is too large." }, { status: 413 });
-  }
-
   let body: unknown;
   try {
-    const raw = await req.text();
-    if (raw.length > 4096) return NextResponse.json({ error: "Request body is too large." }, { status: 413 });
-    body = JSON.parse(raw);
-  } catch {
+    body = JSON.parse(await readRequestBodyLimited(req, 4096));
+  } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      return NextResponse.json({ error: error.message }, { status: 413 });
+    }
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 

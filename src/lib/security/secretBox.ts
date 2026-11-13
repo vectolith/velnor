@@ -43,6 +43,7 @@ export function openSecret(sealed: string): string {
   if (!key) throw new Error("VELNOR_SECRET_KEY is not configured");
   if (!isSealed(sealed)) throw new Error("Value is not sealed");
   const buffer = Buffer.from(sealed.slice(PREFIX.length), "base64");
+  if (buffer.length < 28) throw new Error("Sealed value is truncated");
   const iv = buffer.subarray(0, 12);
   const tag = buffer.subarray(12, 28);
   const ciphertext = buffer.subarray(28);
@@ -77,8 +78,12 @@ export function openRecord<T extends Record<string, unknown>>(record: T): T {
   return out as T;
 }
 
+/**
+ * Match provider credentials by suffix. Include both key- and token-based
+ * provider naming conventions (for example LoopMessage authKey/secretKey).
+ */
 export function isCredentialField(field: string): boolean {
-  return /(apiKey|accessToken|refreshToken|authToken|clientSecret|signingSecret|botToken|codeVerifier|secret|password|pin)$/i.test(
+  return /(apiKey|accessToken|refreshToken|authToken|authKey|clientSecret|signingSecret|botToken|codeVerifier|secretKey|secret|password|pin)$/i.test(
     field
   );
 }

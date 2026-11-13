@@ -71,12 +71,12 @@ The gateway performs these steps for protected `/api/*` requests:
 4. Provision the tenant through the internal endpoint using a separate provisioning secret.
 5. Mint a five-minute HS256 Velnor identity token and proxy the request with both the bearer token and deployment shared secret.
 
-Webhook, cron, health, and the signed Google OAuth callback paths are intentionally passed through because external providers cannot present a user's Cloudflare Access assertion. The tenant provisioning endpoint is excluded from the gateway's user-auth flow but independently requires its dedicated secret.
+Provider-facing webhook, cron, health, and signed Google OAuth callback paths bypass the user's Access assertion because external providers cannot present it. The Worker still proxies these requests to the configured Velnor origin; it overwrites and injects x-velnor-secret on webhook, cron, and callback requests (health is deliberately secret-free). Velnor middleware requires that perimeter secret on webhook, cron, and callback paths, while each route also checks its provider signature or CRON_SECRET. The tenant provisioning endpoint is not exposed through the public Worker route; the Worker calls it directly at VELNOR_ORIGIN with its separate provisioning secret.
 
 ### Configure and deploy
 
 1. Create a Cloudflare Access self-hosted application for the Velnor API hostname. Configure at least one identity provider and an allow policy for the people who may use Velnor. The Worker must receive the Access JWT assertion header on protected API requests.
-2. Ensure the Access policy does not block these provider-facing paths: `/api/webhooks/*`, `/api/cron/*`, `/api/health`, and `/api/auth/google/callback`. The Worker passes these paths to Velnor without adding a user identity.
+2. Ensure the Access policy does not block these provider-facing paths: `/api/webhooks/*`, `/api/cron/*`, `/api/health`, and `/api/auth/google/callback`. The Worker forwards them without a user identity but injects the deployment perimeter secret on all except health.
 3. Set the non-secret configuration in the Worker environment:
    - `CF_ACCESS_TEAM_DOMAIN`: your Cloudflare Access team domain, such as `https://example.cloudflareaccess.com`.
    - `CF_ACCESS_AUD`: the exact AUD tag for the Velnor Access application.
@@ -101,10 +101,10 @@ The internal provisioning route accepts only tenant IDs in the deterministic `cf
 
 ### Security and rollout notes
 
-- The Worker overwrites inbound `Authorization` and `x-velnor-secret` headers; clients cannot choose a Velnor tenant by sending their own identity claims.
+- On protected routes, the Worker overwrites inbound `Authorization` and `x-velnor-secret` headers; clients cannot choose a Velnor tenant by sending their own identity claims. On provider-facing routes it preserves provider Authorization headers where required and overwrites only `x-velnor-secret`.
 - The Worker removes the Cloudflare assertion and provisioning-secret headers before forwarding requests to Velnor. Its Wrangler configuration disables the public `workers.dev` endpoint and preview URLs, and preserves dashboard-managed variables across redeploys; bind only the intended API hostname route.
 - Velnor still validates the minted token independently. Keep the signing secret identical only between the Worker and Velnor.
-- Restrict direct access to the Velnor origin where practical. Even though the origin still requires the shared secret and a valid user token, the gateway should remain the normal public entry point.
+- Restrict direct access to the Velnor origin at the network/platform layer. The Worker now injects the shared perimeter secret on provider-facing paths, and Velnor rejects direct-origin webhook, cron, and OAuth callback requests without it. Protected handlers independently validate short-lived tenant JWTs; the shared secret is an outer perimeter control, not a replacement for network-level origin isolation. For Cloud Run, do not assume `--allow-unauthenticated` makes the Worker the only ingress path; configure Cloud Run ingress or an authenticated origin hop if strict gateway-only access is required.
 - The Worker caches successful tenant provisioning for up to five minutes per isolate. If a tenant is removed, Velnor's own provisioned-tenant check rejects the next request after the cache expires.
 - The Worker currently supports Cloudflare Access as the authentication gateway. Other OIDC providers can be added behind the same verified-subject contract without changing Velnor's tenant authorization logic.
 - This is an initial gateway implementation, not proof of a production rollout. Complete the Cloudflare Access configuration, secret setup, HTTPS origin restrictions, and real browser login tests before production use.

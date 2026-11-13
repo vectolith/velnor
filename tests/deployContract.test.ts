@@ -95,9 +95,19 @@ test("the VM runs the reminder sweep that vercel.json used to schedule", () => {
 
 test("the shared deployment secret never consumes the per-user Authorization bearer token", () => {
   const middleware = readFileSync(new URL("../src/middleware.ts", import.meta.url), "utf8");
-  const gate = middleware.slice(middleware.indexOf("const provided ="), middleware.indexOf("if (!safeEquals(provided, sharedSecret))"));
-  assert.match(gate, /x-velnor-secret/);
-  assert.doesNotMatch(gate, /authorization/);
+  assert.match(
+    middleware,
+    /authorizeGatewayRequest\(sharedSecret, req\.headers\.get\("x-velnor-secret"\)\)/,
+    "the deployment perimeter must use the dedicated gateway header"
+  );
+  assert.doesNotMatch(
+    middleware,
+    /VELNOR_SHARED_SECRET\s*\|\|\s*process\.env\.VELNOR_ADMIN_TOKEN/,
+    "an admin token must never substitute for the deployment perimeter secret"
+  );
+  const gatewayAuth = readFileSync(new URL("../src/lib/security/gatewayAuth.ts", import.meta.url), "utf8");
+  assert.match(gatewayAuth, /provided/);
+  assert.doesNotMatch(gatewayAuth, /authorization/i);
 });
 
 test("the simulator bypass is disabled in production", () => {

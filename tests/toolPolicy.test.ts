@@ -33,6 +33,18 @@ test("a sensitive tool is blocked until the user says yes", () => {
   assert.equal(third.allowed, false, "the next send needs its own confirmation");
 });
 
+test("an old affirmative cannot authorize an action requested later", () => {
+  resetToolPolicy();
+  noteUserMessage("yes");
+  assert.equal(enforceToolPolicy("organize_email", { emailId: "e-1" }).allowed, false);
+  // No new user message: the previously recorded yes must not be reusable.
+  assert.equal(enforceToolPolicy("organize_email", { emailId: "e-1" }).allowed, false);
+  noteUserMessage("please archive that email");
+  assert.equal(enforceToolPolicy("organize_email", { emailId: "e-1" }).allowed, false);
+  noteUserMessage("yes");
+  assert.equal(enforceToolPolicy("organize_email", { emailId: "e-1" }).allowed, true);
+});
+
 test("a non-affirmative reply does not unlock the action", () => {
   resetToolPolicy();
   noteUserMessage("send it");
