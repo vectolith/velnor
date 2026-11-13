@@ -192,29 +192,22 @@ function isPublicApiPath(pathname: string): boolean {
   return pathname === "/api/health" ||
     pathname.startsWith("/api/webhooks/") ||
     pathname.startsWith("/api/cron/") ||
-    pathname === "/api/auth/google/callback" ||
-    pathname === "/api/internal/tenants/provision";
+    pathname === "/api/auth/google/callback";
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const incoming = new URL(request.url);
-    if (!incoming.pathname.startsWith("/api/") || isPublicApiPath(incoming.pathname) || request.method === "OPTIONS") {
-      return fetch(request);
+    if (!incoming.pathname.startsWith("/api/")) return fetch(request);
+    if (request.method === "OPTIONS") return fetch(request);
+    // Tenant provisioning is an internal control-plane operation. The Worker
+    // invokes it directly against VELNOR_ORIGIN with its separate secret.
+    if (incoming.pathname.startsWith("/api/internal/")) {
+      return jsonError("Not found.", 404);
     }
 
-    if (
-      !env.CF_ACCESS_TEAM_DOMAIN ||
-      !env.CF_ACCESS_AUD ||
-      !env.VELNOR_ORIGIN ||
-      !env.VELNOR_SHARED_SECRET ||
-      env.VELNOR_SHARED_SECRET.length < 32 ||
-      !env.VELNOR_TENANT_TOKEN_SECRET ||
-      env.VELNOR_TENANT_TOKEN_SECRET.length < 32 ||
-      !env.VELNOR_PROVISIONING_SECRET ||
-      env.VELNOR_PROVISIONING_SECRET.length < 32
-    ) {
-      return jsonError("Identity gateway is not configured.", 503);
+    if (!env.VELNOR_ORIGIN || !env.VELNOR_SHARED_SECRET || env.VELNOR_SHARED_SECRET.length < 32) {
+      return jsonError("Identity gateway origin or perimeter secret is not configured.", 503);
     }
 
     let upstreamOrigin: URL;
@@ -235,6 +228,48 @@ export default {
       }
     } catch {
       return jsonError("Velnor origin is invalid.", 503);
+    }
+
+    const upstreamUrl = new URL(incoming.pathname + incoming.search, upstreamOrigin);
+    const publicPath = isPublicApiPath(incoming.pathname);
+    const headers = new Headers(request.headers);
+    headers.delete("Cf-Access-Jwt-Assertion");
+    headers.delete("x-velnor-provisioning-secret");
+    headers.delete("host");
+    headers.delete("x-forwarded-for");
+    headers.delete("x-real-ip");
+    headers.delete("x-forwarded-host");
+    headers.delete("x-forwarded-proto");
+
+    if (publicPath) {
+      // External providers cannot present an Access assertion. The Worker
+      // still injects the deployment secret so the origin can reject direct
+      // calls that bypass this gateway. Preserve provider auth headers.
+      headers.set("x-velnor-secret", env.VELNOR_SHARED_SECRET);
+      if (incoming.pathname === "/api/health") headers.delete("x-velnor-secret");
+      try {
+        const method = request.method.toUpperCase();
+        return await fetch(new Request(upstreamUrl, {
+          method,
+          headers,
+          body: method === "GET" || method === "HEAD" ? undefined : request.body,
+          redirect: "manual",
+        }));
+      } catch (error) {
+        console.error("Velnor public upstream request failed:", error);
+        return jsonError("Velnor API is temporarily unavailable.", 502);
+      }
+    }
+
+    if (
+      !env.CF_ACCESS_TEAM_DOMAIN ||
+      !env.CF_ACCESS_AUD ||
+      !env.VELNOR_TENANT_TOKEN_SECRET ||
+      env.VELNOR_TENANT_TOKEN_SECRET.length < 32 ||
+      !env.VELNOR_PROVISIONING_SECRET ||
+      env.VELNOR_PROVISIONING_SECRET.length < 32
+    ) {
+      return jsonError("Identity gateway is not configured.", 503);
     }
 
     const assertion = request.headers.get("Cf-Access-Jwt-Assertion");
@@ -259,13 +294,8 @@ export default {
     }
 
     try {
-      const upstreamUrl = new URL(incoming.pathname + incoming.search, upstreamOrigin);
-      const headers = new Headers(request.headers);
-      headers.delete("Cf-Access-Jwt-Assertion");
-      headers.delete("x-velnor-provisioning-secret");
       headers.set("Authorization", "Bearer " + bearer);
       headers.set("x-velnor-secret", env.VELNOR_SHARED_SECRET);
-
       const method = request.method.toUpperCase();
       const upstreamRequest = new Request(upstreamUrl, {
         method,

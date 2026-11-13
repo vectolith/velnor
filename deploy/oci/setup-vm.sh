@@ -72,6 +72,9 @@ say "3/6 Preparing .env"
 if ! grep -q '^VELNOR_PROVISIONING_SECRET=' .env; then
   printf '\nVELNOR_PROVISIONING_SECRET=\n' >> .env
 fi
+if ! grep -q '^VELNOR_PUBLIC_URL=' .env; then
+  printf '\nVELNOR_PUBLIC_URL=\n' >> .env
+fi
 chmod 600 .env
 
 : > .env.tmp
@@ -103,6 +106,11 @@ if grep -qE '^VELNOR_HOST=(localhost)?$' .env; then
   else
     warn "could not detect the public IP; set VELNOR_HOST in .env to <public-ip>.sslip.io"
   fi
+fi
+
+public_url="$(grep -E '^VELNOR_PUBLIC_URL=' .env | cut -d= -f2-)"
+if [[ -z "$public_url" || "$public_url" == "https://your-public-domain.example" ]]; then
+  warn "Set VELNOR_PUBLIC_URL in .env to the canonical public HTTPS API origin (for example https://api.velnor.ai) before using Google OAuth or Twilio webhooks."
 fi
 
 missing=()

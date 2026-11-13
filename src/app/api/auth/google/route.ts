@@ -23,11 +23,24 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const origin = process.env.VELNOR_PUBLIC_URL || req.nextUrl.origin;
-  const redirectUri = new URL("/api/auth/google/callback", origin).toString();
-  if (process.env.NODE_ENV === "production" && !redirectUri.startsWith("https://")) {
-    return NextResponse.json({ error: "Google OAuth requires an HTTPS public callback URL." }, { status: 500 });
+  const configuredOrigin = process.env.VELNOR_PUBLIC_URL;
+  if (process.env.NODE_ENV === "production" && !configuredOrigin) {
+    return NextResponse.json({ error: "Google OAuth is disabled until VELNOR_PUBLIC_URL is configured." }, { status: 503 });
   }
+  let publicOrigin: URL;
+  try {
+    publicOrigin = new URL(configuredOrigin || req.nextUrl.origin);
+  } catch {
+    return NextResponse.json({ error: "VELNOR_PUBLIC_URL must be a valid absolute origin." }, { status: 503 });
+  }
+  if (
+    publicOrigin.username || publicOrigin.password || publicOrigin.pathname !== "/" ||
+    publicOrigin.search || publicOrigin.hash ||
+    (process.env.NODE_ENV === "production" && publicOrigin.protocol !== "https:")
+  ) {
+    return NextResponse.json({ error: "VELNOR_PUBLIC_URL must be a canonical HTTPS origin in production." }, { status: 503 });
+  }
+  const redirectUri = new URL("/api/auth/google/callback", publicOrigin).toString();
 
   const nonce = crypto.randomBytes(32).toString("base64url");
   const verifier = crypto.randomBytes(32).toString("base64url");
@@ -62,5 +75,5 @@ export async function GET(req: NextRequest) {
   authUrl.searchParams.set("code_challenge", challenge);
   authUrl.searchParams.set("code_challenge_method", "S256");
 
-  return NextResponse.json({ authUrl: authUrl.toString(), expiresIn: 600 });
+  return NextResponse.json({ authUrl: authUrl.toString(), expiresIn: 600 }, { headers: { "Cache-Control": "no-store" } });
 }

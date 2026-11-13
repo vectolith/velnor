@@ -14,6 +14,25 @@ export async function GET(req: NextRequest) {
   const binding = verifyGoogleOAuthState(signedState);
   if (!binding) return NextResponse.json({ ok: false, error: "invalid_or_expired_oauth_state" }, { status: 400 });
 
+  const configuredOrigin = process.env.VELNOR_PUBLIC_URL;
+  if (process.env.NODE_ENV === "production" && !configuredOrigin) {
+    return NextResponse.json({ ok: false, error: "oauth_public_origin_not_configured" }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
+  let publicOrigin: URL;
+  try {
+    publicOrigin = new URL(configuredOrigin || req.nextUrl.origin);
+  } catch {
+    return NextResponse.json({ ok: false, error: "oauth_public_origin_invalid" }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
+  if (
+    publicOrigin.username || publicOrigin.password || publicOrigin.pathname !== "/" ||
+    publicOrigin.search || publicOrigin.hash ||
+    (process.env.NODE_ENV === "production" && publicOrigin.protocol !== "https:")
+  ) {
+    return NextResponse.json({ ok: false, error: "oauth_public_origin_invalid" }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
+  const redirectUri = new URL("/api/auth/google/callback", publicOrigin).toString();
+
   try {
     const result = await withVelnorUser(binding.tenantId, async () => {
       const state = getStore();
@@ -39,8 +58,6 @@ export async function GET(req: NextRequest) {
       const clientSecret = state.config.googleClientSecret || process.env.GOOGLE_CLIENT_SECRET || "";
       if (!clientId || !clientSecret) throw new Error("Google OAuth client credentials are not configured.");
 
-      const origin = process.env.VELNOR_PUBLIC_URL || req.nextUrl.origin;
-      const redirectUri = new URL("/api/auth/google/callback", origin).toString();
       const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -86,11 +103,11 @@ export async function GET(req: NextRequest) {
       return { email: profile.email };
     });
 
-    return NextResponse.json({ ok: true, status: "connected", email: result.email });
+    return NextResponse.json({ ok: true, status: "connected", email: result.email }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = (error as Error).message;
     const status = message.includes("not active") ? 400 : 500;
     console.error("Google OAuth callback failed:", message);
-    return NextResponse.json({ ok: false, error: "oauth_exchange_failed" }, { status });
+    return NextResponse.json({ ok: false, error: "oauth_exchange_failed" }, { status, headers: { "Cache-Control": "no-store" } });
   }
 }

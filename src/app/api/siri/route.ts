@@ -3,6 +3,7 @@ import { processUserMessage } from "@/lib/ai/agent";
 import { withVelnorUser } from "@/lib/store";
 import { authorizeChatTenant } from "@/lib/security/tenant";
 import { generateSpeechWithProvider } from "@/lib/tools/multimodal";
+import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 /**
  * Apple Siri / Apple Watch / iPhone Action Button / CarPlay Endpoint
@@ -38,7 +39,16 @@ export async function POST(req: NextRequest) {
   try {
     const tenant = authorizeChatTenant(req.headers.get("authorization"));
     if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401 });
-    const body = await req.json();
+    let body: any;
+    try {
+      body = JSON.parse(await readRequestBodyLimited(req, 256 * 1024));
+    } catch (error) {
+      if (error instanceof PayloadTooLargeError) return NextResponse.json({ error: error.message }, { status: 413 });
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "JSON body must be an object." }, { status: 400 });
+    }
     const query = String(body.query || body.text || body.prompt || "").trim();
     if (!query) {
       return NextResponse.json(

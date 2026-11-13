@@ -103,3 +103,30 @@ test("user ids are sanitised for filesystem use", () => {
   assert.equal(store.sanitizeUserId(key), key);
   assert.equal(store.sanitizeUserId(""), "default");
 });
+
+test("legacy plaintext credentials in SQLite are resealed during hydration", async (t) => {
+  const { getDatabaseEngineStatus, saveStateToSqlite } = await import("../src/lib/sqliteDb");
+  if (!getDatabaseEngineStatus().engine.startsWith("node:sqlite")) {
+    t.skip("Node built-in SQLite is unavailable in this runtime");
+    return;
+  }
+
+  const rawId = "sqlite-legacy-plaintext";
+  const id = store.sanitizeUserId(rawId);
+  const state = await store.withVelnorUser(rawId, async () => store.getStore());
+  state.config.loopMessageAuthKey = "legacy-loopmessage-auth-key";
+  saveStateToSqlite(state, "state:" + id);
+  const jsonPath = path.join(testRoot, ".data", "users", id + ".json");
+  if (fs.existsSync(jsonPath)) fs.unlinkSync(jsonPath);
+
+  store.resetStoreCache();
+  const restored = await store.withVelnorUser(rawId, async () => store.getStore());
+  assert.equal(restored.config.loopMessageAuthKey, "legacy-loopmessage-auth-key");
+
+  assert.ok(fs.existsSync(jsonPath), "hydration did not rewrite the JSON recovery mirror");
+  const persisted = fs.readFileSync(jsonPath, "utf8");
+  assert.ok(!persisted.includes("legacy-loopmessage-auth-key"), "legacy secret remained plaintext on disk");
+  assert.match(persisted, /v2:/, "legacy secret was not resealed with the active key format");
+  const sqliteBytes = fs.readFileSync(path.join(testRoot, ".data", "velnor.db"), "latin1");
+  assert.ok(!sqliteBytes.includes("legacy-loopmessage-auth-key"), "SQLite still contains the legacy plaintext secret");
+});

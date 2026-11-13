@@ -208,6 +208,7 @@ export function loadUserState(userId: string): VelnorState {
 
   // SQLite and the JSON mirror can fail independently. Choose the newest
   // durable copy, then apply identical migration, validation and decryption.
+  let needsCredentialReseal = false;
   if (loaded) {
     const migrated = migrateState(loaded).value;
     const coerced = coerceState(migrated);
@@ -216,14 +217,27 @@ export function loadUserState(userId: string): VelnorState {
     }
     const config = coerced.value.config;
     if (config && typeof config === "object") {
-      coerced.value.config = openRecord(config as Record<string, unknown>);
+      const rawConfig = config as Record<string, unknown>;
+      // Older SQLite rows may contain plaintext credentials. Detect them before
+      // decryption, then rewrite the profile through saveStateForUser so AES-GCM
+      // sealing is applied to both SQLite and the JSON recovery mirror.
+      needsCredentialReseal = secretsEnabled() && Object.entries(rawConfig).some(
+        ([key, value]) =>
+          typeof value === "string" &&
+          value.length > 0 &&
+          isCredentialField(key) &&
+          !isSealed(value)
+      );
+      coerced.value.config = openRecord(rawConfig);
     }
     loaded = coerced.value as unknown as VelnorState;
   }
 
   const state = mergeState(loaded);
   cache().set(id, state);
-  if (!loaded || loadedFromLegacy || useJson) saveStateForUser(id, state);
+  if (!loaded || loadedFromLegacy || useJson || needsCredentialReseal) {
+    saveStateForUser(id, state);
+  }
   return state;
 }
 
