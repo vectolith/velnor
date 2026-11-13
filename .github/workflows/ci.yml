@@ -62,6 +62,20 @@ jobs:
           node scripts/verify-velnor.mjs
           kill $SERVER_PID || true
 
+  training-curriculum-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate general-purpose curriculum and evaluation contracts
+        run: |
+          python3 -m py_compile training/train_velnor_lora.py training/train_qwen3_8b_qlora.py training/serve_adapter.py training/grade_generations.py
+          python3 -m unittest discover -s training -p 'test_*.py'
+          python3 training/grade_generations.py training/pilot_report.json
+          python3 -c "import json; [json.load(open(path, encoding='utf-8')) for path in ['training/Velnor_General_1.5B_Free_GPU.ipynb', 'training/Velnor_Qwen3_8B_General_Free_GPU.ipynb']]"
+
   identity-gateway-bundle:
     runs-on: ubuntu-latest
     steps:
