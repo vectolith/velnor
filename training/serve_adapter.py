@@ -20,12 +20,7 @@ PORT = int(os.environ.get("VELNOR_PORT", 8099))
 LOCAL_1B_2B = ROOT / "models" / "qwen2.5-1.5b-instruct"
 LOCAL_LEGACY = ROOT / "models" / "smollm2-135m"
 
-CANDIDATE_ADAPTERS = [
-    ROOT / "outputs" / "velnor-general-v1" / "adapter",
-    ROOT / "outputs" / "velnor-coder-v2" / "adapter",
-    ROOT / "outputs" / "velnor-core-v1" / "adapter",
-    ROOT / "outputs" / "velnor-behavior-pilot" / "adapter",
-]
+CANDIDATE_ADAPTERS = [ROOT / "outputs" / "velnor-general-v1" / "adapter"]
 
 
 def select_model():
