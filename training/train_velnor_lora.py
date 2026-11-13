@@ -1,8 +1,8 @@
 """
 Velnor Core v1 — Multi-Domain LoRA Fine-Tuning & Verification Pipeline
 =====================================================================
-Trains a Rank-Stabilized LoRA (rsLoRA) adapter on `HuggingFaceTB/SmolLM2-135M-Instruct`
-(r=8, alpha=16, dropout=0.05, q/k/v/o projections) across a 12-domain, 138-example
+Trains a Rank-Stabilized LoRA (rsLoRA) adapter on `Qwen/Qwen2.5-Coder-1.5B-Instruct`
+(r=8, alpha=16, dropout=0.05, q/v projections) across a 12-domain, 138-example
 executive intelligence curriculum with 20 held-out validation examples across all
 domains. Override the base model with VELNOR_BASE_MODEL.
 
@@ -41,20 +41,22 @@ torch.manual_seed(SEED)
 torch.set_num_threads(os.cpu_count() or 4)
 
 ROOT = Path(__file__).resolve().parent
-LOCAL_1B_2B = ROOT / "models" / "qwen2.5-coder-1.5b"
-LOCAL_LEGACY = ROOT / "models" / "smollm2-135m"
-# Base model: uses local model or environment override
-MODEL_ID = os.environ.get("VELNOR_BASE_MODEL")
-if not MODEL_ID:
-    if LOCAL_1B_2B.exists() and (LOCAL_1B_2B / "model.safetensors").exists():
-        MODEL_ID = str(LOCAL_1B_2B)
-    elif LOCAL_LEGACY.exists():
-        MODEL_ID = str(LOCAL_LEGACY)
-    else:
-        MODEL_ID = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+LOCAL_QWEN = ROOT / "models" / "qwen2.5-coder-1.5b"
+# One canonical base model. A local snapshot is accepted only when it has a
+# Hugging Face config; otherwise Transformers resolves the pinned repo ID.
+MODEL_REPO_ID = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+MODEL_ID = os.environ.get(
+    "VELNOR_BASE_MODEL",
+    str(LOCAL_QWEN) if (LOCAL_QWEN / "config.json").is_file() else MODEL_REPO_ID,
+)
+if not MODEL_ID.strip():
+    raise ValueError("VELNOR_BASE_MODEL must be a non-empty model ID or local snapshot path")
 
-_is_1b = "1.5b" in str(MODEL_ID).lower() or "qwen" in str(MODEL_ID).lower()
-_load_dtype = torch.bfloat16 if _is_1b else torch.float32
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if DEVICE.type == "cuda":
+    _load_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+else:
+    _load_dtype = torch.float32
 _LOAD_KW = {"dtype": _load_dtype} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": _load_dtype}
 OUT = ROOT / "outputs" / "velnor-coder-v2"
 
@@ -523,12 +525,21 @@ def make_minibatches(examples, batch_size: int, pad_id: int):
     return batches
 
 
+def move_batch(batch, device):
+    return {
+        key: value.to(device, non_blocking=(device.type == "cuda"))
+        for key, value in batch.items()
+    }
+
+
 def eval_loss(model, batches):
     model.eval()
+    device = next(model.parameters()).device
     total = 0.0
     with torch.no_grad():
-        for b in batches:
-            total += float(model(**b).loss.item())
+        for batch in batches:
+            batch = move_batch(batch, device)
+            total += float(model(**batch).loss.item())
     return total / max(1, len(batches))
 
 
@@ -541,6 +552,7 @@ def generate_reply(model, tokenizer, prompt: str, max_new_tokens: int = 64) -> s
         msgs, tokenize=True, add_generation_prompt=True, return_tensors="pt"
     )
     input_ids = enc if isinstance(enc, torch.Tensor) else enc["input_ids"]
+    input_ids = input_ids.to(next(model.parameters()).device)
     with torch.no_grad():
         out = model.generate(
             input_ids=input_ids,
@@ -564,6 +576,7 @@ def main():
         tok.pad_token = tok.eos_token
 
     base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
+    base.to(DEVICE)
     lora_cfg = LoraConfig(
         r=8,
         lora_alpha=16,
@@ -591,7 +604,7 @@ def main():
             flush=True,
         )
 
-    fast_mode = os.environ.get("VELNOR_FAST_TRAIN", "1") == "1"
+    fast_mode = os.environ.get("VELNOR_FAST_TRAIN", "0").strip() == "1"
     if fast_mode and len(TRAIN) > 36:
         step = max(1, len(TRAIN) // 36)
         train_pool = TRAIN[::step][:36]
@@ -641,7 +654,9 @@ def main():
     adapter_dir = OUT / "adapter"
 
     history = []
-    best_val_loss = pre_val_loss
+    # Always persist at least one real epoch checkpoint. If every epoch is
+    # worse than the base, the report still records that regression honestly.
+    best_val_loss = float("inf")
     best_epoch = 0
     opt_step = 0
 
@@ -652,6 +667,7 @@ def main():
         opt.zero_grad()
 
         for idx, b in enumerate(train_batches, 1):
+            b = move_batch(b, DEVICE)
             loss = model(**b).loss
             ep_loss += float(loss.item())
             (loss / grad_accum).backward()
@@ -714,7 +730,13 @@ def main():
         f"[velnor-coder-v2] Reloading best checkpoint from Epoch {best_epoch} (val_loss={best_val_loss:.4f})...",
         flush=True,
     )
+    # Release the training graph and optimizer state before loading a clean
+    # base model for final adapter evaluation; this avoids doubling VRAM use.
+    del model, base, opt
+    if DEVICE.type == "cuda":
+        torch.cuda.empty_cache()
     clean_base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
+    clean_base.to(DEVICE)
     best_model = PeftModel.from_pretrained(clean_base, str(adapter_dir))
 
     post_val_loss = best_val_loss
@@ -774,7 +796,7 @@ def main():
 
     report = {
         "model_name": "velnor-coder-v2",
-        "base_model": base.config.name_or_path,
+        "base_model": clean_base.config.name_or_path,
         "base_model_repo": MODEL_ID if not os.path.isabs(MODEL_ID) else "local checkout",
         "method": method,
         "provenance": {
@@ -782,8 +804,8 @@ def main():
             "trained_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "host": f"{platform.system()} {platform.machine()}",
             "cpu_count": os.cpu_count(),
-            "device": "cpu",
-            "dtype": "bfloat16" if _is_1b else "float32",
+            "device": str(DEVICE),
+            "dtype": str(_load_dtype).replace("torch.", ""),
             "torch": torch.__version__,
             "transformers": transformers.__version__,
             "peft": peft.__version__,
@@ -802,9 +824,13 @@ def main():
         "base_generations": base_generations,
         "trainable_params": trainable,
         "total_params": total_p,
-        "train_examples": len(TRAIN),
-        "val_examples": len(HELDOUT),
-        "domains_covered": summary["domains_covered"],
+        # These are the exact examples used in this run, not the full source pool.
+        "train_examples": len(train_pool),
+        "val_examples": len(val_pool),
+        "full_train_examples": len(TRAIN),
+        "full_val_examples": len(HELDOUT),
+        "fast_mode": fast_mode,
+        "curriculum_domains_available": summary["domains_covered"],
         "curriculum": summary,
         "epochs": epochs,
         "best_checkpoint_epoch": best_epoch,

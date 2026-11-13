@@ -1,45 +1,71 @@
 # Velnor Domain LoRA (`training/`)
 
 LoRA fine-tuning harness for the behaviour layer of Velnor (`velnor-coder-v2`), built on
-`HuggingFaceTB/SmolLM2-135M-Instruct` (135.4M params), trained on CPU in float32.
+`Qwen/Qwen2.5-Coder-1.5B-Instruct` (1.5B parameters). The complete training and held-out
+validation pools are used by default. This is a parameter-efficient adapter fine-tune,
+not training a new foundation model from scratch.
 
-## What actually runs
+## Training contract
 
-Read from `train_velnor_lora.py`; the report is generated from these objects at runtime,
-so the numbers cannot drift from the code:
+The authoritative implementation is `train_velnor_lora.py`. Run reports record the
+actual selected example counts and runtime provenance.
 
-| | |
+| Setting | Value |
 |---|---|
-| Base model | `HuggingFaceTB/SmolLM2-135M-Instruct` (override with `VELNOR_BASE_MODEL`) |
-| Adapter | rsLoRA, r=8, alpha=16, dropout=0.05, `q_proj k_proj v_proj o_proj` |
-| Trainable params | 921,600 of 135,436,608 (0.68%) |
-| Curriculum | 138 examples across 12 domains, 20 held-out validation examples |
-| Schedule | 3 epochs, grad accum 2, AdamW, peak LR 4e-4 to 4e-5 cosine, warmup 8% |
-| Sequence length | 384 tokens, assistant-only loss masking |
-| Checkpoint | best held-out val_loss writes `outputs/velnor-coder-v2/adapter` |
+| Base model | `Qwen/Qwen2.5-Coder-1.5B-Instruct` (override with `VELNOR_BASE_MODEL`) |
+| Adapter | rsLoRA, rank 8, alpha 16, dropout 0.05, target modules `q_proj` and `v_proj` |
+| Curriculum | 138 training examples and 20 held-out validation examples in the full pool |
+| Schedule | 3 epochs, gradient accumulation 2, AdamW, cosine decay, 8% warmup |
+| Sequence length | 256 tokens, assistant-only loss masking |
+| Output | `outputs/velnor-coder-v2/adapter` and `pilot_report.json` |
+
+The default is a full run. For a deliberately reduced smoke run only, set
+`VELNOR_FAST_TRAIN=1`. The report will record the reduced training and validation
+counts separately from the full pool. Do not compare a smoke-run metric with a
+full-curriculum metric as though the experiments were equivalent.
 
 ## Files
 
-- `download_base_model.py` fetches the base model to `models/smollm2-135m`.
-- `train_velnor_lora.py` is the training and evaluation run.
-- `grade_generations.py` applies an objective rubric to sample generations: net burn
-  arithmetic, constant-time HMAC advice, secret refusal, no fabricated booking receipts.
-  The base model and the tuned model are both graded and the counts land in the report
-  under `eval`. Grade any report with `python grade_generations.py pilot_report.json`.
-- `serve_adapter.py` runs the local endpoint at `http://127.0.0.1:8099/v1/chat` serving
-  base + adapter, bridged to Velnor at `/api/lora-pilot`.
-- `pilot_report.json` is the committed run: loss curve, provenance (git commit,
-  torch/transformers/peft versions, device, seed), rubric scores, generations.
+- `download_base_model.py` downloads the canonical Qwen 1.5B base model to
+  `models/qwen2.5-coder-1.5b`.
+- `train_velnor_lora.py` performs fine-tuning, validation, checkpoint selection,
+  and base-versus-adapter rubric evaluation.
+- `train_fast_1b.py` and `run_fast_1b_pass.py` are compatibility wrappers that delegate
+  to the canonical trainer in explicit smoke-run mode.
+- `grade_generations.py` applies deterministic checks for identity, arithmetic,
+  HMAC advice, credential refusal, and fabricated booking receipts.
+- `evaluate_adapter.py` re-evaluates an adapter saved on disk against the full
+  held-out set and rubric.
+- `serve_adapter.py` exposes the local adapter endpoint at
+  `http://127.0.0.1:8099/v1/chat`.
 
 ## Usage
 
-    cd training
-    python3 -m venv .venv
-    ./.venv/bin/pip install -r requirements.txt
-    ./.venv/bin/python download_base_model.py
-    ./.venv/bin/python train_velnor_lora.py
-    ./.venv/bin/python serve_adapter.py
+```bash
+cd training
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -r requirements.txt
+python download_base_model.py
+python train_velnor_lora.py
+python grade_generations.py pilot_report.json
+python serve_adapter.py
+```
 
-A 135M adapter encodes tone and refusals. It does not turn the base model into a
-reasoning engine, and `grade_generations.py` exists to keep that visible: read `eval.base`
-and `eval.tuned` before trusting any quality claim about it.
+The 1.5B base model requires several GB of storage and substantial memory for
+fine-tuning. A small free-tier VPS is not a suitable training host. The trainer
+automatically uses CUDA when available, selecting BF16 only when supported and
+FP16 otherwise; it falls back to CPU/FP32 when no GPU is present.
+
+For a CUDA runtime (for example, a Colab GPU session), install
+`requirements-gpu.txt`, not the CPU-pinned `requirements.txt`. The GPU
+requirements intentionally omit PyTorch so the runtime's CUDA-enabled build is
+not replaced by a CPU-only wheel. Open `Velnor_Qwen_1.5B_Colab.ipynb` and run
+the cells in order. The notebook refuses to train if CUDA is unavailable,
+persists epoch checkpoints directly to Google Drive, and saves the final adapter
+archive, report, log, and SHA-256 manifest there as well.
+Do not start a paid instance without checking its total cost first.
+
+A lower validation loss is useful but does not prove better task performance.
+Review both `eval.base` and `eval.tuned`, broaden the held-out benchmark, and
+retain the previous adapter until the candidate passes the acceptance gate.
