@@ -34,9 +34,10 @@ export async function executeToolCall(
   name: string,
   args: Record<string, any>,
   channel: ChannelType,
-  bundle: ToolExecutionBundle
+  bundle: ToolExecutionBundle,
+  userHandle?: string
 ): Promise<Record<string, any>> {
-  const policy = enforceToolPolicy(name);
+  const policy = enforceToolPolicy(name, args);
   if (!policy.allowed) {
     bundle.toolActions.push({
       tool: name,
@@ -70,7 +71,7 @@ export async function executeToolCall(
       const res = await queryVectorDocuments(q);
       bundle.toolActions.push({
         tool: "query_documents",
-        label: `Vector search across ${res.documents.length} doc(s)`,
+        label: `Semantic search across ${res.documents.length} doc(s)`,
         status: "info",
         details: `Top chunk match from ${res.matches[0]?.docName || "knowledge base"}`,
       });
@@ -83,7 +84,7 @@ export async function executeToolCall(
       bundle.citations.push({ title: doc.name, url });
       bundle.toolActions.push({
         tool: "ingest_url_or_doc",
-        label: `Indexed "${doc.name}" into HNSW Vector Store`,
+        label: `Indexed "${doc.name}" into tenant document store`,
         status: "success",
         details: `${doc.chunkCount} chunks (${doc.wordCount} words)`,
       });
@@ -121,7 +122,7 @@ export async function executeToolCall(
       return { email: item };
     }
     case "organize_email": {
-      const res = organizeEmail({
+      const res = await organizeEmail({
         query: String(args.query || ""),
         action: args.action || "archive",
         label: args.label ? String(args.label) : undefined,
@@ -170,8 +171,9 @@ export async function executeToolCall(
     case "create_reminder": {
       const rem = createReminder({
         text: String(args.text || ""),
-        dueAt: String(args.dueAt || "Later today"),
+        dueAt: String(args.dueAt || new Date(Date.now() + 60 * 60 * 1000).toISOString()),
         channel,
+        recipient: channel === "imessage" ? userHandle : undefined,
       });
       bundle.toolActions.push({
         tool: "create_reminder",

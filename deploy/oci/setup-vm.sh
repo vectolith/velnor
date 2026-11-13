@@ -67,21 +67,31 @@ fi
 
 say "3/6 Preparing .env"
 [[ -f .env ]] || cp .env.example .env
+# Add newly introduced required secrets to existing installations before the
+# idempotent generation loop below; old .env files do not inherit .env.example.
+if ! grep -q '^VELNOR_PROVISIONING_SECRET=' .env; then
+  printf '\nVELNOR_PROVISIONING_SECRET=\n' >> .env
+fi
 chmod 600 .env
 
-if grep -qE '^(VELNOR_SHARED_SECRET|VELNOR_SECRET_KEY|CRON_SECRET)=$' .env; then
-  : > .env.tmp
-  while IFS= read -r line; do
-    case "$line" in
-      VELNOR_SHARED_SECRET=|VELNOR_SECRET_KEY=|CRON_SECRET=)
-        printf '%s=%s\n' "${line%=}" "$(openssl rand -hex 32)" >> .env.tmp
-        echo "generated ${line%=}" ;;
-      *) printf '%s\n' "$line" >> .env.tmp ;;
-    esac
-  done < .env
-  mv .env.tmp .env
-  chmod 600 .env
-fi
+: > .env.tmp
+while IFS= read -r line; do
+  case "$line" in
+    VELNOR_SHARED_SECRET=*|VELNOR_SECRET_KEY=*|VELNOR_TENANT_TOKEN_SECRET=*|VELNOR_PROVISIONING_SECRET=*|CRON_SECRET=*)
+      name="${line%%=*}"
+      value="${line#*=}"
+      if [[ -z "$value" ]]; then
+        printf '%s=%s\n' "$name" "$(openssl rand -hex 32)" >> .env.tmp
+        echo "generated $name"
+      else
+        printf '%s\n' "$line" >> .env.tmp
+      fi
+      ;;
+    *) printf '%s\n' "$line" >> .env.tmp ;;
+  esac
+done < .env
+mv .env.tmp .env
+chmod 600 .env
 
 if grep -qE '^VELNOR_HOST=(localhost)?$' .env; then
   public_ip="$(curl -fsS --max-time 8 https://ifconfig.me 2>/dev/null || true)"
@@ -127,7 +137,7 @@ if [[ "$host" != "localhost" && -n "$host" ]]; then
   for _ in $(seq 1 24); do
     if curl -fsS --max-time 5 "https://$host/api/health" >/dev/null 2>&1; then
       printf '\n\033[32mVelnor is live: https://%s\033[0m\n' "$host"
-      exit 0
+      break
     fi
     sleep 5
   done

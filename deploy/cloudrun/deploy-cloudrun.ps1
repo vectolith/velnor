@@ -9,6 +9,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if (-not $DataVolume) {
+  Write-Host "DataVolume is required: Cloud Run storage must be mounted at /app/.data for durable state." -ForegroundColor Red
+  exit 1
+}
+
 if (-not $ProjectId) {
   Write-Host "Usage: .\deploy-cloudrun.ps1 -ProjectId <your-gcp-project-id> [-Region us-central1] [-DataVolume <gcs-bucket>]" -ForegroundColor Yellow
   exit 1
@@ -26,11 +31,13 @@ $envPairs = @(
   "NODE_ENV=production",
   "VELNOR_SHARED_SECRET=$env:VELNOR_SHARED_SECRET",
   "VELNOR_SECRET_KEY=$env:VELNOR_SECRET_KEY",
+  "VELNOR_TENANT_TOKEN_SECRET=$env:VELNOR_TENANT_TOKEN_SECRET",
+  "VELNOR_PROVISIONING_SECRET=$env:VELNOR_PROVISIONING_SECRET",
   "CRON_SECRET=$env:CRON_SECRET",
   "VELNOR_DATA_DIR=/app/.data"
 )
 
-foreach ($optional in @("TWILIO_AUTH_TOKEN", "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_CHANNEL", "VELNOR_ADMIN_TOKEN", "SENDBLUE_WEBHOOK_SECRET", "LOOPMESSAGE_WEBHOOK_SECRET", "VELNOR_EMAIL_ALLOWLIST", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "BLUD_INTERNAL_RPC_URL")) {
+foreach ($optional in @("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER", "SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_CHANNEL", "VELNOR_ADMIN_TOKEN", "SENDBLUE_API_KEY", "SENDBLUE_API_SECRET", "SENDBLUE_FROM_NUMBER", "SENDBLUE_WEBHOOK_SECRET", "LOOPMESSAGE_AUTH_KEY", "LOOPMESSAGE_SECRET_KEY", "LOOPMESSAGE_WEBHOOK_SECRET", "VELNOR_EMAIL_ALLOWLIST", "GEMINI_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "VELNOR_TENANT_TOKEN_ISSUER", "VELNOR_TENANT_TOKEN_AUDIENCE", "VELNOR_PUBLIC_URL", "VELNOR_TIMEZONE", "BLUD_INTERNAL_RPC_URL")) {
   $value = [Environment]::GetEnvironmentVariable($optional)
   if ($value) { $envPairs += "$optional=$value" }
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getDatabaseEngineStatus } from "@/lib/sqliteDb";
-import { getEffectiveKeys, getStore, resolveUserId, saveStore, withVelnorUser } from "@/lib/store";
+import { getEffectiveKeys, getStore, saveStore, withVelnorUser } from "@/lib/store";
 import { ingestDocumentOrUrl } from "@/lib/tools/documentStore";
 import { addMemoryFact, deleteMemoryFact } from "@/lib/tools/memoryStore";
 import { transcribeAudioWithProvider } from "@/lib/tools/multimodal";
@@ -15,11 +15,11 @@ import { Attachment, ChannelType } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
 
 export async function GET(req: NextRequest) {
-  const tenant = authorizeChatTenant(req.headers.get("x-velnor-user"));
+  const tenant = authorizeChatTenant(req.headers.get("authorization"));
   if (!tenant.ok) {
     return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 403 });
   }
-  return withVelnorUser(resolveUserId("imessage", tenant.userId), () => buildSnapshot());
+  return withVelnorUser(tenant.userId, () => buildSnapshot());
 }
 
 function buildSnapshot() {
@@ -62,17 +62,13 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  const tenant = authorizeChatTenant(
-    body.userHandle || req.headers.get("x-velnor-user")
-  );
+  // User identity must come exclusively from the verified bearer token.
+  // Body fields and legacy tenant headers are untrusted input, never credentials.
+  const tenant = authorizeChatTenant(req.headers.get("authorization"));
   if (!tenant.ok) {
     return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 403 });
   }
-  const userId = resolveUserId(
-    body.channel || "imessage",
-    tenant.userId
-  );
-  return withVelnorUser(userId, () => handlePost(body));
+  return withVelnorUser(tenant.userId, () => handlePost(body));
 }
 
 async function handlePost(body: any) {
@@ -98,7 +94,7 @@ async function handlePost(body: any) {
     }
 
     if (action === "organize_email") {
-      organizeEmail({
+      await organizeEmail({
         emailId: body.emailId ? String(body.emailId) : undefined,
         query: body.query ? String(body.query) : undefined,
         action: body.emailAction || "archive",

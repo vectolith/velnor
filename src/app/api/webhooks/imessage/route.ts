@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
 import { sendSendblueMessage } from "@/lib/channels/sendblue";
 import { sendLoopMessage } from "@/lib/channels/loopmessage";
@@ -15,6 +15,9 @@ import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
 
 const MAX_INPUT_CHARS = 8000;
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 function escapeXml(unsafe: string): string {
   return unsafe
@@ -37,12 +40,33 @@ export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type") || "";
   const state = getStore();
   const isLocalSimulator = isSimulatorAllowed(req.headers.get("x-velnor-simulator"));
+  let jsonPayload: any;
 
   try {
     if (contentType.includes("application/json")) {
+      const rawJsonBody = await req.text();
+      try {
+        jsonPayload = JSON.parse(rawJsonBody);
+      } catch {
+        return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+      }
+
+      if (!jsonPayload || typeof jsonPayload !== "object" || Array.isArray(jsonPayload)) {
+        return NextResponse.json({ error: "Webhook JSON must be an object." }, { status: 400 });
+      }
+
+      // Each provider must prove possession of its own webhook secret. A
+      // LoopMessage secret must never authenticate a Sendblue callback (or vice versa).
+      const isLoopMessage = Boolean(jsonPayload.contact) || jsonPayload.event === "message_inbound";
+      const expectedSecret = isLoopMessage
+        ? process.env.LOOPMESSAGE_WEBHOOK_SECRET
+        : process.env.SENDBLUE_WEBHOOK_SECRET;
+      const provided = isLoopMessage
+        ? req.headers.get("authorization") || req.headers.get("x-velnor-webhook-secret")
+        : req.headers.get("sb-signing-secret") || req.headers.get("x-velnor-webhook-secret");
       const jsonDecision = authorizeJsonWebhook({
-        secrets: [process.env.SENDBLUE_WEBHOOK_SECRET, process.env.LOOPMESSAGE_WEBHOOK_SECRET],
-        provided: req.headers.get("x-velnor-webhook-secret"),
+        secrets: [expectedSecret],
+        provided,
         simulator: isLocalSimulator,
       });
       if (!jsonDecision.ok) {
@@ -79,7 +103,9 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const from = String(formData.get("From") || "+15550192834").slice(0, 64);
+      const from = String(formData.get("From") || "").slice(0, 64);
+      const to = String(formData.get("To") || "").slice(0, 64);
+      if (!from || !to) return NextResponse.json({ error: "Twilio webhook is missing sender or destination identity." }, { status: 400 });
       // Twilio retries on slow responses; do not run the agent twice for one SMS.
       const twilioMessageId = String(formData.get("MessageSid") || formData.get("SmsSid") || "");
       if (twilioMessageId && !inboundWebhookCache.seen(inboundKey(["twilio", twilioMessageId]))) {
@@ -110,7 +136,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const reply = await withVelnorUser(resolveUserId("imessage", from), () =>
+      const reply = await withVelnorUser(resolveUserId("imessage", to + ":" + from), () =>
         processUserMessage({
           channel: "imessage",
           userHandle: from,
@@ -135,20 +161,26 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     // 2. SENDBLUE / LOOPMESSAGE iMESSAGE JSON WEBHOOK
     // =========================================================================
-    let payload: any;
-    try {
-      payload = await req.json();
-    } catch {
-      // A malformed body is the caller's error, not a server fault.
-      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    const payload: any = jsonPayload;
+    const provider = payload.contact ? "loopmessage" : "sendblue";
+    if (provider === "loopmessage" && payload.event && payload.event !== "message_inbound") {
+      return NextResponse.json({ status: "ignored", event: payload.event });
     }
-    const senderHandle = String(
-      payload.number ||
-        payload.from_number ||
-        payload.recipient ||
-        payload.sender ||
-        "+1 (555) 019-2834"
-    ).slice(0, 64);
+    if (provider === "sendblue") {
+      const eventType = String(payload.event_type || "").toLowerCase();
+      if (
+        payload.is_outbound === true ||
+        (payload.message_type && payload.message_type !== "message") ||
+        (eventType && !eventType.includes("message") && !eventType.includes("receive"))
+      ) {
+        return NextResponse.json({ status: "ignored", event: eventType || "outbound_or_non_message" });
+      }
+    }
+    const senderHandle = String(payload.contact || payload.number || payload.from_number || "").slice(0, 64);
+    if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
+    const providerAccount = String(payload.organization_id || payload.sendblue_number || payload.to_number || "default");
+    const webhookId = String(payload.message_handle || payload.webhook_id || payload.message_id || "");
+    if (webhookId && !inboundWebhookCache.seen(inboundKey([provider, webhookId]))) return NextResponse.json({ status: "duplicate" });
     const messageText = String(
       payload.content || payload.text || payload.body || payload.message || ""
     )
@@ -166,60 +198,58 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const { reply, outboundText } = await withVelnorUser(
-      resolveUserId("imessage", senderHandle),
-      async () => {
-        const reply = await processUserMessage({
-          channel: "imessage",
-          userHandle: senderHandle,
-          text: messageText,
-          attachments: attachments.length > 0 ? attachments : undefined,
+    after(async () => {
+      try {
+            const { reply, outboundText, deliveryResults } = await withVelnorUser(
+              resolveUserId("imessage", provider + ":" + providerAccount + ":" + senderHandle),
+              async () => {
+                const reply = await processUserMessage({
+                  channel: "imessage",
+                  userHandle: senderHandle,
+                  text: messageText,
+                  attachments: attachments.length > 0 ? attachments : undefined,
+                });
+                const outboundText = toPlainText(reply.text);
+                const scoped = getStore();
+                const deliveryResults = [] as Array<{ provider: string; ok: boolean; status?: number; detail?: string }>; 
+        
+                // Outbound dispatch via Sendblue if configured
+                if (scoped.config.sendblueApiKey && scoped.config.sendblueApiSecret && payload.number) {
+                  deliveryResults.push(await sendSendblueMessage({
+                    apiKeyId: scoped.config.sendblueApiKey,
+                    apiSecretKey: scoped.config.sendblueApiSecret,
+                    number: payload.number,
+                    fromNumber: scoped.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
+                    content: outboundText,
+                  }));
+                }
+        
+                // Outbound dispatch via LoopMessage if configured
+                if (
+                  scoped.config.loopMessageAuthKey &&
+                  payload.contact
+                ) {
+                  deliveryResults.push(await sendLoopMessage({
+                    authKey: scoped.config.loopMessageAuthKey,
+                    recipient: payload.contact,
+                    text: outboundText,
+                  }));
+                }
+        
+                return { reply, outboundText, deliveryResults };
+              }
+            );
+        console.info("iMessage JSON webhook processed", {
+          provider,
+          webhookId,
+          delivery: deliveryResults.map((result) => ({ provider: result.provider, ok: result.ok, status: result.status })),
         });
-        const outboundText = toPlainText(reply.text);
-        const scoped = getStore();
-
-        // Outbound dispatch via Sendblue if configured
-        if (scoped.config.sendblueApiKey && scoped.config.sendblueApiSecret && payload.number) {
-          void sendSendblueMessage({
-            apiKeyId: scoped.config.sendblueApiKey,
-            apiSecretKey: scoped.config.sendblueApiSecret,
-            number: payload.number,
-            content: outboundText,
-          });
-        }
-
-        // Outbound dispatch via LoopMessage if configured
-        if (
-          scoped.config.loopMessageAuthKey &&
-          scoped.config.loopMessageSecretKey &&
-          payload.recipient
-        ) {
-          void sendLoopMessage({
-            authKey: scoped.config.loopMessageAuthKey,
-            secretKey: scoped.config.loopMessageSecretKey,
-            recipient: payload.recipient,
-            text: outboundText,
-          });
-        }
-
-        return { reply, outboundText };
+      } catch (error) {
+        console.error("iMessage JSON webhook processing failed:", error);
       }
-    );
-
-    return NextResponse.json({
-      status: "ok",
-      provider: payload.recipient ? "loopmessage" : "sendblue",
-      recipient: senderHandle,
-          reply: {
-            id: reply.id,
-            text: outboundText,
-        citations: reply.citations,
-        toolActions: reply.toolActions,
-        generatedImage: reply.generatedImage
-          ? { prompt: reply.generatedImage.prompt }
-          : undefined,
-      },
     });
+
+    return NextResponse.json({ status: "accepted", provider, webhookId });
   } catch (err) {
     console.error("iMessage/SMS webhook error:", err);
     return NextResponse.json(

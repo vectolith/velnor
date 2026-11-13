@@ -24,8 +24,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run unit and regression tests
+        run: npm test
+
       - name: TypeScript typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Build production Next.js standalone bundle
         run: npm run build
@@ -42,3 +45,18 @@ jobs:
           done
           node scripts/verify-velnor.mjs
           kill $SERVER_PID || true
+
+  identity-gateway-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Bundle Cloudflare identity gateway (no deployment)
+        working-directory: identity-gateway
+        run: npx --yes wrangler@4.160.0 deploy --dry-run --outdir ../.wrangler/identity-gateway

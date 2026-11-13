@@ -1,126 +1,142 @@
-import { NextRequest, NextResponse } from "next/server";
-import { authorizeSlackRequest, isSimulatorAllowed } from "@/lib/security/webhookAuth";
-import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
-import { buildSlackBlocks, postSlackMessage } from "@/lib/channels/slack";
+import { after, NextRequest, NextResponse } from "next/server";
+import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
 import { processUserMessage } from "@/lib/ai/agent";
-import { getStore, resolveUserId, withVelnorUser, resolveSlackChannel } from "@/lib/store";
-import { ChatMessage } from "@/lib/types";
+import { postSlackMessage } from "@/lib/channels/slack";
+import { authorizeSlackRequest } from "@/lib/security/webhookAuth";
+import { inboundWebhookCache, inboundKey } from "@/lib/security/idempotency";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
-
-/**
- * Slack Bot Webhook Endpoint
- * Supports:
- * 1. Events API url_verification challenge
- * 2. Events API event_callback (message.im, app_mention)
- * 3. Slash Commands (/velnor <prompt> via application/x-www-form-urlencoded)
- */
 export async function POST(req: NextRequest) {
-  const state = getStore();
-  const contentType = req.headers.get("content-type") || "";
-  const rawBody = await req.text();
-
-  const signingSecret =
-    state.config.slackSigningSecret || process.env.SLACK_SIGNING_SECRET || "";
-  const isLocalSimulator = isSimulatorAllowed(req.headers.get("x-velnor-simulator"));
-
-  const slackDecision = authorizeSlackRequest({
-    signingSecret,
-    rawBody,
-    timestamp: req.headers.get("x-slack-request-timestamp"),
-    signature: req.headers.get("x-slack-signature"),
-    simulator: isLocalSimulator,
-  });
-  if (!slackDecision.ok) {
-    return NextResponse.json(
-      { error: slackDecision.error },
-      { status: slackDecision.status ?? 401 }
-    );
-  }
-
   try {
-    // 1. SLACK SLASH COMMAND (/velnor)
+    const rawBody = await req.text();
+    const state = getStore();
+    const signingSecret = state.config.slackSigningSecret || process.env.SLACK_SIGNING_SECRET || "";
+
+    const authorization = authorizeSlackRequest({
+      signingSecret,
+      timestamp: req.headers.get("x-slack-request-timestamp"),
+      signature: req.headers.get("x-slack-signature"),
+      rawBody,
+      simulator: false,
+    });
+    if (!authorization.ok) {
+      return NextResponse.json(
+        { error: authorization.error || "Unauthorized: invalid Slack signature" },
+        { status: authorization.status || 401 }
+      );
+    }
+
+    const contentType = req.headers.get("content-type") || "";
     if (contentType.includes("application/x-www-form-urlencoded")) {
       const params = new URLSearchParams(rawBody);
-      const commandText = params.get("text") || "Help";
-      const userName = params.get("user_name") || "slack-user";
+      const text = params.get("text") || "";
+      const slackUserId = params.get("user_id") || "";
+      const workspaceId = params.get("team_id") || "";
+      const channelId = params.get("channel_id") || "";
+      const responseUrl = params.get("response_url") || "";
+      if (!slackUserId || !workspaceId || !channelId) {
+        return NextResponse.json({ error: "Slack command is missing its stable user, workspace, or channel identity." }, { status: 400 });
+      }
 
-      const reply = await withVelnorUser(resolveUserId("slack", "@" + userName), () =>
-        processUserMessage({
-          channel: "slack",
-          userHandle: "@" + userName,
-          text: commandText,
-        })
-      );
+      after(async () => {
+        try {
+          const result = await withVelnorUser(resolveUserId("slack", workspaceId + ":" + slackUserId), async () => {
+            const message = await processUserMessage({
+              text,
+              channel: "slack",
+              userHandle: "@" + slackUserId,
+            });
+            const scoped = getStore();
+            return { reply: message.text, botToken: scoped.config.slackBotToken || process.env.SLACK_BOT_TOKEN || "" };
+          });
+          if (responseUrl) {
+            const parsed = new URL(responseUrl);
+            if (parsed.protocol !== "https:" || parsed.hostname !== "hooks.slack.com") {
+              throw new Error("Slack response_url host is not trusted.");
+            }
+            const response = await fetch(parsed, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ response_type: "ephemeral", text: result.reply }),
+              signal: AbortSignal.timeout(10000),
+            });
+            if (!response.ok) throw new Error("Slack response_url rejected the response (" + response.status + ").");
+          } else if (result.botToken) {
+            await postSlackMessage({ botToken: result.botToken, channel: channelId, text: result.reply });
+          } else {
+            throw new Error("No Slack bot token or response_url is available for command delivery.");
+          }
+        } catch (error) {
+          console.error("Slack slash command processing failed:", error);
+        }
+      });
 
       return NextResponse.json({
-        response_type: "in_channel",
-        text: reply.text,
-        blocks: buildSlackBlocks(reply),
+        response_type: "ephemeral",
+        text: "Velnor is processing your request.",
       });
     }
 
-    // 2. SLACK EVENTS API JSON PAYLOAD
-    const payload = JSON.parse(rawBody || "{}");
-
-    // URL Verification Challenge
+    const payload = JSON.parse(rawBody);
     if (payload.type === "url_verification") {
       return NextResponse.json({ challenge: payload.challenge });
     }
-
-    const event = payload.event || payload;
-    // Ignore bot's own messages to prevent loops
-    if (event.bot_id || event.subtype === "bot_message") {
-      return NextResponse.json({ ok: true, ignored: "bot_message" });
+    if (payload.type !== "event_callback") {
+      return NextResponse.json({ ok: true, ignored: "unsupported_payload" });
     }
 
-    // Slack redelivers when its 3s ack is missed; drop the repeat.
-    const slackDedupeKey = String(event.client_msg_id || event.event_ts || event.ts || payload.event_id || "");
-    if (slackDedupeKey && !inboundWebhookCache.seen(inboundKey(["slack", slackDedupeKey]))) {
+    const event = payload.event || {};
+    const isDirectMessage = event.type === "message" && event.channel_type === "im";
+    const isAppMention = event.type === "app_mention";
+    if ((!isDirectMessage && !isAppMention) || event.subtype || event.bot_id) {
+      return NextResponse.json({ ok: true, ignored: "unsupported_event" });
+    }
+
+    const slackUserId = String(event.user || "");
+    const workspaceId = String(payload.team_id || event.team || "");
+    const slackChannelId = String(event.channel || "");
+    if (!slackUserId || !workspaceId || !slackChannelId) {
+      return NextResponse.json({ error: "Slack event is missing its stable user, workspace, or channel identity." }, { status: 400 });
+    }
+
+    const eventId = String(payload.event_id || event.client_msg_id || event.ts || "");
+    const dedupeKey = inboundKey(["slack", workspaceId, eventId]);
+    if (eventId && !inboundWebhookCache.seen(dedupeKey)) {
       return NextResponse.json({ ok: true, duplicate: true });
     }
 
     const rawText = String(event.text || "").replace(/<@[A-Z0-9]+>\s*/g, "").trim();
-    const userHandle = event.user ? `@${event.user}` : "@slack-user";
-    const slackChannelId = event.channel;
+    const threadTs = event.thread_ts || event.ts;
 
-    const { reply, botToken } = await withVelnorUser(resolveUserId("slack", userHandle), async () => {
-      const reply = await processUserMessage({
-        channel: "slack",
-        userHandle,
-        text: rawText || "Hello Velnor!",
-      });
-      return {
-        reply,
-        botToken: getStore().config.slackBotToken || process.env.SLACK_BOT_TOKEN,
-      };
+    after(async () => {
+      try {
+        const result = await withVelnorUser(resolveUserId("slack", workspaceId + ":" + slackUserId), async () => {
+          const reply = await processUserMessage({
+            text: rawText,
+            channel: "slack",
+            userHandle: "@" + slackUserId,
+          });
+          const scoped = getStore();
+          return { reply: reply.text, botToken: scoped.config.slackBotToken || process.env.SLACK_BOT_TOKEN || "" };
+        });
+        if (!result.botToken) throw new Error("No Slack bot token is configured for this tenant.");
+        const delivery = await postSlackMessage({
+          botToken: result.botToken,
+          channel: slackChannelId,
+          text: result.reply,
+          threadTs,
+        });
+        if (!delivery.ok) throw new Error(delivery.detail || "Slack message delivery failed.");
+      } catch (error) {
+        console.error("Slack event processing or delivery failed:", error);
+      }
     });
 
-    const blocks = buildSlackBlocks(reply);
-
-    if (botToken && slackChannelId) {
-      void postSlackMessage({
-        botToken,
-        channel: slackChannelId,
-        text: reply.text,
-        blocks,
-        threadTs: event.thread_ts || event.ts,
-      });
-    }
-
-    return NextResponse.json({
-      ok: true,
-      channel: slackChannelId || resolveSlackChannel(state),
-      text: reply.text,
-      blocks,
-      reply,
-    });
-  } catch (err) {
-    console.error("Slack webhook error:", err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Slack webhook failed" },
-      { status: 500 }
-    );
+    return NextResponse.json({ ok: true, accepted: true });
+  } catch (error) {
+    console.error("Slack webhook error:", error);
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 });
   }
 }
-

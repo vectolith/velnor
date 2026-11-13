@@ -65,7 +65,10 @@ export function middleware(req: NextRequest) {
         // mail and spend their API credits.
         const sharedSecret =
           process.env.VELNOR_SHARED_SECRET || process.env.VELNOR_ADMIN_TOKEN || "";
+        // Simulator bypass is strictly development-only. Keep this aligned with
+        // webhookAuth.isSimulatorAllowed so a production env flag cannot bypass auth.
         const allowSimulator =
+          process.env.NODE_ENV !== "production" &&
           process.env.VELNOR_ALLOW_SIMULATOR === "1" &&
           req.headers.get("x-velnor-simulator") === "true";
         const needsAuth = PROTECTED.some(
@@ -90,11 +93,12 @@ export function middleware(req: NextRequest) {
               { status: 503 }
             );
           }
+          // Authorization is reserved for the per-user identity JWT verified
+          // by the route handler. The deployment perimeter uses a separate header.
           const provided =
             req.headers.get("x-velnor-secret") ||
             req.headers.get("x-velnor-admin-token") ||
             req.headers.get("x-velnor-key") ||
-            req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
             "";
           if (!safeEquals(provided, sharedSecret)) {
             return NextResponse.json(
