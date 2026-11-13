@@ -697,6 +697,11 @@ def main():
 
     OUT.mkdir(parents=True, exist_ok=True)
     adapter_dir = OUT / "adapter"
+    # Always leave a valid baseline adapter if no epoch beats the initial loss.
+    if adapter_dir.exists():
+        shutil.rmtree(adapter_dir)
+    model.save_pretrained(str(adapter_dir))
+    tok.save_pretrained(str(adapter_dir))
 
     history = []
     best_val_loss = pre_val_loss
