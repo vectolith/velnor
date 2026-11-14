@@ -54,7 +54,7 @@ export async function processUserMessage(params: {
 }): Promise<ChatMessage> {
   const tenantContext = getNodeTenantRepositoryContext();
   await noteUserMessageAsync(tenantContext.repository, tenantContext.tenantId, params.text);
-  const state = getStore();
+  let state = getStore();
   const { geminiApiKey, openaiApiKey, anthropicApiKey } = getEffectiveKeys(state);
 
   const userMsg: ChatMessage = {
@@ -67,6 +67,8 @@ export async function processUserMessage(params: {
     attachments: params.attachments,
   };
   state.messages.push(userMsg);
+  // Persist the inbound message before repository-backed tools refresh this tenant scope.
+  saveStore(state);
 
   const bundle: ToolExecutionBundle = {
     toolActions: [],
@@ -85,7 +87,7 @@ export async function processUserMessage(params: {
         });
         bundle.toolActions.push({
           tool: "ingest_url_or_doc",
-          label: `Indexed "${doc.name}" into SQLite + HNSW Vector DB`,
+          label: `Indexed "${doc.name}" into tenant document store`,
           status: "success",
           details: `${doc.chunkCount} chunks (${doc.wordCount} words)`,
         });
@@ -93,6 +95,8 @@ export async function processUserMessage(params: {
     }
   }
 
+  // Repository-backed attachment ingestion may have refreshed the active tenant scope.
+  state = getStore();
   const memoryLines = (state.memories || [])
     .slice(0, 12)
     .map((m) => "- [" + m.category.toUpperCase() + "] " + m.fact)
@@ -234,8 +238,10 @@ export async function processUserMessage(params: {
     structuredCard: bundle.structuredCard,
   };
 
-  state.messages.push(velnorMsg);
-  saveStore(state);
+  // Tool calls may have committed documents, memories, or policy state during this turn.
+  const finalState = getStore();
+  finalState.messages.push(velnorMsg);
+  saveStore(finalState);
   return velnorMsg;
 }
 
