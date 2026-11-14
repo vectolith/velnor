@@ -1,10 +1,10 @@
 import {
   aggregateUsage,
-  getStore,
   listUserIds,
+  loadUserState,
   sanitizeUserId,
   saveStore,
-  withVelnorUser,
+  withVelnorUserState,
   type VelnorState,
 } from "../store";
 import type { PersistedTenantState, TenantStateRecord } from "./d1TenantState";
@@ -64,24 +64,26 @@ export function createNodeSqliteTenantRepository(): TenantRepository {
       mutate: (draft: PersistedTenantState) => TResult | Promise<TResult>,
     ): Promise<{ result: TResult; revision: number | null; changed: boolean }> {
       const id = storageId(tenantId);
-      const exists = listUserIds().includes(id);
-      return serialized(id, () => withVelnorUser(id, async () => {
+      return serialized(id, async () => {
+        const exists = listUserIds().includes(id);
         const source = exists
-          ? structuredClone(getStore()) as unknown as PersistedTenantState
-          : structuredClone(createInitialState());
-        const before = JSON.stringify(source);
-        if (typeof before !== "string") throw new Error("Initial tenant state could not be serialized.");
-        const draft = JSON.parse(before) as PersistedTenantState;
-        const result = await mutate(draft);
-        const after = JSON.stringify(draft);
-        if (typeof after !== "string") throw new Error("Updated tenant state could not be serialized.");
-        if (after === before) return { result, revision: revisions.get(id) ?? 0, changed: false };
+          ? loadUserState(id) as unknown as PersistedTenantState
+          : createInitialState();
+        return withVelnorUserState(id, source as unknown as VelnorState, async () => {
+          const before = JSON.stringify(source);
+          if (typeof before !== "string") throw new Error("Initial tenant state could not be serialized.");
+          const draft = JSON.parse(before) as PersistedTenantState;
+          const result = await mutate(draft);
+          const after = JSON.stringify(draft);
+          if (typeof after !== "string") throw new Error("Updated tenant state could not be serialized.");
+          if (after === before) return { result, revision: revisions.get(id) ?? 0, changed: false };
 
-        saveStore(draft as unknown as VelnorState);
-        const revision = (revisions.get(id) ?? 0) + 1;
-        revisions.set(id, revision);
-        return { result, revision, changed: true };
-      }));
+          saveStore(draft as unknown as VelnorState);
+          const revision = (revisions.get(id) ?? 0) + 1;
+          revisions.set(id, revision);
+          return { result, revision, changed: true };
+        });
+      });
     },
 
     async listTenantIds(): Promise<string[]> {

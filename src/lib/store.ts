@@ -269,6 +269,16 @@ function saveStateForUser(userId: string, state: VelnorState): void {
   cache().set(id, state);
 }
 
+/** Run an explicitly supplied state inside a tenant scope without loading or creating defaults. */
+export function withVelnorUserState<T>(
+  userId: string,
+  state: VelnorState,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  const id = sanitizeUserId(userId);
+  return storage.run({ userId: id, state: mergeState(state) }, async () => fn());
+}
+
 /** Run fn with the store bound to this user. */
 export function withVelnorUser<T>(userId: string, fn: () => T | Promise<T>): Promise<T> {
   const id = sanitizeUserId(userId);
