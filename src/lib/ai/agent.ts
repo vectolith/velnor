@@ -20,11 +20,9 @@ import { performWebSearch } from "../tools/webSearch";
 import { delegateBrowserTaskToBlud } from "../tools/bludBridge";
 import {
   createCalendarEvent,
-  createReminder,
   draftOrSendEmail,
   listCalendarEvents,
   listEmails,
-  listReminders,
   organizeEmail,
 } from "../tools/workspaceService";
 
