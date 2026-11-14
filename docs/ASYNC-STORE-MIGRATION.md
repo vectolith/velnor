@@ -24,7 +24,7 @@ Do not replace `saveStore()` with fire-and-forget promises, hide D1 writes in `w
 
 - `src/lib/ai/agent.ts` — appends inbound/outbound messages, records usage, and invokes model/tool providers.
 - `src/lib/auth/googleToken.ts` — reads OAuth credentials, refreshes access tokens over the network, and saves rotated tokens.
-- `src/lib/tools/workspaceService.ts` — Gmail and Calendar API calls plus local mirrors for emails, events, and reminders. External mutations must be made outbox-backed or explicitly idempotent before conversion.
+- `src/lib/tools/workspaceService.ts` — Gmail and Calendar API calls still use the Node OAuth token helper; local email/event/reminder persistence and list/toggle operations now use the async repository. External Gmail/Calendar mutations are not outbox-backed and must not be retried automatically. Legacy synchronous reminder helpers remain for scheduler compatibility.
 - `src/lib/tools/memoryStore.ts` — legacy synchronous exports remain, but audited chat and agent add/list/delete callers now use the async repository.
 - `src/lib/security/toolPolicy.ts` — legacy in-memory confirmation maps remain for tests/compatibility; active agent and chat routes now use a tenant-persisted async confirmation policy with Web Crypto fingerprints and atomic one-time consumption.
 - `src/lib/tools/documentStore.ts` — document metadata/chunks are now persisted through the async repository. PDF extraction, URL fetching, and embedding generation remain in the Node boundary.
@@ -39,7 +39,7 @@ The list above is a migration inventory, not proof that these modules are Worker
 - `createD1TenantRepository()` adapts D1 state primitives with durable revision compare-and-swap.
 - `createNodeSqliteTenantRepository()` adapts the existing Node state store. It uses SQLite `BEGIN IMMEDIATE`, a durable `kv_state_revisions` table, and compare-and-swap writes across repository instances/processes. Existing rows begin at revision zero.
 - The Node repository bypasses the process cache for fresh reads and checks revisions around the read. Same-tenant nested scopes are refreshed after repository updates so the request sees its committed state.
-- Document ingestion/retrieval, chat/agent memory add/list/delete, and sensitive-action confirmation state now use the async repository through a shared Node repository context. The context requires an authenticated tenant scope; it does not silently fall back to the root profile.
+- Document ingestion/retrieval, chat/agent memory add/list/delete, sensitive-action confirmation state, and workspace email/event/reminder state operations now use the async repository through a shared Node repository context. The context requires an authenticated tenant scope; it does not silently fall back to the root profile.
 - Sensitive-action confirmations are stored per tenant, bound to exact JSON arguments, expire after five minutes, and are consumed atomically. The async policy uses Web Crypto and contains no Node-only crypto dependency.
 - Legacy direct `saveStore()` writers still advance the durable revision but do not participate in compare-and-swap. They can still race with repository writers if they mutate stale cached state. Whole-application multi-writer safety is therefore not established until remaining writers are migrated.
 

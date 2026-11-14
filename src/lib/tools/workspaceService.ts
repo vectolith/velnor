@@ -1,11 +1,20 @@
 import crypto from "node:crypto";
-import { getStore, saveStore } from "../store";
+import { DEFAULT_STATE, getStore, saveStore, type VelnorState } from "../store";
+import type { PersistedTenantState } from "../storage/d1TenantState";
+import { getNodeTenantRepositoryContext } from "../storage/currentTenantRepository";
 import { getGoogleAccessToken } from "@/lib/auth/googleToken";
 import { assertRecipientAllowed, parseAllowlist } from "@/lib/security/recipients";
 import { CalendarEventItem, ChannelType, EmailItem, ReminderItem } from "../types";
 
+async function loadWorkspaceState() {
+  const context = getNodeTenantRepositoryContext();
+  const record = await context.repository.load(context.tenantId);
+  if (!record) throw new Error("Authenticated tenant state is not initialized.");
+  return { context, state: record.state as unknown as VelnorState };
+}
+
 export async function listEmails(query?: string, maxResults = 6): Promise<EmailItem[]> {
-  const state = getStore();
+  const { state } = await loadWorkspaceState();
   const token = await getGoogleAccessToken();
   if (!token) throw new Error("Gmail inbox access requires a verified Google OAuth connection.");
   const limit = Math.min(Math.max(Math.floor(maxResults), 1), 50);
@@ -51,7 +60,7 @@ export async function draftOrSendEmail(params: {
   body: string;
   sendImmediately?: boolean;
 }): Promise<EmailItem> {
-  const state = getStore();
+  const { context, state } = await loadWorkspaceState();
   const token = await getGoogleAccessToken();
 
   if (params.sendImmediately) {
@@ -124,8 +133,15 @@ export async function draftOrSendEmail(params: {
     status: params.sendImmediately ? "sent" : "draft",
   };
 
-  state.emails.unshift(item);
-  saveStore(state);
+  await context.repository.update(
+    context.tenantId,
+    () => structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState,
+    (draft) => {
+      const emails = Array.isArray(draft.emails) ? draft.emails as EmailItem[] : [];
+      emails.unshift(item);
+      draft.emails = emails;
+    }
+  );
   return item;
 }
 
@@ -135,7 +151,7 @@ export async function organizeEmail(params: {
   action: "archive" | "mark_read" | "label";
   label?: string;
 }): Promise<{ updatedCount: number; affectedSubjects: string[] }> {
-  const state = getStore();
+  const { state } = await loadWorkspaceState();
   const token = await getGoogleAccessToken();
   if (!token) throw new Error("Gmail organization requires a verified Google OAuth connection.");
   if (!["archive", "mark_read", "label"].includes(params.action)) throw new Error("Unsupported Gmail organization action.");
@@ -200,7 +216,7 @@ export async function organizeEmail(params: {
 }
 
 export async function listCalendarEvents(dateFilter?: string): Promise<CalendarEventItem[]> {
-  const state = getStore();
+  await loadWorkspaceState();
   const token = await getGoogleAccessToken();
   if (!token) throw new Error("Google Calendar access requires a verified Google OAuth connection.");
   const start = dateFilter ? new Date(dateFilter + "T00:00:00") : new Date();
@@ -240,7 +256,7 @@ export async function createCalendarEvent(params: {
   location?: string;
   description?: string;
 }): Promise<CalendarEventItem> {
-  const state = getStore();
+  const { context } = await loadWorkspaceState();
   const computedEnd =
     params.endTime ||
     (() => {
@@ -291,11 +307,75 @@ export async function createCalendarEvent(params: {
     source: "google_calendar",
   };
 
-  state.calendarEvents.push(newEvent);
-  saveStore(state);
+  await context.repository.update(
+    context.tenantId,
+    () => structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState,
+    (draft) => {
+      const events = Array.isArray(draft.calendarEvents) ? draft.calendarEvents as CalendarEventItem[] : [];
+      events.push(newEvent);
+      draft.calendarEvents = events;
+    }
+  );
   return newEvent;
 }
 
+export async function createReminderAsync(params: {
+  text: string;
+  dueAt: string;
+  channel?: ChannelType;
+  recipient?: string;
+}): ReminderItem {
+  const { context } = await loadWorkspaceState();
+  const dueDate = params.dueAt ? new Date(params.dueAt) : new Date(Date.now() + 60 * 60 * 1000);
+  if (!Number.isFinite(dueDate.getTime())) {
+    throw new Error("Reminder dueAt must be a valid ISO 8601 date-time.");
+  }
+  const reminder: ReminderItem = {
+    id: "rem-" + crypto.randomUUID(),
+    text: params.text,
+    dueAt: dueDate.toISOString(),
+    channel: params.channel || "imessage",
+    recipient: params.recipient || "",
+    completed: false,
+    createdAt: new Date().toISOString(),
+  };
+  await context.repository.update(
+    context.tenantId,
+    () => structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState,
+    (draft) => {
+      const reminders = Array.isArray(draft.reminders) ? draft.reminders as ReminderItem[] : [];
+      reminders.unshift(reminder);
+      draft.reminders = reminders;
+    }
+  );
+  return reminder;
+}
+
+export async function listRemindersAsync(): Promise<ReminderItem[]> {
+  const { state } = await loadWorkspaceState();
+  return state.reminders;
+}
+
+export async function toggleReminderAsync(id: string): Promise<ReminderItem | undefined> {
+  const { context } = await loadWorkspaceState();
+  let updated: ReminderItem | undefined;
+  await context.repository.update(
+    context.tenantId,
+    () => structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState,
+    (draft) => {
+      const reminders = Array.isArray(draft.reminders) ? draft.reminders as ReminderItem[] : [];
+      const target = reminders.find((reminder) => reminder.id === id);
+      if (target) {
+        target.completed = !target.completed;
+        updated = structuredClone(target);
+        draft.reminders = reminders;
+      }
+    }
+  );
+  return updated;
+}
+
+/** Legacy synchronous reminder helpers retained for existing scheduler callers. */
 export function createReminder(params: {
   text: string;
   dueAt: string;
@@ -304,9 +384,7 @@ export function createReminder(params: {
 }): ReminderItem {
   const state = getStore();
   const dueDate = params.dueAt ? new Date(params.dueAt) : new Date(Date.now() + 60 * 60 * 1000);
-  if (!Number.isFinite(dueDate.getTime())) {
-    throw new Error("Reminder dueAt must be a valid ISO 8601 date-time.");
-  }
+  if (!Number.isFinite(dueDate.getTime())) throw new Error("Reminder dueAt must be a valid ISO 8601 date-time.");
   const reminder: ReminderItem = {
     id: "rem-" + crypto.randomUUID(),
     text: params.text,

@@ -17,11 +17,11 @@ import { performWebSearch } from "../../tools/webSearch";
 import { delegateBrowserTaskToBlud } from "../../tools/bludBridge";
 import {
   createCalendarEvent,
-  createReminder,
+  createReminderAsync,
   draftOrSendEmail,
   listCalendarEvents,
   listEmails,
-  listReminders,
+  listRemindersAsync,
   organizeEmail,
 } from "../../tools/workspaceService";
 export interface ToolExecutionBundle {
@@ -171,7 +171,7 @@ export async function executeToolCall(
       return { event: ev };
     }
     case "create_reminder": {
-      const rem = createReminder({
+      const rem = await createReminderAsync({
         text: String(args.text || ""),
         dueAt: String(args.dueAt || new Date(Date.now() + 60 * 60 * 1000).toISOString()),
         channel,
@@ -186,7 +186,7 @@ export async function executeToolCall(
       return { reminder: rem };
     }
     case "list_reminders": {
-      const reminders = listReminders();
+      const reminders = await listRemindersAsync();
       bundle.toolActions.push({
         tool: "list_reminders",
         label: "Loaded active reminders",

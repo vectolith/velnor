@@ -8,9 +8,9 @@ import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepos
 import { transcribeAudioWithProvider } from "@/lib/tools/multimodal";
 import {
   createCalendarEvent,
-  createReminder,
+  createReminderAsync,
   organizeEmail,
-  toggleReminder,
+  toggleReminderAsync,
 } from "@/lib/tools/workspaceService";
 import { Attachment, ChannelType } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
@@ -104,7 +104,7 @@ async function handlePost(body: any) {
     const action = body.action || "message";
 
     if (action === "toggle_reminder") {
-      const updated = toggleReminder(String(body.id));
+      const updated = await toggleReminderAsync(String(body.id));
       return NextResponse.json({ reminder: updated, reminders: getStore().reminders });
     }
 
@@ -154,7 +154,7 @@ async function handlePost(body: any) {
     }
 
     if (action === "create_reminder") {
-      const rem = createReminder({
+      const rem = await createReminderAsync({
         text: String(body.text || ""),
         dueAt: String(body.dueAt || "Today at 5:00 PM"),
         channel: (body.channel as ChannelType) || "imessage",
