@@ -302,6 +302,13 @@ export function currentUserId(): string {
   return storage.getStore()?.userId || ROOT_USER;
 }
 
+/** Require an authenticated tenant scope instead of silently falling back to the root profile. */
+export function requireCurrentUserId(): string {
+  const scope = storage.getStore();
+  if (!scope?.userId) throw new Error("An authenticated tenant scope is required for this operation.");
+  return scope.userId;
+}
+
 export function getStore(): VelnorState {
   const scope = storage.getStore();
   if (scope) return scope.state;
@@ -326,6 +333,7 @@ export function saveStoreIfRevision(state: VelnorState, expectedRevision: number
     if (!fs.existsSync(usersDir)) fs.mkdirSync(usersDir, { recursive: true });
     fs.writeFileSync(stateFile(id), JSON.stringify(persisted, null, 2), "utf-8");
   });
+  if (scope) scope.state = mergeState(state);
   cache().set(id, state);
   return revision;
 }

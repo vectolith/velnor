@@ -8,7 +8,12 @@ type DocumentTenantState = PersistedTenantState & {
 };
 
 export interface RepositoryDocumentStore {
-  ingest(params: { name: string; content: string }): Promise<IndexedDocument>;
+  ingest(params: {
+    name: string;
+    content: string;
+    sourceType?: "file" | "url";
+    url?: string;
+  }): Promise<IndexedDocument>;
   query(query: string, topK?: number): Promise<{
     matches: Array<{ docName: string; content: string; score: number }>;
     documents: IndexedDocument[];

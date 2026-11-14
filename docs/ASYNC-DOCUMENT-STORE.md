@@ -14,7 +14,7 @@
 
 ## Integration status
 
-This is an additive service boundary and is not yet wired into `processUserMessage`, `executeToolCall`, or the chat route. Those callers still use the legacy `documentStore.ts` and the Node/SQLite AsyncLocalStorage scope. Wiring must happen only after the request boundary can supply a trusted tenant ID and a runtime-specific repository binding. The existing PDF/URL ingestion path remains unchanged until equivalent Worker-safe extraction and SSRF-checked fetching are implemented.
+The existing Node `documentStore.ts` ingestion and query APIs now delegate persistence to this service through a shared Node/SQLite repository adapter. They require an active authenticated AsyncLocalStorage tenant scope; calls outside a tenant scope fail instead of falling back to the root profile. PDF extraction and URL fetching still happen in the legacy Node boundary before extracted text is committed through the async repository service. The Workers runtime still needs a D1 repository binding and Worker-compatible PDF/URL extraction before these callers can run there.
 
 ## Verification
 
