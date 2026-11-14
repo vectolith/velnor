@@ -177,7 +177,7 @@ export async function openCredentialRecordAsync<T extends Record<string, unknown
 ): Promise<T> {
   const out: Record<string, unknown> = { ...record };
   for (const [field, value] of Object.entries(record)) {
-    if (typeof value === "string" && isCredentialSealed(value)) {
+    if (typeof value === "string" && isCredentialFieldWebCrypto(field) && isCredentialSealed(value)) {
       out[field] = await openCredentialAsync(value, override);
     }
   }
