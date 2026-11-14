@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { DEFAULT_STATE, getStore, saveStore, type VelnorState } from "../store";
+import { DEFAULT_STATE, type VelnorState } from "../store";
 import type { PersistedTenantState } from "../storage/d1TenantState";
 import { getNodeTenantRepositoryContext } from "../storage/currentTenantRepository";
 import { getGoogleAccessTokenAsync } from "@/lib/auth/googleTokenAsync";
@@ -374,42 +374,3 @@ export async function toggleReminderAsync(id: string): Promise<ReminderItem | un
   );
   return updated;
 }
-
-/** Legacy synchronous reminder helpers retained for existing scheduler callers. */
-export function createReminder(params: {
-  text: string;
-  dueAt: string;
-  channel?: ChannelType;
-  recipient?: string;
-}): ReminderItem {
-  const state = getStore();
-  const dueDate = params.dueAt ? new Date(params.dueAt) : new Date(Date.now() + 60 * 60 * 1000);
-  if (!Number.isFinite(dueDate.getTime())) throw new Error("Reminder dueAt must be a valid ISO 8601 date-time.");
-  const reminder: ReminderItem = {
-    id: "rem-" + crypto.randomUUID(),
-    text: params.text,
-    dueAt: dueDate.toISOString(),
-    channel: params.channel || "imessage",
-    recipient: params.recipient || "",
-    completed: false,
-    createdAt: new Date().toISOString(),
-  };
-  state.reminders.unshift(reminder);
-  saveStore(state);
-  return reminder;
-}
-
-export function listReminders(): ReminderItem[] {
-  return getStore().reminders;
-}
-
-export function toggleReminder(id: string): ReminderItem | undefined {
-  const state = getStore();
-  const target = state.reminders.find((r) => r.id === id);
-  if (target) {
-    target.completed = !target.completed;
-    saveStore(state);
-  }
-  return target;
-}
-
