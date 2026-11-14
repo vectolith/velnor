@@ -98,7 +98,7 @@ test("async tenant mutation persists only changed snapshots", async () => {
   const initial = () => ({ memories: [], usage: { requests: 0 } });
   const noOp = await updateTenantState(db, "tenant_mutation", initial, async (draft) => {
     await Promise.resolve();
-    return draft.memories.length;
+    return Array.isArray(draft.memories) ? draft.memories.length : -1;
   });
   assert.deepEqual(noOp, { result: 0, revision: null, changed: false });
   assert.equal(db.rows.has("tenant_mutation"), false);
