@@ -48,7 +48,8 @@ export function createNodeSqliteTenantRepository(): TenantRepository {
     async load(tenantId: string): Promise<TenantStateRecord | null> {
       const id = storageId(tenantId);
       if (!listUserIds().includes(id)) return null;
-      return withVelnorUser(id, () => {
+      const persisted = loadUserState(id);
+      return withVelnorUserState(id, persisted, () => {
         const state = structuredClone(getStore()) as VelnorState & { persistedAt?: string };
         return {
           tenantId,
