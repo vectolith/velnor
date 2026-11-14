@@ -23,6 +23,12 @@ export interface PersistedTenantState {
 export interface TenantStateRecord {
   tenantId: string; state: PersistedTenantState; revision: number; updatedAt: string;
 }
+export class TenantStateTooLargeError extends Error {
+  constructor(readonly tenantId: string, readonly bytes: number) {
+    super("Tenant state for " + tenantId + " is " + bytes + " bytes; D1 row limit requires large collections to be partitioned or moved to R2.");
+    this.name = "TenantStateTooLargeError";
+  }
+}
 export class TenantStateConflictError extends Error {
   constructor(readonly tenantId: string, readonly expectedRevision: number | null) {
     super("Tenant state changed concurrently for " + tenantId + "; reload before retrying.");
@@ -65,15 +71,21 @@ export async function saveTenantState(
   }
   const serialized = JSON.stringify(state);
   if (typeof serialized !== "string") throw new Error("Tenant state could not be serialized.");
+  const bytes = new TextEncoder().encode(serialized).byteLength;
+  // Cloudflare D1 caps an individual row at 2,000,000 bytes. Keep headroom for
+  // SQLite row encoding and refuse an unsafe write rather than losing state.
+  if (bytes > 1_900_000) throw new TenantStateTooLargeError(tenantId, bytes);
+  const usageJson = JSON.stringify(state.usage || {});
   const result = await db.prepare(`
-    INSERT INTO tenant_state (tenant_id, payload_json, revision, updated_at)
-    VALUES (?, ?, 1, ?)
+    INSERT INTO tenant_state (tenant_id, payload_json, usage_json, revision, updated_at)
+    VALUES (?, ?, ?, 1, ?)
     ON CONFLICT(tenant_id) DO UPDATE SET
       payload_json = excluded.payload_json,
+      usage_json = excluded.usage_json,
       revision = tenant_state.revision + 1,
       updated_at = excluded.updated_at
     WHERE tenant_state.revision = ?
-  `).bind(tenantId, serialized, new Date().toISOString(), expectedRevision ?? -1).run();
+  `).bind(tenantId, serialized, usageJson, new Date().toISOString(), expectedRevision ?? -1).run();
   if (!result.success) throw new Error(result.error || "D1 tenant-state write failed.");
   if (result.meta?.changes !== 1) throw new TenantStateConflictError(tenantId, expectedRevision);
   return expectedRevision === null ? 1 : expectedRevision + 1;
@@ -87,18 +99,16 @@ export async function listTenantStateIds(db: D1Database): Promise<string[]> {
 export async function aggregateTenantUsage(db: D1Database): Promise<{
   requests: number; inputTokens: number; outputTokens: number; costUsd: number; tenants: number;
 }> {
-  const result = await db.prepare("SELECT payload_json FROM tenant_state").all<{ payload_json: string }>();
+  const result = await db.prepare("SELECT usage_json FROM tenant_state").all<{ usage_json: string }>();
   if (!result.success) throw new Error(result.error || "D1 usage aggregation failed.");
   const total = { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, tenants: 0 };
   for (const row of result.results || []) {
-    let state: unknown;
-    try { state = JSON.parse(row.payload_json); }
-    catch { throw new Error("Persisted tenant state is invalid JSON; refusing silent reset."); }
-    if (!state || typeof state !== "object" || Array.isArray(state)) {
-      throw new Error("Persisted tenant state must be a JSON object.");
+    let usage: PersistedTenantState["usage"];
+    try { usage = JSON.parse(row.usage_json); }
+    catch { throw new Error("Persisted tenant usage is invalid JSON; refusing silent reset."); }
+    if (!usage || typeof usage !== "object" || Array.isArray(usage)) {
+      throw new Error("Persisted tenant usage must be a JSON object.");
     }
-    const usage = (state as PersistedTenantState).usage;
-    if (!usage) continue;
     total.requests += Number(usage.requests) || 0;
     total.inputTokens += Number(usage.inputTokens) || 0;
     total.outputTokens += Number(usage.outputTokens) || 0;
