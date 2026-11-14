@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getDatabaseEngineStatus } from "@/lib/sqliteDb";
-import { getEffectiveKeys, getStore, saveStore, withVelnorUser } from "@/lib/store";
+import {
+  DEFAULT_STATE,
+  getEffectiveKeys,
+  getStore,
+  saveStore,
+  type VelnorState,
+  withVelnorTenantScope,
+  withVelnorUser,
+} from "@/lib/store";
 import { ingestDocumentOrUrl } from "@/lib/tools/documentStore";
 import { addMemoryFactAsync, deleteMemoryFactAsync, listMemoryFactsAsync } from "@/lib/tools/memoryStore";
 import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
@@ -22,11 +30,14 @@ export async function GET(req: NextRequest) {
   if (!tenant.ok) {
     return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 403 });
   }
-  return withVelnorUser(tenant.userId, () => buildSnapshot());
+  return withVelnorTenantScope(tenant.userId, async () => {
+    const { repository, tenantId } = getNodeTenantRepositoryContext();
+    const record = await repository.load(tenantId);
+    return buildSnapshot((record?.state ?? DEFAULT_STATE) as unknown as VelnorState);
+  });
 }
 
-function buildSnapshot() {
-  const state = getStore();
+function buildSnapshot(state: VelnorState) {
   const keys = getEffectiveKeys(state);
   const dbStatus = getDatabaseEngineStatus();
 

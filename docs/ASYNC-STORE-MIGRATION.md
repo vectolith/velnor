@@ -10,7 +10,7 @@ Do not replace `saveStore()` with fire-and-forget promises, hide D1 writes in `w
 
 ### Request and scheduled entry points
 
-- `src/app/api/chat/route.ts` — authenticated tenant scope; document ingestion, memory add/list/delete, sensitive-action confirmation state, and reminder create/list/toggle now use the async repository. Snapshot, messages, reactions, calendar/email actions, and other state changes still include synchronous store paths.
+- `src/app/api/chat/route.ts` — authenticated tenant scope; snapshot GET, document ingestion, memory add/list/delete, sensitive-action confirmation state, and reminder create/list/toggle now use the async repository. Message processing, reactions, calendar/email actions, and other POST state changes still include synchronous store paths.
 - `src/app/api/settings/route.ts` — GET/POST now use the async tenant repository through a tenant-only scope; this route no longer synchronously loads or saves the Node store.
 - `src/app/api/auth/google/route.ts` and `src/app/api/auth/google/callback/route.ts` — tenant OAuth setup, one-time state/nonce consumption, token exchange, and credential persistence remain synchronous.
 - `src/app/api/siri/route.ts` and `src/app/api/tts/route.ts` — tenant-scoped AI and speech processing; inspect each request path for remaining synchronous state access.
