@@ -6,7 +6,7 @@ Status: assessment and compatibility gate only. No production resources are crea
 
 Evaluate Cloudflare Workers with vinext as the application runtime, Cloudflare D1 as the durable tenant-state database, R2 for user-uploaded objects and recoverable exports, and the existing identity gateway as a separately deployed Worker. Use Workers Cron Triggers and Queues for scheduled reminder dispatch once the current scheduler contract has been mapped.
 
-This is a staged migration, not a drop-in redeployment. Keep the current Node.js/SQLite deployment and its data intact until the Workers implementation passes parity and migration tests. See [the async store migration design](./ASYNC-STORE-MIGRATION.md) for the full call-site inventory and required transaction/outbox architecture.
+This is a staged migration, not a drop-in redeployment. Keep the current Node.js/SQLite deployment and its data intact until the Workers implementation passes parity and migration tests. See [the async store migration design](./ASYNC-STORE-MIGRATION.md) for the full call-site inventory and required transaction/outbox architecture. The durable outbox primitive and D1 migration are documented in [TENANT-OUTBOX.md](./TENANT-OUTBOX.md); they are not yet wired to provider dispatch.
 
 ## Repository evidence
 
