@@ -1,4 +1,9 @@
 import { migrateState, validateState } from "../security/stateSchema";
+import {
+  openCredentialRecordAsync,
+  sealCredentialRecordAsync,
+  type CredentialCryptoEnvironment,
+} from "../security/secretBoxWebCrypto";
 
 /**
  * Cloudflare D1 persistence primitives for VELNOR tenant state.
@@ -53,35 +58,58 @@ function normalizeTenantState(raw: unknown): PersistedTenantState {
   }
   return migrated as PersistedTenantState;
 }
-function parseRecord(row: {
-  tenant_id: string; payload_json: string; revision: number; updated_at: string;
-}): TenantStateRecord {
+async function parseRecord(
+  row: { tenant_id: string; payload_json: string; revision: number; updated_at: string },
+  cryptoEnvironment?: CredentialCryptoEnvironment,
+): Promise<TenantStateRecord> {
   let state: unknown;
   try { state = JSON.parse(row.payload_json); }
   catch { throw new Error("Persisted tenant state is invalid JSON; refusing silent reset."); }
-  const normalized = normalizeTenantState(state);
+  const migrated = migrateState(state).value;
+  if (migrated.config && typeof migrated.config === "object" && !Array.isArray(migrated.config)) {
+    migrated.config = await openCredentialRecordAsync(
+      migrated.config as Record<string, unknown>,
+      cryptoEnvironment,
+    );
+  }
+  const normalized = normalizeTenantState(migrated);
   return { tenantId: row.tenant_id, state: normalized,
     revision: row.revision, updatedAt: row.updated_at };
 }
-export async function loadTenantState(db: D1Database, tenantId: string): Promise<TenantStateRecord | null> {
+export async function loadTenantState(
+  db: D1Database,
+  tenantId: string,
+  cryptoEnvironment?: CredentialCryptoEnvironment,
+): Promise<TenantStateRecord | null> {
   assertTenantId(tenantId);
   const row = await db.prepare(
     "SELECT tenant_id, payload_json, revision, updated_at FROM tenant_state WHERE tenant_id = ?"
   ).bind(tenantId).first<{
     tenant_id: string; payload_json: string; revision: number; updated_at: string;
   }>();
-  return row ? parseRecord(row) : null;
+  return row ? parseRecord(row, cryptoEnvironment) : null;
 }
 /** Atomic compare-and-swap. Pass null only to create a previously absent tenant. */
 export async function saveTenantState(
-  db: D1Database, tenantId: string, state: PersistedTenantState, expectedRevision: number | null
+  db: D1Database,
+  tenantId: string,
+  state: PersistedTenantState,
+  expectedRevision: number | null,
+  cryptoEnvironment?: CredentialCryptoEnvironment,
 ): Promise<number> {
   assertTenantId(tenantId);
   if (expectedRevision !== null && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)) {
     throw new Error("Expected tenant revision must be a positive safe integer or null.");
   }
   const normalized = normalizeTenantState(state);
-  const serialized = JSON.stringify(normalized);
+  const persisted: PersistedTenantState = { ...normalized };
+  if (persisted.config && typeof persisted.config === "object" && !Array.isArray(persisted.config)) {
+    persisted.config = await sealCredentialRecordAsync(
+      persisted.config as Record<string, unknown>,
+      cryptoEnvironment,
+    );
+  }
+  const serialized = JSON.stringify(persisted);
   if (typeof serialized !== "string") throw new Error("Tenant state could not be serialized.");
   const bytes = new TextEncoder().encode(serialized).byteLength;
   // Cloudflare D1 caps an individual row at 2,000,000 bytes. Keep headroom for
