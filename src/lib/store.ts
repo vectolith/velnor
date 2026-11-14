@@ -287,6 +287,11 @@ export function withVelnorUserState<T>(
   fn: () => T | Promise<T>,
 ): Promise<T> {
   const id = sanitizeUserId(userId);
+  const existing = storage.getStore();
+  if (existing && existing.userId === id) {
+    existing.state = mergeState(state);
+    return Promise.resolve(fn());
+  }
   return storage.run({ userId: id, state: mergeState(state) }, async () => fn());
 }
 
