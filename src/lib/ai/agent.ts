@@ -214,10 +214,9 @@ export async function processUserMessage(params: {
   const costUsd = estimateCostUsd(modelUsed, usage.inputTokens, usage.outputTokens);
   if (usage.inputTokens || usage.outputTokens) {
     await tenantContext.repository.update(tenantContext.tenantId, createInitialTenantState, (draft) => {
-      const current = draft.usage && typeof draft.usage === "object"
-        ? draft.usage as NonNullable<VelnorState["usage"]>
-        : { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
-      draft.usage = {
+      const tenantState = draft as unknown as VelnorState;
+      const current = tenantState.usage || { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+      tenantState.usage = {
         requests: (current.requests || 0) + 1,
         inputTokens: (current.inputTokens || 0) + usage.inputTokens,
         outputTokens: (current.outputTokens || 0) + usage.outputTokens,
