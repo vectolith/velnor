@@ -23,6 +23,7 @@ after the callback returns, and retries are not performed automatically.
 ## Rollout status
 
 The adapter is additive and is not selected by the application runtime. Existing
-synchronous service APIs remain the production path. Individual services can
-move to the async contract behind explicit request/job tenant boundaries after
-their callers are converted and concurrency requirements are verified.
+synchronous service APIs remain the production path. The memory service now exposes repository-backed async add/list/delete operations
+that take an explicit tenant ID. Its existing synchronous exports remain intact
+for legacy callers; callers should be migrated one at a time after their request
+or job boundary supplies an authenticated tenant ID.

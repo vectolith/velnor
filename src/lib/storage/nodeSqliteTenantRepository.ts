@@ -64,8 +64,8 @@ export function createNodeSqliteTenantRepository(): TenantRepository {
       mutate: (draft: PersistedTenantState) => TResult | Promise<TResult>,
     ): Promise<{ result: TResult; revision: number | null; changed: boolean }> {
       const id = storageId(tenantId);
+      const exists = listUserIds().includes(id);
       return serialized(id, () => withVelnorUser(id, async () => {
-        const exists = listUserIds().includes(id);
         const source = exists
           ? structuredClone(getStore()) as unknown as PersistedTenantState
           : structuredClone(createInitialState());
