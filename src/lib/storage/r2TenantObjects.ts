@@ -93,8 +93,13 @@ export async function putTenantObject(
 export async function getTenantObject(
   bucket: R2BucketLike,
   tenantId: string,
-  objectId: string
+  objectId: string,
+  expected: TenantObjectRef
 ): Promise<TenantObjectData | null> {
+  if (expected.objectId !== objectId || !/^[a-f0-9]{64}$/.test(expected.sha256) ||
+      !Number.isSafeInteger(expected.sizeBytes) || expected.sizeBytes < 0) {
+    throw new Error("Invalid persisted tenant object reference.");
+  }
   const object = await bucket.get(objectKey(tenantId, objectId));
   if (!object) return null;
   const metadata = object.customMetadata || {};
@@ -103,12 +108,14 @@ export async function getTenantObject(
   }
   const bytes = new Uint8Array(await object.arrayBuffer());
   const checksum = await sha256(bytes);
-  if (!metadata.sha256 || checksum !== metadata.sha256) {
-    throw new TenantObjectIntegrityError("R2 object checksum verification failed.");
+  const contentType = object.httpMetadata?.contentType || "application/octet-stream";
+  if (!metadata.sha256 || checksum !== metadata.sha256 || checksum !== expected.sha256 ||
+      bytes.byteLength !== expected.sizeBytes || contentType !== expected.contentType) {
+    throw new TenantObjectIntegrityError("R2 object does not match its persisted D1 reference.");
   }
   return {
     objectId,
-    contentType: object.httpMetadata?.contentType || "application/octet-stream",
+    contentType,
     sizeBytes: bytes.byteLength,
     sha256: checksum,
     bytes

@@ -8,7 +8,7 @@ Bind a private R2 bucket to the VELNOR Worker as `VELNOR_OBJECTS`. Do not enable
 
 ## Object contract
 
-`src/lib/storage/r2TenantObjects.ts` derives object keys as `tenants/<sanitized-tenant-id>/objects/<object-id>`. Callers cannot supply paths or prefixes. Each object records tenant ID, object ID, schema version, content type, and SHA-256 in R2 metadata. Reads verify ownership metadata and checksum before returning bytes. Deletes verify tenant ownership before removing an object.
+`src/lib/storage/r2TenantObjects.ts` derives object keys as `tenants/<sanitized-tenant-id>/objects/<object-id>`. Callers cannot supply paths or prefixes. Each object records tenant ID, object ID, schema version, content type, and SHA-256 in R2 metadata. Reads require the persisted D1 object reference and verify ownership metadata, the reference's expected SHA-256, byte count, and content type before returning bytes. This makes the D1 reference an independent integrity anchor rather than trusting metadata stored beside the object. Deletes verify tenant ownership before removing an object.
 
 Upload limits are explicit per call; the adapter has no implicit global limit. The returned `TenantObjectRef` contains an object ID, content type, byte count, and checksum, but no public URL. Store references in the tenant's D1 state only after a successful R2 write.
 

@@ -47,7 +47,7 @@ test("R2 tenant objects round-trip binary bytes with checksum and content type",
   const ref = await putTenantObject(bucket, "tenant_a", "attachment_01", bytes, "application/octet-stream", 1024);
   assert.equal(ref.sizeBytes, bytes.byteLength);
   assert.match(ref.sha256, /^[a-f0-9]{64}$/);
-  const loaded = await getTenantObject(bucket, "tenant_a", "attachment_01");
+  const loaded = await getTenantObject(bucket, "tenant_a", "attachment_01", ref);
   assert.deepEqual(loaded?.bytes, bytes);
   assert.equal(loaded?.contentType, "application/octet-stream");
   assert.equal(loaded?.sha256, ref.sha256);
@@ -55,24 +55,24 @@ test("R2 tenant objects round-trip binary bytes with checksum and content type",
 
 test("R2 object keys and metadata isolate tenants", async () => {
   const bucket = new FakeR2();
-  await putTenantObject(bucket, "tenant_a", "same_id", new Uint8Array([1]), "image/png", 100);
-  await putTenantObject(bucket, "tenant_b", "same_id", new Uint8Array([2]), "image/png", 100);
-  assert.deepEqual((await getTenantObject(bucket, "tenant_a", "same_id"))?.bytes, new Uint8Array([1]));
-  assert.deepEqual((await getTenantObject(bucket, "tenant_b", "same_id"))?.bytes, new Uint8Array([2]));
-  assert.equal(await getTenantObject(bucket, "tenant_c", "same_id"), null);
+  const a = await putTenantObject(bucket, "tenant_a", "same_id", new Uint8Array([1]), "image/png", 100);
+  const b = await putTenantObject(bucket, "tenant_b", "same_id", new Uint8Array([2]), "image/png", 100);
+  assert.deepEqual((await getTenantObject(bucket, "tenant_a", "same_id", a))?.bytes, new Uint8Array([1]));
+  assert.deepEqual((await getTenantObject(bucket, "tenant_b", "same_id", b))?.bytes, new Uint8Array([2]));
+  assert.equal(await getTenantObject(bucket, "tenant_c", "same_id", a), null);
   assert.equal(bucket.objects.has(key("tenant_a", "same_id")), true);
   assert.equal(bucket.objects.has(key("tenant_b", "same_id")), true);
 });
 
 test("R2 reads reject altered bytes or mismatched ownership metadata", async () => {
   const bucket = new FakeR2();
-  await putTenantObject(bucket, "tenant_a", "object_1", new Uint8Array([1, 2]), "image/png", 100);
+  const ref1 = await putTenantObject(bucket, "tenant_a", "object_1", new Uint8Array([1, 2]), "image/png", 100);
   bucket.objects.get(key("tenant_a", "object_1"))!.bytes[0] = 9;
-  await assert.rejects(() => getTenantObject(bucket, "tenant_a", "object_1"), TenantObjectIntegrityError);
+  await assert.rejects(() => getTenantObject(bucket, "tenant_a", "object_1", ref1), TenantObjectIntegrityError);
 
-  await putTenantObject(bucket, "tenant_a", "object_2", new Uint8Array([3]), "image/png", 100);
+  const ref2 = await putTenantObject(bucket, "tenant_a", "object_2", new Uint8Array([3]), "image/png", 100);
   bucket.objects.get(key("tenant_a", "object_2"))!.customMetadata.tenantId = "tenant_b";
-  await assert.rejects(() => getTenantObject(bucket, "tenant_a", "object_2"), TenantObjectIntegrityError);
+  await assert.rejects(() => getTenantObject(bucket, "tenant_a", "object_2", ref2), TenantObjectIntegrityError);
 });
 
 test("R2 adapter rejects unsafe IDs, invalid content types, and oversized uploads", async () => {
@@ -94,4 +94,20 @@ test("R2 delete verifies tenant metadata before deleting", async () => {
   bucket.objects.get(key("tenant_a", "protected"))!.customMetadata.tenantId = "tenant_b";
   await assert.rejects(() => deleteTenantObject(bucket, "tenant_a", "protected"), TenantObjectIntegrityError);
   assert.equal(bucket.objects.has(key("tenant_a", "protected")), true);
+});
+
+test("R2 read verifies against the independent persisted reference", async () => {
+  const bucket = new FakeR2();
+  const ref = await putTenantObject(bucket, "tenant_a", "object_ref", new Uint8Array([4, 5]), "image/png", 100);
+  const stored = bucket.objects.get(key("tenant_a", "object_ref"))!;
+  const changed = new Uint8Array([8, 9]);
+  stored.bytes = changed;
+  // Simulate a writer that can also rewrite object metadata: the D1 reference
+  // still detects the change because its checksum and size are independent.
+  const digest = await crypto.subtle.digest("SHA-256", changed.buffer as ArrayBuffer);
+  stored.customMetadata.sha256 = Array.from(new Uint8Array(digest), (v) => v.toString(16).padStart(2, "0")).join("");
+  await assert.rejects(
+    () => getTenantObject(bucket, "tenant_a", "object_ref", ref),
+    TenantObjectIntegrityError
+  );
 });
