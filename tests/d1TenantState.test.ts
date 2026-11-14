@@ -12,7 +12,7 @@ import {
   type D1Result,
 } from "../src/lib/storage/d1TenantState";
 
-type Row = { tenant_id: string; payload_json: string; revision: number; updated_at: string };
+type Row = { tenant_id: string; payload_json: string; usage_json: string; revision: number; updated_at: string };
 class FakeD1 implements D1Database {
   rows = new Map<string, Row>();
   prepare(query: string): D1PreparedStatement {
@@ -22,7 +22,7 @@ class FakeD1 implements D1Database {
       bind(...args: unknown[]) { values = args; return this; },
       async first<T>() {
         const row = db.rows.get(String(values[0]));
-        return (row ? { ...row } : null) as T | null;
+        return (row ? { ...row } : null) as unknown as T | null;
       },
       async all<T>(): Promise<D1Result<T>> {
         if (query.includes("SELECT tenant_id")) {
