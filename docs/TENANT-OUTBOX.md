@@ -9,7 +9,7 @@ The outbox is a persistence primitive for external side effects. It is not yet c
 - A single conditional `UPDATE ... RETURNING` claims one due row for one tenant and creates a bounded lease.
 - Expired leases can be reclaimed. A stale worker cannot complete or retry a lease now owned by another worker.
 - Retry records a caller-selected backoff time and moves exhausted attempts to `dead`.
-- Payloads are JSON objects capped at 64 KiB. Errors are truncated before persistence.
+- Payloads are JSON objects capped at 64 KiB. Never put credentials, access tokens, or secret material in outbox payloads; include a tenant-scoped secret reference and resolve it at dispatch time. Errors are truncated before persistence.
 
 ## Dispatch contract
 
