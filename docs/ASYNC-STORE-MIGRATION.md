@@ -22,14 +22,14 @@ Do not replace `saveStore()` with fire-and-forget promises, hide D1 writes in `w
 
 ### Synchronous store consumers still requiring migration
 
-- `src/lib/ai/agent.ts` — appends inbound/outbound messages, records usage, and invokes model/tool providers.
+- `src/lib/ai/agent.ts` — inbound/outbound message history is persisted through the async repository; token/cost usage is committed through the repository after each model response. Provider/tool orchestration remains in the Node application boundary.
 - `src/lib/auth/googleToken.ts` — legacy synchronous token refresh remains for non-migrated callers.
 - `src/lib/auth/googleTokenAsync.ts` — Workers-compatible async token refresh reads and persists tenant OAuth credentials through `TenantRepository`; workspace Gmail/Calendar calls now use this path. Runtime bindings should pass Google client credentials explicitly rather than relying on Node process globals.
 - `src/lib/tools/workspaceService.ts` — Gmail and Calendar API calls use the async OAuth token helper and local email/event/reminder persistence and list/toggle operations use the async repository. The module still has Node-specific compatibility code for the legacy synchronous reminder scheduler and is not yet a Workers entrypoint. External Gmail/Calendar mutations are not outbox-backed and must not be retried automatically. Legacy synchronous reminder helpers remain for scheduler compatibility.
 - `src/lib/tools/memoryStore.ts` — legacy synchronous exports remain, but audited chat and agent add/list/delete callers now use the async repository.
 - `src/lib/security/toolPolicy.ts` — legacy in-memory confirmation maps remain for tests/compatibility; active agent and chat routes now use a tenant-persisted async confirmation policy with Web Crypto fingerprints and atomic one-time consumption.
-- `src/lib/tools/documentStore.ts` — document metadata/chunks are now persisted through the async repository. PDF extraction, URL fetching, and embedding generation remain in the Node boundary.
-- `src/lib/tools/multimodal.ts` — reads provider configuration.
+- `src/lib/tools/documentStore.ts` — document metadata/chunks and provider-key reads now use the async repository. PDF extraction, URL fetching, and embedding generation remain in the Node boundary.
+- `src/lib/tools/multimodal.ts` — provider configuration reads now use the async repository, while provider SDKs and Node-specific media handling remain in the application boundary.
 - `src/lib/scheduler.ts` — still uses the synchronous store while dispatching Slack/SMS/iMessage reminders. Do not move its state transition into a retryable callback; dispatch and completion must be coordinated through the durable outbox.
 
 The list above is a migration inventory, not proof that these modules are Worker-compatible. Search for every remaining `getStore()`, `saveStore()`, `loadUserState()`, `listUserIds()`, and `aggregateUsage()` reference again before removing the Node adapter.

@@ -74,7 +74,7 @@ export async function processUserMessage(params: {
   await noteUserMessageAsync(tenantContext.repository, tenantContext.tenantId, params.text);
 
   const userMsg: ChatMessage = {
-    id: `msg-${Date.now()}-u`,
+    id: `msg-${crypto.randomUUID()}`,
     channel: params.channel,
     sender: "user",
     userHandle: params.userHandle,
@@ -213,15 +213,20 @@ export async function processUserMessage(params: {
 
   const costUsd = estimateCostUsd(modelUsed, usage.inputTokens, usage.outputTokens);
   if (usage.inputTokens || usage.outputTokens) {
-    state.usage = {
-      requests: (state.usage?.requests || 0) + 1,
-      inputTokens: (state.usage?.inputTokens || 0) + usage.inputTokens,
-      outputTokens: (state.usage?.outputTokens || 0) + usage.outputTokens,
-      costUsd: Number(((state.usage?.costUsd || 0) + costUsd).toFixed(6)),
-      lastRequestCostUsd: Number(costUsd.toFixed(6)),
-      lastProvider: providerUsed,
-      lastModel: modelUsed,
-    };
+    await tenantContext.repository.update(tenantContext.tenantId, createInitialTenantState, (draft) => {
+      const current = draft.usage && typeof draft.usage === "object"
+        ? draft.usage as NonNullable<VelnorState["usage"]>
+        : { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+      draft.usage = {
+        requests: (current.requests || 0) + 1,
+        inputTokens: (current.inputTokens || 0) + usage.inputTokens,
+        outputTokens: (current.outputTokens || 0) + usage.outputTokens,
+        costUsd: Number(((current.costUsd || 0) + costUsd).toFixed(6)),
+        lastRequestCostUsd: Number(costUsd.toFixed(6)),
+        lastProvider: providerUsed,
+        lastModel: modelUsed,
+      };
+    });
   }
 
   if (!replyText) {
@@ -242,7 +247,7 @@ export async function processUserMessage(params: {
   );
 
   const velnorMsg: ChatMessage = {
-    id: `msg-${Date.now()}-o`,
+    id: `msg-${crypto.randomUUID()}`,
     channel: params.channel,
     sender: "velnor",
     text: replyText,
