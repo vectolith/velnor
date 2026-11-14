@@ -8,7 +8,8 @@ import {
 /**
  * Cloudflare D1 persistence primitives for VELNOR tenant state.
  * Deliberately not wired into the synchronous Node store yet.
- * Payloads must already be validated and secretBox-sealed before reaching D1.
+ * State is validated before writes; credential fields are sealed with Web Crypto
+ * before persistence and opened only after successful reads.
  */
 export interface D1Result<T = unknown> {
   results?: T[];

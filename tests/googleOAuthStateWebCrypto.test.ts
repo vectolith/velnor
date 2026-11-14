@@ -4,6 +4,7 @@ import { createGoogleOAuthState, verifyGoogleOAuthState } from "../src/lib/secur
 import { createGoogleOAuthStateAsync, verifyGoogleOAuthStateAsync } from "../src/lib/security/googleOAuthStateWebCrypto";
 
 const secret = "test-tenant-token-secret-with-at-least-32-bytes";
+process.env.VELNOR_TENANT_TOKEN_SECRET ||= secret;
 
 test("Workers Web Crypto Google OAuth state interoperates with the Node HMAC format", async () => {
   const nodeState = createGoogleOAuthState("slack:TEAM123:U123", "n".repeat(48));
