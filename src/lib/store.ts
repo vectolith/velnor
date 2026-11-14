@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { DEFAULT_MODELS } from "./ai/registry";
-import { closeSqliteDb, listStateKeysFromSqlite, loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
+import { closeSqliteDb, getStateRevisionFromSqlite, listStateKeysFromSqlite, loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite, saveStateToSqliteIfRevision } from "./sqliteDb";
 import { coerceState, migrateState, STATE_SCHEMA_VERSION } from "./security/stateSchema";
 import { isCredentialField, isSealed, openRecord, sealRecord, secretsEnabled } from "./security/secretBox";
 import {
@@ -247,6 +247,17 @@ export function loadUserState(userId: string): VelnorState {
   return state;
 }
 
+/** Reload a tenant from durable storage, bypassing this process's state cache. */
+export function loadUserStateFresh(userId: string): VelnorState {
+  cache().delete(sanitizeUserId(userId));
+  return loadUserState(userId);
+}
+
+/** Return the durable revision for a tenant's SQLite row. */
+export function getUserStateRevision(userId: string): number {
+  return getStateRevisionFromSqlite(sqliteKey(sanitizeUserId(userId)));
+}
+
 function saveStateForUser(userId: string, state: VelnorState): void {
   const id = sanitizeUserId(userId);
   const persisted = { ...state, schemaVersion: STATE_SCHEMA_VERSION, persistedAt: new Date().toISOString() };
@@ -269,6 +280,35 @@ function saveStateForUser(userId: string, state: VelnorState): void {
   cache().set(id, state);
 }
 
+/** Run an explicitly supplied state inside a tenant scope without loading or creating defaults. */
+export function withVelnorUserState<T>(
+  userId: string,
+  state: VelnorState,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  const id = sanitizeUserId(userId);
+  const existing = storage.getStore();
+  if (existing && existing.userId === id) {
+    existing.state = mergeState(state);
+    return Promise.resolve(fn());
+  }
+  return storage.run({ userId: id, state: mergeState(state) }, async () => fn());
+}
+
+/** Establish an authenticated tenant scope without synchronously loading Node storage. */
+export function withVelnorTenantScope<T>(
+  userId: string,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  if (typeof userId !== "string" || !userId.trim()) {
+    return Promise.reject(new Error("A tenant identity is required."));
+  }
+  const id = sanitizeUserId(userId);
+  const existing = storage.getStore();
+  if (existing && existing.userId === id) return Promise.resolve(fn());
+  return storage.run({ userId: id, state: mergeState(DEFAULT_STATE) }, async () => fn());
+}
+
 /** Run fn with the store bound to this user. */
 export function withVelnorUser<T>(userId: string, fn: () => T | Promise<T>): Promise<T> {
   const id = sanitizeUserId(userId);
@@ -281,6 +321,13 @@ export function currentUserId(): string {
   return storage.getStore()?.userId || ROOT_USER;
 }
 
+/** Require an authenticated tenant scope instead of silently falling back to the root profile. */
+export function requireCurrentUserId(): string {
+  const scope = storage.getStore();
+  if (!scope?.userId) throw new Error("An authenticated tenant scope is required for this operation.");
+  return scope.userId;
+}
+
 export function getStore(): VelnorState {
   const scope = storage.getStore();
   if (scope) return scope.state;
@@ -290,6 +337,24 @@ export function getStore(): VelnorState {
 export function saveStore(state: VelnorState): void {
   const scope = storage.getStore();
   saveStateForUser(scope ? scope.userId : ROOT_USER, state);
+}
+
+/** Repository-only durable CAS write; the recovery mirror is updated before SQLite releases its writer lock. */
+export function saveStoreIfRevision(state: VelnorState, expectedRevision: number): number {
+  const scope = storage.getStore();
+  const id = scope ? scope.userId : ROOT_USER;
+  const persisted = { ...state, schemaVersion: STATE_SCHEMA_VERSION, persistedAt: new Date().toISOString() };
+  if (persisted.config && typeof persisted.config === "object") {
+    persisted.config = sealRecord(persisted.config as unknown as Record<string, unknown>) as unknown as typeof persisted.config;
+  }
+  const revision = saveStateToSqliteIfRevision(persisted, sqliteKey(id), expectedRevision, () => {
+    const usersDir = getUsersDir();
+    if (!fs.existsSync(usersDir)) fs.mkdirSync(usersDir, { recursive: true });
+    fs.writeFileSync(stateFile(id), JSON.stringify(persisted, null, 2), "utf-8");
+  });
+  if (scope) scope.state = mergeState(state);
+  cache().set(id, state);
+  return revision;
 }
 
 /**

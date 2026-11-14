@@ -4,11 +4,16 @@ import { getStore, saveStore, withVelnorUser } from "../src/lib/store";
 import { sendSendblueMessage } from "../src/lib/channels/sendblue";
 import { sendLoopMessage } from "../src/lib/channels/loopmessage";
 import { getGoogleAccessToken } from "../src/lib/auth/googleToken";
+import { getGoogleAccessTokenAsync } from "../src/lib/auth/googleTokenAsync";
+import { getNodeTenantRepositoryContext } from "../src/lib/storage/currentTenantRepository";
 
 import {
   createCalendarEvent,
+  createReminderAsync,
   draftOrSendEmail,
+  listRemindersAsync,
   organizeEmail,
+  toggleReminderAsync,
 } from "../src/lib/tools/workspaceService";
 
 process.env.VELNOR_SECRET_KEY ||= "test-secret-key-for-integration-suite-32-bytes";
@@ -241,5 +246,56 @@ test("Google token helper rejects expired access without a refresh grant", async
     state.config.googleAccessTokenExpiresAt = new Date(Date.now() - 60_000).toISOString();
     saveStore(state);
     await assert.rejects(getGoogleAccessToken(), /reconnect the Google account/);
+  });
+});
+
+
+test("async workspace reminder operations persist through the tenant repository", async () => {
+  await withVelnorUser("workspace-reminder-tenant-a", async () => {
+    const created = await createReminderAsync({
+      text: "Repository-backed reminder",
+      dueAt: new Date(Date.now() + 60_000).toISOString(),
+      channel: "imessage",
+    });
+    assert.equal(created.text, "Repository-backed reminder");
+    assert.ok((await listRemindersAsync()).some((item) => item.id === created.id));
+    const toggled = await toggleReminderAsync(created.id);
+    assert.equal(toggled?.completed, true);
+    assert.equal((await listRemindersAsync()).find((item) => item.id === created.id)?.completed, true);
+  });
+
+  await withVelnorUser("workspace-reminder-tenant-b", async () => {
+    assert.equal((await listRemindersAsync()).some((item) => item.text === "Repository-backed reminder"), false);
+  });
+});
+
+
+test("async Google token refresh persists credentials through the tenant repository", async () => {
+  await withVelnorUser("google-token-async-refresh", async () => {
+    const state = getStore();
+    state.config.googleClientId = "client-id";
+    state.config.googleClientSecret = "client-secret";
+    state.config.googleRefreshToken = "refresh-token";
+    state.config.googleAccessToken = "expired-token";
+    state.config.googleAccessTokenExpiresAt = new Date(Date.now() - 60_000).toISOString();
+    saveStore(state);
+    const { repository, tenantId } = getNodeTenantRepositoryContext();
+    await withFetchMock(async (input, init) => {
+      assert.equal(String(input), "https://oauth2.googleapis.com/token");
+      const body = new URLSearchParams(String(init?.body));
+      assert.equal(body.get("grant_type"), "refresh_token");
+      assert.equal(body.get("refresh_token"), "refresh-token");
+      return new Response(JSON.stringify({
+        access_token: "async-fresh-token",
+        refresh_token: "rotated-refresh-token",
+        expires_in: 3600,
+      }), { status: 200 });
+    }, async () => {
+      const token = await getGoogleAccessTokenAsync(repository, tenantId);
+      assert.equal(token, "async-fresh-token");
+    });
+    assert.equal(getStore().config.googleAccessToken, "async-fresh-token");
+    assert.equal(getStore().config.googleRefreshToken, "rotated-refresh-token");
+    assert.ok(Date.parse(getStore().config.googleAccessTokenExpiresAt || "") > Date.now());
   });
 });

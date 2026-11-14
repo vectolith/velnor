@@ -1,8 +1,10 @@
 import { runAgentLoop } from "./loop";
 import { buildProviderChain, createProvider, estimateCostUsd } from "./registry";
 import { ToolSpec, Turn, Usage, emptyUsage } from "./providers/types";
-import { getEffectiveKeys, getStore, saveStore } from "../store";
-import { enforceToolPolicy, noteUserMessage } from "../security/toolPolicy";
+import { DEFAULT_STATE, getEffectiveKeys, type VelnorState } from "../store";
+import type { PersistedTenantState } from "../storage/d1TenantState";
+import { noteUserMessageAsync } from "../security/asyncToolPolicy";
+import { getNodeTenantRepositoryContext } from "../storage/currentTenantRepository";
 import {
   Attachment,
   ChannelType,
@@ -12,18 +14,15 @@ import {
   ToolActionSummary,
 } from "../types";
 import { ingestDocumentOrUrl, queryVectorDocuments } from "../tools/documentStore";
-import { addMemoryFact, listMemoryFacts } from "../tools/memoryStore";
 import { generateImageWithProvider } from "../tools/multimodal";
 import { buildTravelPlan } from "../tools/travelService";
 import { performWebSearch } from "../tools/webSearch";
 import { delegateBrowserTaskToBlud } from "../tools/bludBridge";
 import {
   createCalendarEvent,
-  createReminder,
   draftOrSendEmail,
   listCalendarEvents,
   listEmails,
-  listReminders,
   organizeEmail,
 } from "../tools/workspaceService";
 
@@ -46,18 +45,36 @@ export type { ToolExecutionBundle } from "./tools/execute";
 import { executeToolCall, ToolExecutionBundle } from "./tools/execute";
 import { VELNOR_TOOLS } from "./tools/declarations";
 
+type TenantRepositoryContext = ReturnType<typeof getNodeTenantRepositoryContext>;
+
+function createInitialTenantState(): PersistedTenantState {
+  return structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState;
+}
+
+async function loadTenantState(context: TenantRepositoryContext): Promise<VelnorState> {
+  const record = await context.repository.load(context.tenantId);
+  return (record?.state ?? DEFAULT_STATE) as unknown as VelnorState;
+}
+
+async function appendTenantMessage(context: TenantRepositoryContext, message: ChatMessage): Promise<void> {
+  await context.repository.update(context.tenantId, createInitialTenantState, (draft) => {
+    const state = draft as unknown as VelnorState;
+    if (!Array.isArray(state.messages)) state.messages = [];
+    state.messages.push(message);
+  });
+}
+
 export async function processUserMessage(params: {
   channel: ChannelType;
   text: string;
   userHandle?: string;
   attachments?: Attachment[];
 }): Promise<ChatMessage> {
-  noteUserMessage(params.text);
-  const state = getStore();
-  const { geminiApiKey, openaiApiKey, anthropicApiKey } = getEffectiveKeys(state);
+  const tenantContext = getNodeTenantRepositoryContext();
+  await noteUserMessageAsync(tenantContext.repository, tenantContext.tenantId, params.text);
 
   const userMsg: ChatMessage = {
-    id: `msg-${Date.now()}-u`,
+    id: `msg-${crypto.randomUUID()}`,
     channel: params.channel,
     sender: "user",
     userHandle: params.userHandle,
@@ -65,7 +82,10 @@ export async function processUserMessage(params: {
     timestamp: new Date().toISOString(),
     attachments: params.attachments,
   };
-  state.messages.push(userMsg);
+  // Persist the inbound message through the repository before tools refresh this tenant scope.
+  await appendTenantMessage(tenantContext, userMsg);
+  let state = await loadTenantState(tenantContext);
+  const { geminiApiKey, openaiApiKey, anthropicApiKey } = getEffectiveKeys(state);
 
   const bundle: ToolExecutionBundle = {
     toolActions: [],
@@ -84,7 +104,7 @@ export async function processUserMessage(params: {
         });
         bundle.toolActions.push({
           tool: "ingest_url_or_doc",
-          label: `Indexed "${doc.name}" into SQLite + HNSW Vector DB`,
+          label: `Indexed "${doc.name}" into tenant document store`,
           status: "success",
           details: `${doc.chunkCount} chunks (${doc.wordCount} words)`,
         });
@@ -92,6 +112,8 @@ export async function processUserMessage(params: {
     }
   }
 
+  // Repository-backed attachment ingestion may have refreshed the active tenant scope.
+  state = await loadTenantState(tenantContext);
   const memoryLines = (state.memories || [])
     .slice(0, 12)
     .map((m) => "- [" + m.category.toUpperCase() + "] " + m.fact)
@@ -191,15 +213,19 @@ export async function processUserMessage(params: {
 
   const costUsd = estimateCostUsd(modelUsed, usage.inputTokens, usage.outputTokens);
   if (usage.inputTokens || usage.outputTokens) {
-    state.usage = {
-      requests: (state.usage?.requests || 0) + 1,
-      inputTokens: (state.usage?.inputTokens || 0) + usage.inputTokens,
-      outputTokens: (state.usage?.outputTokens || 0) + usage.outputTokens,
-      costUsd: Number(((state.usage?.costUsd || 0) + costUsd).toFixed(6)),
-      lastRequestCostUsd: Number(costUsd.toFixed(6)),
-      lastProvider: providerUsed,
-      lastModel: modelUsed,
-    };
+    await tenantContext.repository.update(tenantContext.tenantId, createInitialTenantState, (draft) => {
+      const tenantState = draft as unknown as VelnorState;
+      const current = tenantState.usage || { requests: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+      tenantState.usage = {
+        requests: (current.requests || 0) + 1,
+        inputTokens: (current.inputTokens || 0) + usage.inputTokens,
+        outputTokens: (current.outputTokens || 0) + usage.outputTokens,
+        costUsd: Number(((current.costUsd || 0) + costUsd).toFixed(6)),
+        lastRequestCostUsd: Number(costUsd.toFixed(6)),
+        lastProvider: providerUsed,
+        lastModel: modelUsed,
+      };
+    });
   }
 
   if (!replyText) {
@@ -211,7 +237,7 @@ export async function processUserMessage(params: {
         details: providerFailures.join(" | ").slice(0, 300),
       });
     }
-    replyText = await runBuiltInAgentOrchestrator(params, bundle);
+    replyText = await runBuiltInAgentOrchestrator(params, bundle, tenantContext);
   }
 
   // Deduplicate citations
@@ -220,7 +246,7 @@ export async function processUserMessage(params: {
   );
 
   const velnorMsg: ChatMessage = {
-    id: `msg-${Date.now()}-o`,
+    id: `msg-${crypto.randomUUID()}`,
     channel: params.channel,
     sender: "velnor",
     text: replyText,
@@ -233,8 +259,8 @@ export async function processUserMessage(params: {
     structuredCard: bundle.structuredCard,
   };
 
-  state.messages.push(velnorMsg);
-  saveStore(state);
+  // Tool calls may have committed documents, memories, or policy state during this turn.
+  await appendTenantMessage(tenantContext, velnorMsg);
   return velnorMsg;
 }
 
@@ -275,7 +301,8 @@ async function runBuiltInAgentOrchestrator(
     userHandle?: string;
     attachments?: Attachment[];
   },
-  bundle: ToolExecutionBundle
+  bundle: ToolExecutionBundle,
+  tenantContext: TenantRepositoryContext,
 ): Promise<string> {
   const raw = params.text.trim();
   const lower = raw.toLowerCase();
@@ -360,7 +387,7 @@ async function runBuiltInAgentOrchestrator(
   // Check if user attached a document
   const attachedDoc = params.attachments?.find((a) => a.type === "document");
   if (attachedDoc) {
-    const state = getStore();
+    const state = await loadTenantState(tenantContext);
     const latestDoc = state.documents[0];
     return `📄 **Document Indexed & Summarized: ${attachedDoc.name}**\n\n**Quick Summary:**\n${
       latestDoc?.summary || attachedDoc.textContent?.slice(0, 300)

@@ -10,7 +10,8 @@ import {
   publicRequestUrl,
 } from "@/lib/security/webhookAuth";
 import { processUserMessage } from "@/lib/ai/agent";
-import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
+import { resolveUserId, withVelnorTenantScope } from "@/lib/store";
+import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
 import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
@@ -39,7 +40,17 @@ function escapeXml(unsafe: string): string {
  */
 export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type") || "";
-  const state = getStore();
+  let rootConfig: Record<string, unknown>;
+  try {
+    rootConfig = await withVelnorTenantScope("default", async () => {
+      const { repository, tenantId } = getNodeTenantRepositoryContext();
+      const record = await repository.load(tenantId);
+      return (record?.state.config ?? {}) as Record<string, unknown>;
+    });
+  } catch (error) {
+    console.error("iMessage webhook configuration could not be loaded:", error);
+    return NextResponse.json({ error: "Webhook credentials are temporarily unavailable." }, { status: 503 });
+  }
   const isLocalSimulator = isSimulatorAllowed(req.headers.get("x-velnor-simulator"));
   let jsonPayload: any;
 
@@ -106,7 +117,7 @@ export async function POST(req: NextRequest) {
       });
 
       const twilioAuthToken =
-        state.config.twilioAuthToken || process.env.TWILIO_AUTH_TOKEN;
+        (typeof rootConfig.twilioAuthToken === "string" ? rootConfig.twilioAuthToken : "") || process.env.TWILIO_AUTH_TOKEN;
       const twilioDecision = authorizeTwilioRequest({
         authToken: twilioAuthToken,
         signature: req.headers.get("x-twilio-signature"),
@@ -154,7 +165,7 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const reply = await withVelnorUser(resolveUserId("imessage", to + ":" + from), () =>
+      const reply = await withVelnorTenantScope(resolveUserId("imessage", to + ":" + from), () =>
         processUserMessage({
           channel: "imessage",
           userHandle: from,
@@ -218,7 +229,7 @@ export async function POST(req: NextRequest) {
 
     after(async () => {
       try {
-            const { reply, outboundText, deliveryResults } = await withVelnorUser(
+            const { reply, outboundText, deliveryResults } = await withVelnorTenantScope(
               resolveUserId("imessage", provider + ":" + providerAccount + ":" + senderHandle),
               async () => {
                 const reply = await processUserMessage({
@@ -228,7 +239,10 @@ export async function POST(req: NextRequest) {
                   attachments: attachments.length > 0 ? attachments : undefined,
                 });
                 const outboundText = toPlainText(reply.text);
-                const scoped = getStore();
+                const { repository, tenantId } = getNodeTenantRepositoryContext();
+                const record = await repository.load(tenantId);
+                if (!record) throw new Error("Authenticated tenant state is not initialized.");
+                const scoped = record.state as unknown as { config: Record<string, any> };
                 const deliveryResults = [] as Array<{ provider: string; ok: boolean; status?: number; detail?: string }>; 
         
                 // Outbound dispatch via Sendblue if configured

@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - fix/security-hardening-followup
+      - cloudflare/vinext-migration
   pull_request:
     branches:
       - main
@@ -61,6 +62,25 @@ jobs:
           done
           node scripts/verify-velnor.mjs
           kill $SERVER_PID || true
+
+  vinext-compatibility-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install the existing locked dependencies
+        run: npm ci
+
+      - name: Scan Next.js application for vinext compatibility (no migration or deployment)
+        run: npx --yes vinext@1.4.5 check
 
   training-curriculum-contract:
     runs-on: ubuntu-latest
