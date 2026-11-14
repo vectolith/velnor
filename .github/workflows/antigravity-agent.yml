@@ -20,7 +20,7 @@ on:
         required: false
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: antigravity-agent
@@ -28,8 +28,6 @@ concurrency:
 
 jobs:
   agent:
-    permissions:
-      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -42,25 +40,14 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install pinned Antigravity CLI and bridge
+      - name: Install agent
         run: |
-          set -euo pipefail
-          mkdir -p "$HOME/.local/bin" "$RUNNER_TEMP/agy-cli" "$RUNNER_TEMP/agent"
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 \
-            -o "$RUNNER_TEMP/agy-cli.tar.gz" \
-            "https://github.com/google-antigravity/antigravity-cli/releases/download/1.5.6/agy_cli_linux_x64.tar.gz"
-          # SHA-256 is pinned from the official GitHub release asset metadata.
-          echo "408f902da6fce5a45ef777c246c182f6ef263eb155cc26548b910cdbc792dfd9  $RUNNER_TEMP/agy-cli.tar.gz" | sha256sum --check --strict
-          tar -xzf "$RUNNER_TEMP/agy-cli.tar.gz" -C "$RUNNER_TEMP/agy-cli"
-          AGY_BIN="$(find "$RUNNER_TEMP/agy-cli" -type f -name agy -perm /111 -print -quit)"
-          test -n "$AGY_BIN"
-          install -m 0755 "$AGY_BIN" "$HOME/.local/bin/agy"
-          "$HOME/.local/bin/agy" --version
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 https://antigravity.google/cli/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          cd "$RUNNER_TEMP/agent"
-          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o bridge.mjs https://antigravity.luch.dev/cloud/bridge-bfed143a5729.mjs
+          mkdir -p "$RUNNER_TEMP/agent" && cd "$RUNNER_TEMP/agent"
+          curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o bridge.mjs https://antigravity.luch.dev/cloud/bridge-5deb28256436.mjs
           curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 -o start-cloud-bridge.mjs https://antigravity.luch.dev/cloud/start-cloud-bridge-e9189556a93e.mjs
-          printf '%s  %s\n' bfed143a5729b2fb96120d2af9c9dd8b02c97bd7751a78d828f77899a6afaa49 bridge.mjs e9189556a93e717078e9927b126b9b74b2c12763d883ac38c39d4f8e978d8eaf start-cloud-bridge.mjs | sha256sum -c --strict
+          printf '%s  %s\n' 5deb28256436636cc99471a7de5060c2cb0dcd9b2f2b504187739d6e07318b26 bridge.mjs e9189556a93e717078e9927b126b9b74b2c12763d883ac38c39d4f8e978d8eaf start-cloud-bridge.mjs | sha256sum -c -
           npm install --no-audit --no-fund --silent node-pty@1.1.0
 
       - name: Configure git author
