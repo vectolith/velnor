@@ -1,7 +1,8 @@
 import { runAgentLoop } from "./loop";
 import { buildProviderChain, createProvider, estimateCostUsd } from "./registry";
 import { ToolSpec, Turn, Usage, emptyUsage } from "./providers/types";
-import { getEffectiveKeys, getStore, saveStore } from "../store";
+import { DEFAULT_STATE, getEffectiveKeys, type VelnorState } from "../store";
+import type { PersistedTenantState } from "../storage/d1TenantState";
 import { noteUserMessageAsync } from "../security/asyncToolPolicy";
 import { getNodeTenantRepositoryContext } from "../storage/currentTenantRepository";
 import {
@@ -46,6 +47,25 @@ export type { ToolExecutionBundle } from "./tools/execute";
 import { executeToolCall, ToolExecutionBundle } from "./tools/execute";
 import { VELNOR_TOOLS } from "./tools/declarations";
 
+type TenantRepositoryContext = ReturnType<typeof getNodeTenantRepositoryContext>;
+
+function createInitialTenantState(): PersistedTenantState {
+  return structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState;
+}
+
+async function loadTenantState(context: TenantRepositoryContext): Promise<VelnorState> {
+  const record = await context.repository.load(context.tenantId);
+  return (record?.state ?? DEFAULT_STATE) as unknown as VelnorState;
+}
+
+async function appendTenantMessage(context: TenantRepositoryContext, message: ChatMessage): Promise<void> {
+  await context.repository.update(context.tenantId, createInitialTenantState, (draft) => {
+    const state = draft as unknown as VelnorState;
+    if (!Array.isArray(state.messages)) state.messages = [];
+    state.messages.push(message);
+  });
+}
+
 export async function processUserMessage(params: {
   channel: ChannelType;
   text: string;
@@ -54,8 +74,6 @@ export async function processUserMessage(params: {
 }): Promise<ChatMessage> {
   const tenantContext = getNodeTenantRepositoryContext();
   await noteUserMessageAsync(tenantContext.repository, tenantContext.tenantId, params.text);
-  let state = getStore();
-  const { geminiApiKey, openaiApiKey, anthropicApiKey } = getEffectiveKeys(state);
 
   const userMsg: ChatMessage = {
     id: `msg-${Date.now()}-u`,
@@ -66,9 +84,10 @@ export async function processUserMessage(params: {
     timestamp: new Date().toISOString(),
     attachments: params.attachments,
   };
-  state.messages.push(userMsg);
-  // Persist the inbound message before repository-backed tools refresh this tenant scope.
-  saveStore(state);
+  // Persist the inbound message through the repository before tools refresh this tenant scope.
+  await appendTenantMessage(tenantContext, userMsg);
+  let state = await loadTenantState(tenantContext);
+  const { geminiApiKey, openaiApiKey, anthropicApiKey } = getEffectiveKeys(state);
 
   const bundle: ToolExecutionBundle = {
     toolActions: [],
@@ -96,7 +115,7 @@ export async function processUserMessage(params: {
   }
 
   // Repository-backed attachment ingestion may have refreshed the active tenant scope.
-  state = getStore();
+  state = await loadTenantState(tenantContext);
   const memoryLines = (state.memories || [])
     .slice(0, 12)
     .map((m) => "- [" + m.category.toUpperCase() + "] " + m.fact)
@@ -216,7 +235,7 @@ export async function processUserMessage(params: {
         details: providerFailures.join(" | ").slice(0, 300),
       });
     }
-    replyText = await runBuiltInAgentOrchestrator(params, bundle);
+    replyText = await runBuiltInAgentOrchestrator(params, bundle, tenantContext);
   }
 
   // Deduplicate citations
@@ -239,9 +258,7 @@ export async function processUserMessage(params: {
   };
 
   // Tool calls may have committed documents, memories, or policy state during this turn.
-  const finalState = getStore();
-  finalState.messages.push(velnorMsg);
-  saveStore(finalState);
+  await appendTenantMessage(tenantContext, velnorMsg);
   return velnorMsg;
 }
 
@@ -282,7 +299,8 @@ async function runBuiltInAgentOrchestrator(
     userHandle?: string;
     attachments?: Attachment[];
   },
-  bundle: ToolExecutionBundle
+  bundle: ToolExecutionBundle,
+  tenantContext: TenantRepositoryContext,
 ): Promise<string> {
   const raw = params.text.trim();
   const lower = raw.toLowerCase();
@@ -367,7 +385,7 @@ async function runBuiltInAgentOrchestrator(
   // Check if user attached a document
   const attachedDoc = params.attachments?.find((a) => a.type === "document");
   if (attachedDoc) {
-    const state = getStore();
+    const state = await loadTenantState(tenantContext);
     const latestDoc = state.documents[0];
     return `📄 **Document Indexed & Summarized: ${attachedDoc.name}**\n\n**Quick Summary:**\n${
       latestDoc?.summary || attachedDoc.textContent?.slice(0, 300)
