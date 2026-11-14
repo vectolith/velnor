@@ -3,22 +3,30 @@
 The Node implementation of the async `TenantRepository` contract is
 `src/lib/storage/nodeSqliteTenantRepository.ts`.
 
-It intentionally delegates reads and writes to the existing
-`loadUserState`/store scope and `saveStore` path. That preserves the current
-SQLite `kv_state` layout, JSON recovery mirror, legacy tenant adoption,
-canonical state migration, and secretBox sealing. It does not create a second
-database, rewrite existing rows, or change the production storage selection.
+It intentionally delegates canonical state migration and credential handling
+to the existing store. It preserves the SQLite `kv_state` rows, JSON recovery
+mirror, legacy tenant adoption, canonical state validation, and secretBox
+sealing. A new `kv_state_revisions` table tracks durable revisions without
+rewriting existing tenant rows; pre-existing rows begin at revision zero.
 
 ## Concurrency boundary
 
-Mutations are serialized per tenant within one Node process. The returned
-revision is a process-local generation counter, not a durable SQLite revision.
-This adapter therefore does not claim cross-process compare-and-swap safety.
-Keep a single writer process for this adapter; do not use it as a multi-replica
-coordination mechanism. D1 retains durable revision CAS.
+Mutations are serialized per tenant within one adapter instance and committed
+with SQLite `BEGIN IMMEDIATE` plus a durable revision compare-and-swap. Separate
+adapter instances/processes that read the same revision cannot both commit:
+the later writer receives an explicit conflict. Legacy `saveStore` writes also
+advance the revision, so a repository writer detects a legacy write that occurs
+between its read and commit.
 
-The mutation callback must not perform external side effects. A write can fail
-after the callback returns, and retries are not performed automatically.
+The JSON recovery mirror is written while the SQLite writer transaction is
+held, so concurrent repository commits cannot reorder their mirror writes.
+Legacy direct `saveStore` callers are not themselves conflict-aware and can
+still overwrite a concurrent repository commit if they mutate stale cached
+state. Therefore this is not yet a multi-replica guarantee for the whole app:
+all remaining legacy writers must migrate to the repository or an equivalent
+CAS boundary before multi-writer deployment. The mutation callback must not
+perform external side effects; conflicts are surfaced and callbacks are never
+retried automatically.
 
 ## Rollout status
 

@@ -36,3 +36,31 @@ testCase("Node/SQLite repository keeps tenant state isolated", async () => {
   assert.equal((await repository.load(first))?.state.value, "first");
   assert.equal((await repository.load(second))?.state.value, "second");
 });
+
+testCase("separate repository instances detect a durable same-tenant write conflict", async () => {
+  const firstRepository = createNodeSqliteTenantRepository();
+  const secondRepository = createNodeSqliteTenantRepository();
+  const tenant = "node-cas-test-" + Date.now();
+  const initial = (): PersistedTenantState => ({ counter: 0, usage: { requests: 0 } });
+  await firstRepository.update(tenant, initial, (draft) => { draft.counter = 1; });
+
+  let entered = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const mutate = async (draft: PersistedTenantState) => {
+    entered++;
+    if (entered === 2) release();
+    await gate;
+    draft.counter = Number(draft.counter ?? 0) + 1;
+  };
+
+  const outcomes = await Promise.allSettled([
+    firstRepository.update(tenant, initial, mutate),
+    secondRepository.update(tenant, initial, mutate),
+  ]);
+  assert.equal(outcomes.filter((item) => item.status === "fulfilled").length, 1);
+  assert.equal(outcomes.filter((item) => item.status === "rejected").length, 1);
+  const rejected = outcomes.find((item): item is PromiseRejectedResult => item.status === "rejected");
+  assert.match(String(rejected?.reason), /revision conflict/i);
+  assert.equal((await firstRepository.load(tenant))?.state.counter, 2);
+});
