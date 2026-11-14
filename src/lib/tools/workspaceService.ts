@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { DEFAULT_STATE, getStore, saveStore, type VelnorState } from "../store";
 import type { PersistedTenantState } from "../storage/d1TenantState";
 import { getNodeTenantRepositoryContext } from "../storage/currentTenantRepository";
-import { getGoogleAccessToken } from "@/lib/auth/googleToken";
+import { getGoogleAccessTokenAsync } from "@/lib/auth/googleTokenAsync";
 import { assertRecipientAllowed, parseAllowlist } from "@/lib/security/recipients";
 import { CalendarEventItem, ChannelType, EmailItem, ReminderItem } from "../types";
 
@@ -14,8 +14,8 @@ async function loadWorkspaceState() {
 }
 
 export async function listEmails(query?: string, maxResults = 6): Promise<EmailItem[]> {
-  const { state } = await loadWorkspaceState();
-  const token = await getGoogleAccessToken();
+  const { context, state } = await loadWorkspaceState();
+  const token = await getGoogleAccessTokenAsync(context.repository, context.tenantId);
   if (!token) throw new Error("Gmail inbox access requires a verified Google OAuth connection.");
   const limit = Math.min(Math.max(Math.floor(maxResults), 1), 50);
   const q = query ? "&q=" + encodeURIComponent(query) : "";
@@ -61,7 +61,7 @@ export async function draftOrSendEmail(params: {
   sendImmediately?: boolean;
 }): Promise<EmailItem> {
   const { context, state } = await loadWorkspaceState();
-  const token = await getGoogleAccessToken();
+  const token = await getGoogleAccessTokenAsync(context.repository, context.tenantId);
 
   if (params.sendImmediately) {
     assertRecipientAllowed(params.to, parseAllowlist(process.env.VELNOR_EMAIL_ALLOWLIST));
@@ -151,8 +151,8 @@ export async function organizeEmail(params: {
   action: "archive" | "mark_read" | "label";
   label?: string;
 }): Promise<{ updatedCount: number; affectedSubjects: string[] }> {
-  const { state } = await loadWorkspaceState();
-  const token = await getGoogleAccessToken();
+  const { context, state } = await loadWorkspaceState();
+  const token = await getGoogleAccessTokenAsync(context.repository, context.tenantId);
   if (!token) throw new Error("Gmail organization requires a verified Google OAuth connection.");
   if (!["archive", "mark_read", "label"].includes(params.action)) throw new Error("Unsupported Gmail organization action.");
   if (!params.emailId && !(params.query || "").trim()) throw new Error("Provide a Gmail message ID or search query.");
@@ -216,8 +216,8 @@ export async function organizeEmail(params: {
 }
 
 export async function listCalendarEvents(dateFilter?: string): Promise<CalendarEventItem[]> {
-  await loadWorkspaceState();
-  const token = await getGoogleAccessToken();
+  const { context } = await loadWorkspaceState();
+  const token = await getGoogleAccessTokenAsync(context.repository, context.tenantId);
   if (!token) throw new Error("Google Calendar access requires a verified Google OAuth connection.");
   const start = dateFilter ? new Date(dateFilter + "T00:00:00") : new Date();
   if (!dateFilter) start.setHours(0, 0, 0, 0);
@@ -265,7 +265,7 @@ export async function createCalendarEvent(params: {
       return `${nextH}:${String(m || 0).padStart(2, "0")}`;
     })();
 
-  const token = await getGoogleAccessToken();
+  const token = await getGoogleAccessTokenAsync(context.repository, context.tenantId);
   let remoteEventId: string | undefined;
   {
     const calendarResponse = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all", {
