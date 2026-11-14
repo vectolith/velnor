@@ -42,6 +42,7 @@ from train_velnor_lora import (
 from grade_generations import CASES, grade_all
 
 MODEL_ID = "Qwen/Qwen3-8B"
+TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 SEED = 42
 MAX_SEQ_LEN = int(os.environ.get("VELNOR_QWEN3_MAX_SEQ_LEN", "256"))
 EPOCHS = int(os.environ.get("VELNOR_QWEN3_EPOCHS", "1"))
@@ -110,17 +111,21 @@ def validate_resume_adapter(path: Path) -> dict:
         raise RuntimeError("Resume adapter is incomplete: config or weights are missing.")
     config = PeftConfig.from_pretrained(str(path))
     adapter_base = str(getattr(config, "base_model_name_or_path", "") or "").strip()
+    required_targets = set(TARGET_MODULES)
+    configured_targets = set(config.target_modules or [])
     if adapter_base != MODEL_ID:
         raise RuntimeError(
             f"Incompatible adapter base model {adapter_base!r}; expected {MODEL_ID!r}. "
             "Adapters are not transferable between Qwen3, Qwen2.5, and Llama."
         )
+    if config.task_type != "CAUSAL_LM" or int(config.r) != 8 or not required_targets.issubset(configured_targets):
+        raise RuntimeError("Resume adapter LoRA task, rank, or target modules do not match the Velnor Qwen3-8B training contract.")
     return {
         "base_model": adapter_base,
         "peft_type": str(config.peft_type),
         "task_type": str(config.task_type),
         "rank": int(config.r),
-        "target_modules": sorted(config.target_modules or []),
+        "target_modules": sorted(configured_targets),
     }
 
 
@@ -221,10 +226,7 @@ def main() -> None:
         gradient_checkpointing_kwargs={"use_reentrant": False},
     )
 
-    targets = [
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj",
-    ]
+    targets = TARGET_MODULES
     module_names = {name.rsplit(".", 1)[-1] for name, _ in base.named_modules()}
     missing = [name for name in targets if name not in module_names]
     if missing:
@@ -414,6 +416,8 @@ def main() -> None:
         },
         "dataset": {
             "train_examples": len(TRAIN),
+            "train_sha256": hashlib.sha256(json.dumps(TRAIN, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest(),
+            "heldout_sha256": hashlib.sha256(json.dumps(HELDOUT, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest(),
             "heldout_examples": len(HELDOUT),
             "general_curriculum_examples": len(EXTRA_CURRICULUM),
             "general_curriculum_sha256": sha256_file(EXTRA_CURRICULUM_PATH),
