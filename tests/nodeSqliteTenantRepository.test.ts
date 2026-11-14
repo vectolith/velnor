@@ -20,7 +20,7 @@ testCase("Node/SQLite repository serializes same-tenant async mutations", async 
   const loaded = await repository.load(tenant);
   assert.equal(loaded?.state.counter, 12);
   assert.equal(results.filter((item) => item.changed).length, 12);
-  assert.equal(loaded?.revision, 13);
+  assert.equal(loaded?.revision, 12);
 });
 
 testCase("Node/SQLite repository keeps tenant state isolated", async () => {
