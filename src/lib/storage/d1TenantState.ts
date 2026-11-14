@@ -30,8 +30,8 @@ export class TenantStateConflictError extends Error {
   }
 }
 function assertTenantId(tenantId: string): void {
-  if (!tenantId || tenantId.length > 128 || tenantId.trim() !== tenantId) {
-    throw new Error("Invalid tenant storage identifier.");
+  if (!tenantId || tenantId.length > 128 || !/^[A-Za-z0-9._@+-]+$/.test(tenantId)) {
+    throw new Error("Invalid or unsanitized tenant storage identifier.");
   }
 }
 function parseRecord(row: {
