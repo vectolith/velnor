@@ -15,6 +15,11 @@ function base64UrlDecode(value: string): Uint8Array {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
+function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer as ArrayBuffer;
+}
 async function hmacKey(secret: string): Promise<CryptoKey> {
   if (typeof secret !== "string" || secret.length < 32) throw new Error("VELNOR_TENANT_TOKEN_SECRET must be configured before Google OAuth can start.");
   return crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
@@ -30,14 +35,19 @@ export async function createGoogleOAuthStateAsync(tenantId: string, nonce: strin
   if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 3600) throw new Error("Google OAuth state lifetime must be between 1 and 3600 seconds.");
   const payload: GoogleOAuthStatePayload = { tenantId, nonce, exp: Math.floor(Date.now() / 1000) + ttlSeconds };
   const encoded = base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)));
-  const signature = await crypto.subtle.sign("HMAC", await hmacKey(secret), new TextEncoder().encode(encoded));
+  const signature = await crypto.subtle.sign("HMAC", await hmacKey(secret), asArrayBuffer(new TextEncoder().encode(encoded)));
   return encoded + "." + base64UrlEncode(new Uint8Array(signature));
 }
 export async function verifyGoogleOAuthStateAsync(value: string, secret: string): Promise<GoogleOAuthStatePayload | null> {
   try {
     const [encoded, signature, extra] = value.split(".");
     if (!encoded || !signature || extra) return null;
-    const valid = await crypto.subtle.verify("HMAC", await hmacKey(secret), base64UrlDecode(signature), new TextEncoder().encode(encoded));
+    const valid = await crypto.subtle.verify(
+      "HMAC",
+      await hmacKey(secret),
+      asArrayBuffer(base64UrlDecode(signature)),
+      asArrayBuffer(new TextEncoder().encode(encoded)),
+    );
     if (!valid) return null;
     const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(encoded))) as GoogleOAuthStatePayload;
     if (!payload || typeof payload.tenantId !== "string" || typeof payload.nonce !== "string" ||
