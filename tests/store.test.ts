@@ -130,3 +130,24 @@ test("legacy plaintext credentials in SQLite are resealed during hydration", asy
   const sqliteBytes = fs.readFileSync(path.join(testRoot, ".data", "velnor.db"), "latin1");
   assert.ok(!sqliteBytes.includes("legacy-loopmessage-auth-key"), "SQLite still contains the legacy plaintext secret");
 });
+
+test("tenant-only scope establishes identity without loading or persisting the Node store", async () => {
+  const rawId = "scope-only-tenant";
+  const id = store.sanitizeUserId(rawId);
+  await store.withVelnorTenantScope(rawId, async () => {
+    assert.equal(store.currentUserId(), id);
+    assert.equal(store.getStore().memories.length, 0);
+    await store.withVelnorTenantScope(rawId, () => {
+      assert.equal(store.currentUserId(), id);
+      store.getStore().memories.push({
+        id: "scope-memory",
+        category: "preference",
+        fact: "in-scope only",
+        createdAt: new Date().toISOString(),
+      });
+    });
+    assert.equal(store.getStore().memories[0]?.fact, "in-scope only");
+  });
+  assert.equal(store.listUserIds().includes(id), false);
+  await assert.rejects(store.withVelnorTenantScope("", () => undefined), /tenant identity is required/);
+});

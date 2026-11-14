@@ -295,6 +295,20 @@ export function withVelnorUserState<T>(
   return storage.run({ userId: id, state: mergeState(state) }, async () => fn());
 }
 
+/** Establish an authenticated tenant scope without synchronously loading Node storage. */
+export function withVelnorTenantScope<T>(
+  userId: string,
+  fn: () => T | Promise<T>,
+): Promise<T> {
+  if (typeof userId !== "string" || !userId.trim()) {
+    return Promise.reject(new Error("A tenant identity is required."));
+  }
+  const id = sanitizeUserId(userId);
+  const existing = storage.getStore();
+  if (existing && existing.userId === id) return Promise.resolve(fn());
+  return storage.run({ userId: id, state: mergeState(DEFAULT_STATE) }, async () => fn());
+}
+
 /** Run fn with the store bound to this user. */
 export function withVelnorUser<T>(userId: string, fn: () => T | Promise<T>): Promise<T> {
   const id = sanitizeUserId(userId);

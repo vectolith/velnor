@@ -10,8 +10,8 @@ Do not replace `saveStore()` with fire-and-forget promises, hide D1 writes in `w
 
 ### Request and scheduled entry points
 
-- `src/app/api/chat/route.ts` — authenticated tenant scope; document ingestion, memory add/list/delete, and sensitive-action confirmation state now use the async repository. Snapshot/settings, messages, reactions, reminders, calendar/email actions, and other state changes still include synchronous store paths.
-- `src/app/api/settings/route.ts` — tenant configuration reads and writes remain synchronous.
+- `src/app/api/chat/route.ts` — authenticated tenant scope; document ingestion, memory add/list/delete, sensitive-action confirmation state, and reminder create/list/toggle now use the async repository. Snapshot, messages, reactions, calendar/email actions, and other state changes still include synchronous store paths.
+- `src/app/api/settings/route.ts` — GET/POST now use the async tenant repository through a tenant-only scope; this route no longer synchronously loads or saves the Node store.
 - `src/app/api/auth/google/route.ts` and `src/app/api/auth/google/callback/route.ts` — tenant OAuth setup, one-time state/nonce consumption, token exchange, and credential persistence remain synchronous.
 - `src/app/api/siri/route.ts` and `src/app/api/tts/route.ts` — tenant-scoped AI and speech processing; inspect each request path for remaining synchronous state access.
 - `src/app/api/webhooks/slack/route.ts` and `src/app/api/webhooks/imessage/route.ts` — signed inbound events, tenant resolution, AI processing, and outbound provider delivery. Their public provider callback routes must not be blanket-protected by Cloudflare Access.
@@ -39,7 +39,8 @@ The list above is a migration inventory, not proof that these modules are Worker
 - `createD1TenantRepository()` adapts D1 state primitives with durable revision compare-and-swap.
 - `createNodeSqliteTenantRepository()` adapts the existing Node state store. It uses SQLite `BEGIN IMMEDIATE`, a durable `kv_state_revisions` table, and compare-and-swap writes across repository instances/processes. Existing rows begin at revision zero.
 - The Node repository bypasses the process cache for fresh reads and checks revisions around the read. Same-tenant nested scopes are refreshed after repository updates so the request sees its committed state.
-- Document ingestion/retrieval, chat/agent memory add/list/delete, sensitive-action confirmation state, and workspace email/event/reminder state operations now use the async repository through a shared Node repository context. The context requires an authenticated tenant scope; it does not silently fall back to the root profile.
+- Document ingestion/retrieval, chat/agent memory add/list/delete, sensitive-action confirmation state, workspace local email/event/reminder operations, and settings GET/POST now use the async repository through a shared Node repository context. The context requires an authenticated tenant scope; it does not silently fall back to the root profile.
+- `withVelnorTenantScope()` establishes an authenticated tenant identity without synchronously loading Node storage. The settings route uses this entry boundary and then reads or mutates through the repository.
 - Sensitive-action confirmations are stored per tenant, bound to exact JSON arguments, expire after five minutes, and are consumed atomically. The async policy uses Web Crypto and contains no Node-only crypto dependency.
 - Legacy direct `saveStore()` writers still advance the durable revision but do not participate in compare-and-swap. They can still race with repository writers if they mutate stale cached state. Whole-application multi-writer safety is therefore not established until remaining writers are migrated.
 
