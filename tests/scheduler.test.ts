@@ -12,13 +12,13 @@ test("reminder dispatch traverses tenant partitions without mixing their state",
   const { withVelnorUser, getStore, resetStoreCache } = await import("../src/lib/store");
   const { createReminderAsync } = await import("../src/lib/tools/workspaceService");
   const { dispatchReminderNotification } = await import("../src/lib/scheduler");
-  await withVelnorUser("scheduler-tenant-a", () => {
+  await withVelnorUser("scheduler-tenant-a", async () => {
     await createReminderAsync({ text: "tenant A reminder", dueAt: new Date(Date.now() - 1000).toISOString(), channel: "imessage", recipient: "" });
   });
-  await withVelnorUser("scheduler-tenant-a", () => {
+  await withVelnorUser("scheduler-tenant-a", async () => {
     await createReminderAsync({ text: "future tenant A reminder", dueAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), channel: "imessage", recipient: "" });
   });
-  await withVelnorUser("scheduler-tenant-b", () => {
+  await withVelnorUser("scheduler-tenant-b", async () => {
     await createReminderAsync({ text: "tenant B reminder", dueAt: new Date(Date.now() - 1000).toISOString(), channel: "imessage", recipient: "" });
   });
 
