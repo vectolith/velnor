@@ -45,8 +45,20 @@ OUT = Path(os.environ.get("VELNOR_QWEN3_OUTPUT", "outputs/qwen3-8b-qlora"))
 # never overwrite the better adapter.
 RESUME = os.environ.get("VELNOR_QWEN3_RESUME", "").strip()
 PREV_BEST_LOSS = float(os.environ.get("VELNOR_QWEN3_PREV_BEST_LOSS", "inf"))
+# Optional early stopping. 0 disables it and preserves the original train-for-all
+# -epochs behaviour. With N>0 the loop halts after N consecutive epochs that fail
+# to beat best_loss, since the adapter on disk is already the better one.
+PATIENCE = int(os.environ.get("VELNOR_QWEN3_PATIENCE", "0"))
 random.seed(SEED)
 torch.manual_seed(SEED)
+
+
+def should_stop_early(stalled_epochs: int, patience: int) -> bool:
+    """True when training has gone `patience` consecutive epochs without improving.
+
+    patience <= 0 disables early stopping, so a run always completes its EPOCHS.
+    """
+    return patience > 0 and stalled_epochs >= patience
 
 
 def gpu_preflight() -> dict:
@@ -193,6 +205,9 @@ def main() -> None:
     best_loss = PREV_BEST_LOSS
     best_epoch = 0
     optimizer_step = 0
+    epochs_run = 0
+    stalled_epochs = 0
+    stopped_early = False
 
     for epoch in range(1, EPOCHS + 1):
         model.train()
@@ -224,12 +239,16 @@ def main() -> None:
                 optimizer.zero_grad(set_to_none=True)
 
         val_loss = eval_loss(model, val_batches)
+        epochs_run = epoch
         improved = val_loss < best_loss
         if improved:
             best_loss = val_loss
             best_epoch = epoch
+            stalled_epochs = 0
             model.save_pretrained(best_dir)
             tokenizer.save_pretrained(best_dir)
+        else:
+            stalled_epochs += 1
         history.append({
             "epoch": epoch,
             "train_loss": round(epoch_loss / len(train_batches), 5),
@@ -237,7 +256,15 @@ def main() -> None:
             "best": improved,
         })
         print(f"[qwen3-8b] epoch={epoch} train={epoch_loss/len(train_batches):.5f} "
-              f"val={val_loss:.5f} best={improved}", flush=True)
+              f"val={val_loss:.5f} best={improved} stalled={stalled_epochs}", flush=True)
+        if should_stop_early(stalled_epochs, PATIENCE):
+            stopped_early = True
+            print(
+                f"[qwen3-8b] early stopping: {stalled_epochs} epoch(s) without "
+                f"improvement over best_loss={best_loss:.5f} (patience={PATIENCE})",
+                flush=True,
+            )
+            break
 
     # Reload the selected adapter for final rubric evaluation.
     del optimizer, model, base
@@ -299,12 +326,17 @@ def main() -> None:
             "heldout_source": "training/train_velnor_lora.py:HELDOUT",
         },
         "parameters": {"trainable": trainable, "total": total_params},
-        "validation": {
-            "pre_training_loss": round(pre_val_loss, 5),
-            "best_loss": round(best_loss, 5),
-            "best_epoch": best_epoch,
-            "history": history,
-        },
+            "validation": {
+                "pre_training_loss": round(pre_val_loss, 5),
+                "best_loss": round(best_loss, 5),
+                "best_epoch": best_epoch,
+                "history": history,
+                "early_stopping": {
+                    "patience": PATIENCE,
+                    "epochs_run": epochs_run,
+                    "stopped_early": stopped_early,
+                },
+            },
         "rubric": {
             "base": base_eval,
             "tuned": tuned_eval,
