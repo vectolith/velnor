@@ -10,7 +10,7 @@ Do not replace `saveStore()` with fire-and-forget promises, hide D1 writes in `w
 
 ### Request and scheduled entry points
 
-- `src/app/api/chat/route.ts` — authenticated tenant scope; snapshot GET, document ingestion, memory add/list/delete, sensitive-action confirmation state, and reminder create/list/toggle now use the async repository. Message processing, reactions, calendar/email actions, and other POST state changes still include synchronous store paths.
+- `src/app/api/chat/route.ts` — authenticated tenant scope; snapshot GET and POST actions now use the async tenant repository for chat history, reactions, clear-chat, document ingestion, memory add/list/delete, reminder create/list/toggle, and local email/calendar response snapshots. No direct synchronous store reads or writes remain in this route. The route still imports Node-only database status and uses the Node repository adapter, so it is not yet a Workers entrypoint.
 - `src/app/api/settings/route.ts` — GET/POST now use the async tenant repository through a tenant-only scope; this route no longer synchronously loads or saves the Node store.
 - `src/app/api/auth/google/route.ts` and `src/app/api/auth/google/callback/route.ts` — OAuth setup and callback now use the async tenant repository for PKCE verifier/nonce and credential persistence. Callback remains publicly reachable (not blanket-protected by Cloudflare Access), verifies HMAC state, and atomically consumes the one-time nonce/verifier before token exchange. The route entrypoints still use the Node tenant-scope wrapper and require a later Worker-native request context.
 - `src/app/api/siri/route.ts` and `src/app/api/tts/route.ts` — now establish tenant identity without synchronously loading Node store state; AI message history and speech provider configuration are loaded through the async repository. The tenant-scope wrapper still comes from the Node store module and must be replaced by a Worker-native request context before deployment.
@@ -22,15 +22,15 @@ Do not replace `saveStore()` with fire-and-forget promises, hide D1 writes in `w
 
 ### Synchronous store consumers still requiring migration
 
-- `src/lib/ai/agent.ts` — inbound/outbound message history is persisted through the async repository; token/cost usage is committed through the repository after each model response. Provider/tool orchestration remains in the Node application boundary.
+- `src/lib/ai/agent.ts` — inbound/outbound message history and token/cost usage are persisted through the async repository. Provider/tool orchestration remains in the Node application boundary.
 - `src/lib/auth/googleToken.ts` — legacy synchronous token refresh remains for non-migrated callers.
 - `src/lib/auth/googleTokenAsync.ts` — Workers-compatible async token refresh reads and persists tenant OAuth credentials through `TenantRepository`; workspace Gmail/Calendar calls now use this path. Runtime bindings should pass Google client credentials explicitly rather than relying on Node process globals.
-- `src/lib/tools/workspaceService.ts` — Gmail and Calendar API calls use the async OAuth token helper and local email/event/reminder persistence and list/toggle operations use the async repository. The module still has Node-specific compatibility code for the legacy synchronous reminder scheduler and is not yet a Workers entrypoint. External Gmail/Calendar mutations are not outbox-backed and must not be retried automatically. Legacy synchronous reminder helpers remain for scheduler compatibility.
+- `src/lib/tools/workspaceService.ts` — Gmail and Calendar API calls use the async OAuth token helper and local email/event/reminder persistence and list/toggle operations use the async repository. The legacy synchronous reminder helpers have been removed; the scheduler remains the last synchronous reminder-state consumer. External Gmail/Calendar mutations are not outbox-backed and must not be retried automatically.
 - `src/lib/tools/memoryStore.ts` — legacy synchronous exports remain, but audited chat and agent add/list/delete callers now use the async repository.
 - `src/lib/security/toolPolicy.ts` — legacy in-memory confirmation maps remain for tests/compatibility; active agent and chat routes now use a tenant-persisted async confirmation policy with Web Crypto fingerprints and atomic one-time consumption.
 - `src/lib/tools/documentStore.ts` — document metadata/chunks and provider-key reads now use the async repository. PDF extraction, URL fetching, and embedding generation remain in the Node boundary.
 - `src/lib/tools/multimodal.ts` — provider configuration reads now use the async repository, while provider SDKs and Node-specific media handling remain in the application boundary.
-- `src/lib/scheduler.ts` — still uses the synchronous store while dispatching Slack/SMS/iMessage reminders. Do not move its state transition into a retryable callback; dispatch and completion must be coordinated through the durable outbox.
+- `src/lib/scheduler.ts` — still uses the synchronous store while dispatching Slack/SMS/iMessage reminders. Reminder dispatch is not yet outbox-backed. Do not move its state transition into a retryable callback; dispatch and completion must be coordinated through the durable outbox.
 
 The list above is a migration inventory, not proof that these modules are Worker-compatible. Search for every remaining `getStore()`, `saveStore()`, `loadUserState()`, `listUserIds()`, and `aggregateUsage()` reference again before removing the Node adapter.
 
