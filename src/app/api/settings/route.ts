@@ -82,7 +82,12 @@ async function updateSettings(body: Record<string, unknown>) {
         state.config = structuredClone(DEFAULT_STATE.config);
       }
 
-      if (typeof body.activeProvider === "string" && body.activeProvider) state.config.activeProvider = body.activeProvider;
+      if (
+        body.activeProvider === "gemini" ||
+        body.activeProvider === "openai" ||
+        body.activeProvider === "anthropic" ||
+        body.activeProvider === "auto"
+      ) state.config.activeProvider = body.activeProvider;
       if (typeof body.geminiModel === "string" && body.geminiModel) state.config.geminiModel = body.geminiModel;
       if (typeof body.geminiImageModel === "string" && body.geminiImageModel) state.config.geminiImageModel = body.geminiImageModel;
       if (typeof body.openaiModel === "string" && body.openaiModel) state.config.openaiModel = body.openaiModel;
