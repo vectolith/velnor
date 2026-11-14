@@ -90,3 +90,7 @@ jobs:
       - name: Bundle Cloudflare identity gateway (no deployment)
         working-directory: identity-gateway
         run: npx --yes wrangler@4.160.0 deploy --dry-run --outdir ../.wrangler/identity-gateway
+
+      - name: Bundle Cloudflare workers.dev gateway profile (no deployment)
+        working-directory: identity-gateway
+        run: npx --yes wrangler@4.160.0 deploy --dry-run --config wrangler.workers-dev.toml --outdir ../.wrangler/identity-gateway-workers-dev
