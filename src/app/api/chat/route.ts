@@ -4,15 +4,13 @@ import { getDatabaseEngineStatus } from "@/lib/sqliteDb";
 import {
   DEFAULT_STATE,
   getEffectiveKeys,
-  getStore,
-  saveStore,
   type VelnorState,
   withVelnorTenantScope,
-  withVelnorUser,
 } from "@/lib/store";
 import { ingestDocumentOrUrl } from "@/lib/tools/documentStore";
 import { addMemoryFactAsync, deleteMemoryFactAsync, listMemoryFactsAsync } from "@/lib/tools/memoryStore";
 import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
+import type { PersistedTenantState } from "@/lib/storage/d1TenantState";
 import { transcribeAudioWithProvider } from "@/lib/tools/multimodal";
 import {
   createCalendarEvent,
@@ -87,7 +85,23 @@ export async function POST(req: NextRequest) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return NextResponse.json({ error: "JSON body must be an object." }, { status: 400 });
   }
-  return withVelnorUser(tenant.userId, () => handlePost(body));
+  return withVelnorTenantScope(tenant.userId, () => handlePost(body));
+}
+
+async function loadChatState(): Promise<VelnorState> {
+  const { repository, tenantId } = getNodeTenantRepositoryContext();
+  const record = await repository.load(tenantId);
+  return (record?.state ?? DEFAULT_STATE) as unknown as VelnorState;
+}
+
+async function updateChatState<TResult>(mutate: (state: VelnorState) => TResult): Promise<TResult> {
+  const { repository, tenantId } = getNodeTenantRepositoryContext();
+  const updated = await repository.update(
+    tenantId,
+    () => structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState,
+    (draft) => mutate(draft as unknown as VelnorState),
+  );
+  return updated.result;
 }
 
 async function requireActionConfirmation(
@@ -116,7 +130,8 @@ async function handlePost(body: any) {
 
     if (action === "toggle_reminder") {
       const updated = await toggleReminderAsync(String(body.id));
-      return NextResponse.json({ reminder: updated, reminders: getStore().reminders });
+      const state = await loadChatState();
+      return NextResponse.json({ reminder: updated, reminders: state.reminders });
     }
 
     if (action === "add_memory") {
@@ -146,21 +161,21 @@ async function handlePost(body: any) {
       if (confirmation) return confirmation;
       await organizeEmail(args);
       return NextResponse.json({
-        emails: getStore().emails.filter((e) => !e.archived),
+        emails: (await loadChatState()).emails.filter((e) => !e.archived),
       });
     }
 
     if (action === "toggle_reaction") {
-      const state = getStore();
-      const msg = state.messages.find((m) => m.id === String(body.messageId));
-      const emoji = String(body.emoji || "❤️");
-      if (msg) {
+      await updateChatState((state) => {
+        const msg = state.messages.find((m) => m.id === String(body.messageId));
+        const emoji = String(body.emoji || "❤️");
+        if (!msg) return;
         const list = msg.reactions || [];
         msg.reactions = list.includes(emoji)
           ? list.filter((r) => r !== emoji)
           : [...list, emoji];
-        saveStore(state);
-      }
+      });
+      const state = await loadChatState();
       return NextResponse.json({ messages: state.messages });
     }
 
@@ -170,7 +185,8 @@ async function handlePost(body: any) {
         dueAt: String(body.dueAt || "Today at 5:00 PM"),
         channel: (body.channel as ChannelType) || "imessage",
       });
-      return NextResponse.json({ reminder: rem, reminders: getStore().reminders });
+      const state = await loadChatState();
+      return NextResponse.json({ reminder: rem, reminders: state.reminders });
     }
 
     if (action === "create_event") {
@@ -185,7 +201,8 @@ async function handlePost(body: any) {
       const confirmation = await requireActionConfirmation("create_calendar_event", args, body.confirmationText);
       if (confirmation) return confirmation;
       const ev = await createCalendarEvent(args);
-      return NextResponse.json({ event: ev, calendarEvents: getStore().calendarEvents });
+      const state = await loadChatState();
+      return NextResponse.json({ event: ev, calendarEvents: state.calendarEvents });
     }
 
     if (action === "ingest_document") {
@@ -196,7 +213,8 @@ async function handlePost(body: any) {
         mimeType: body.mimeType ? String(body.mimeType) : undefined,
         url: body.url ? String(body.url) : undefined,
       });
-      return NextResponse.json({ document: doc, documents: getStore().documents });
+      const state = await loadChatState();
+      return NextResponse.json({ document: doc, documents: state.documents });
     }
 
     if (action === "transcribe_audio") {
@@ -208,14 +226,13 @@ async function handlePost(body: any) {
     }
 
     if (action === "clear_chat") {
-      const state = getStore();
       const targetChannel = body.channel as ChannelType | undefined;
-      if (targetChannel) {
-        state.messages = state.messages.filter((m) => m.channel !== targetChannel);
-      } else {
-        state.messages = [];
-      }
-      saveStore(state);
+      await updateChatState((state) => {
+        state.messages = targetChannel
+          ? state.messages.filter((m) => m.channel !== targetChannel)
+          : [];
+      });
+      const state = await loadChatState();
       return NextResponse.json({ messages: state.messages });
     }
 
@@ -231,7 +248,7 @@ async function handlePost(body: any) {
       attachments,
     });
 
-    const state = getStore();
+    const state = await loadChatState();
     return NextResponse.json({
       reply,
       messages: state.messages,
