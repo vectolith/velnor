@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { safeFetchText } from "@/lib/security/outboundUrl";
-import { DEFAULT_STATE, getEffectiveKeys, getStore } from "../store";
+import { DEFAULT_STATE, getEffectiveKeys, type VelnorState } from "../store";
 import type { PersistedTenantState } from "../storage/d1TenantState";
 import { getNodeTenantRepositoryContext } from "../storage/currentTenantRepository";
 import type { IndexedDocument } from "../types";
@@ -19,6 +19,12 @@ async function computeEmbedding(text: string, geminiKey?: string): Promise<numbe
   } catch {
     return undefined;
   }
+}
+
+async function loadDocumentProviderKey(context: ReturnType<typeof getNodeTenantRepositoryContext>): Promise<string | undefined> {
+  const record = await context.repository.load(context.tenantId);
+  const state = (record?.state ?? DEFAULT_STATE) as unknown as VelnorState;
+  return getEffectiveKeys(state).geminiApiKey;
 }
 
 function tenantDocumentStore(
@@ -41,7 +47,7 @@ export async function ingestDocumentOrUrl(params: {
   url?: string;
 }): Promise<IndexedDocument> {
   const context = getNodeTenantRepositoryContext();
-  const { geminiApiKey } = getEffectiveKeys(getStore());
+  const geminiApiKey = await loadDocumentProviderKey(context);
   let rawText = params.content || "";
   if (rawText.length > 2_000_000) throw new Error("Document text exceeds the 2 MB indexing limit.");
 
@@ -92,6 +98,6 @@ export async function queryVectorDocuments(
   documents: IndexedDocument[];
 }> {
   const context = getNodeTenantRepositoryContext();
-  const { geminiApiKey } = getEffectiveKeys(getStore());
+  const geminiApiKey = await loadDocumentProviderKey(context);
   return tenantDocumentStore(context, geminiApiKey).query(query, topK);
 }
