@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - fix/security-hardening-followup
+      - cloudflare/vinext-migration
   pull_request:
     branches:
       - main
