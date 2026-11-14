@@ -1,5 +1,5 @@
 import { Citation } from "../types";
-import { resolveAndAssert } from "@/lib/security/outboundUrl";
+import { safeFetchText } from "@/lib/security/outboundUrl";
 
 export interface WebSearchOutput {
   query: string;
@@ -86,18 +86,13 @@ export function extractReadableText(html: string): string {
 
 async function fetchPageText(url: string): Promise<string> {
   try {
-    // SSRF guard: search results and user links are untrusted input.
-    await resolveAndAssert(url);
-    const res = await fetch(url, {
-      redirect: "manual",
-      headers: { "user-agent": UA, accept: "text/html,application/xhtml+xml" },
-      signal: AbortSignal.timeout(7000),
+    const result = await safeFetchText(url, {
+      timeoutMs: 7000,
+      maxBytes: 2_000_000,
+      maxRedirects: 3,
+      accept: (contentType) => /text\/html|text\/plain|application\/xhtml/i.test(contentType),
     });
-    if (!res.ok) return "";
-    const type = res.headers.get("content-type") || "";
-    if (!/text\/html|text\/plain|application\/xhtml/i.test(type)) return "";
-    const html = await res.text();
-    return extractReadableText(html).slice(0, PAGE_CHARS);
+    return extractReadableText(result.text).slice(0, PAGE_CHARS);
   } catch {
     return "";
   }

@@ -38,7 +38,7 @@ test("provider keys never reach SQLite, or the JSON store, in plaintext", async 
   assert.ok(jsonFile, "no JSON state file was written");
   const json = fs.readFileSync(path.join(usersDir, jsonFile), "utf8");
   assert.ok(!json.includes(SENTINEL), "JSON store wrote the provider key in plaintext");
-  assert.ok(json.includes("v1:"), "JSON store did not seal the credential");
+  assert.ok(/v[12]:/.test(json), "JSON store did not seal the credential");
 
   // The database must live on the configured volume, not beside the code, or a
   // container restart silently drops every profile while the JSON store survives.
@@ -52,5 +52,10 @@ test("provider keys never reach SQLite, or the JSON store, in plaintext", async 
   // The key must still be usable: reloading the profile must return the real value.
   const reloaded = store.loadUserState(store.sanitizeUserId("default"));
   assert.equal(reloaded.config.geminiApiKey, SENTINEL, "sealed key did not decrypt on load");
-  fs.rmSync(dir, { recursive: true, force: true });
+  store.resetStoreCache();
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // Windows file handle release guard
+  }
 });

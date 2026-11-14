@@ -7,6 +7,8 @@
  * an internal RPC with strict execution verification and zero fabrication.
  */
 
+import { resolveAndAssert } from "@/lib/security/outboundUrl";
+
 export interface BrowserTaskOptions {
   task: string;
   startUrl?: string;
@@ -47,6 +49,12 @@ export async function delegateBrowserTaskToBlud(
     };
   }
 
+  if (task.length > 8000) {
+    return { status: "failure", summary: "Browser task exceeds the 8,000-character limit.", verifiedAtUtc, error: "Task instructions are too long." };
+  }
+  const taskUrls = [startUrl, ...(task.match(/https?:\/\/[^\s)]+/g) || [])].filter((value): value is string => Boolean(value));
+  for (const url of taskUrls) await resolveAndAssert(url);
+
   // 1. Attempt internal RPC to Blud browser agent
   const rpcUrl = DEFAULT_BLUD_RPC_URL;
   const sharedSecret =
@@ -86,10 +94,18 @@ export async function delegateBrowserTaskToBlud(
 
     if (res.ok) {
       const data = await res.json();
+      if (!data || data.status !== "success") {
+        return {
+          status: data?.status === "offline" ? "offline" : "failure",
+          summary: data?.message || data?.summary || "Blud did not confirm successful browser execution.",
+          error: data?.error || "Coordinator response did not contain status=success.",
+          verifiedAtUtc,
+        };
+      }
       return {
-        status: data.status === "failure" ? "failure" : "success",
-        summary: data.message || data.summary || "Browser task executed by Blud Kernel coordinator.",
-        currentUrl: data.currentUrl || startUrl,
+        status: "success",
+        summary: data.message || data.summary || "Browser task completed and confirmed by Blud.",
+        currentUrl: typeof data.currentUrl === "string" ? data.currentUrl : startUrl,
         extractedData: data.data || data.extractedData,
         images: Array.isArray(data.images) ? data.images : [],
         verifiedAtUtc,

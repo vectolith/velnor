@@ -1,4 +1,4 @@
-import { getStore, saveStore, resolveSlackChannel } from "./store";
+import { getStore, saveStore, resolveSlackChannel, listUserIds, withVelnorUser } from "./store";
 import { sendSendblueMessage } from "./channels/sendblue";
 import { sendLoopMessage } from "./channels/loopmessage";
 import { postSlackMessage } from "./channels/slack";
@@ -9,13 +9,28 @@ export interface DispatchedReminderResult {
   deliveredVia: string[];
 }
 
-export async function dispatchReminderNotification(
+export async function dispatchReminderNotification(reminderId?: string): Promise<DispatchedReminderResult[]> {
+  const userIds = new Set(listUserIds());
+  userIds.add("default");
+  const results: DispatchedReminderResult[] = [];
+  for (const userId of userIds) {
+    const tenantResults = await withVelnorUser(userId, () => dispatchTenantReminderNotification(reminderId));
+    results.push(...tenantResults);
+  }
+  return results;
+}
+
+async function dispatchTenantReminderNotification(
   reminderId?: string
 ): Promise<DispatchedReminderResult[]> {
   const state = getStore();
-  const pending = state.reminders.filter((r) =>
-    reminderId ? r.id === reminderId : !r.completed
-  );
+  const now = Date.now();
+  const pending = state.reminders.filter((reminder) => {
+    if (reminder.completed) return false;
+    if (reminderId) return reminder.id === reminderId;
+    const dueAt = Date.parse(reminder.dueAt);
+    return Number.isFinite(dueAt) && dueAt <= now;
+  });
 
   const results: DispatchedReminderResult[] = [];
 
@@ -54,6 +69,7 @@ export async function dispatchReminderNotification(
         apiKeyId: state.config.sendblueApiKey,
         apiSecretKey: state.config.sendblueApiSecret,
         number: rem.recipient,
+        fromNumber: state.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
         content: `🔔 Reminder from Velnor: ${rem.text}`,
       });
       if (sendblueResult.ok) channelsUsed.push("sendblue-imessage");
@@ -64,12 +80,10 @@ export async function dispatchReminderNotification(
     if (
       rem.channel === "imessage" &&
       state.config.loopMessageAuthKey &&
-      state.config.loopMessageSecretKey &&
       rem.recipient
     ) {
       const loopResult = await sendLoopMessage({
         authKey: state.config.loopMessageAuthKey,
-        secretKey: state.config.loopMessageSecretKey,
         recipient: rem.recipient,
         text: `🔔 Reminder from Velnor: ${rem.text}`,
       });

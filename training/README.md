@@ -1,4 +1,4 @@
-# Velnor Domain LoRA (`training/`)
+# Velnor model training
 
 LoRA fine-tuning harness for the behaviour layer of Velnor (`velnor-coder-v2`), built on
 `Qwen/Qwen2.5-Coder-1.5B-Instruct` (1.5B parameters). The complete training and held-out

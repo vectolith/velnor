@@ -1,0 +1,13 @@
+name = "velnor-identity-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-11-11"
+workers_dev = false
+preview_urls = false
+keep_vars = true
+
+# Route only the API path through the identity gateway; the web frontend remains separate.
+routes = [
+  { pattern = "api.velnor.ai/api/*", zone_name = "velnor.ai" }
+]
+
+# Keep the Velnor origin private or restrict it so clients cannot bypass this gateway.

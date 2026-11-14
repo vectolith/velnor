@@ -3,7 +3,7 @@ import { buildSlackManifest, normalizeBaseUrl } from "@/lib/channels/slackManife
 
 export async function GET(req: NextRequest) {
   const baseUrl = normalizeBaseUrl(
-    req.nextUrl.searchParams.get("baseUrl") || req.nextUrl.origin || "https://your-velnor-domain.run.app"
+    req.nextUrl.searchParams.get("baseUrl") || process.env.VELNOR_PUBLIC_URL || req.nextUrl.origin || "https://your-velnor-domain.run.app"
   );
   const slackManifest = buildSlackManifest(baseUrl);
 

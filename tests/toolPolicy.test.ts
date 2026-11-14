@@ -1,3 +1,4 @@
+import { withVelnorUser } from "../src/lib/store";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -20,7 +21,7 @@ test("a sensitive tool is blocked until the user says yes", () => {
   noteUserMessage("email Aishat about the launch");
   const first = enforceToolPolicy("draft_or_send_email");
   assert.equal(first.allowed, false);
-  assert.match(String(first.reason), /confirmation|yes/i);
+  assert.match(String(first.reason), /confirmation|confirm|yes/i);
   assert.equal(pendingCount(), 1);
 
   noteUserMessage("yes");
@@ -30,6 +31,18 @@ test("a sensitive tool is blocked until the user says yes", () => {
 
   const third = enforceToolPolicy("draft_or_send_email");
   assert.equal(third.allowed, false, "the next send needs its own confirmation");
+});
+
+test("an old affirmative cannot authorize an action requested later", () => {
+  resetToolPolicy();
+  noteUserMessage("yes");
+  assert.equal(enforceToolPolicy("organize_email", { emailId: "e-1" }).allowed, false);
+  // No new user message: the previously recorded yes must not be reusable.
+  assert.equal(enforceToolPolicy("organize_email", { emailId: "e-1" }).allowed, false);
+  noteUserMessage("please archive that email");
+  assert.equal(enforceToolPolicy("organize_email", { emailId: "e-1" }).allowed, false);
+  noteUserMessage("yes");
+  assert.equal(enforceToolPolicy("organize_email", { emailId: "e-1" }).allowed, true);
 });
 
 test("a non-affirmative reply does not unlock the action", () => {
@@ -50,5 +63,33 @@ test("affirmation detection is strict", () => {
 });
 
 test("the sensitive set is exactly the tools that leave the machine", () => {
-  assert.deepEqual([...SENSITIVE_TOOLS].sort(), ["create_calendar_event", "draft_or_send_email", "organize_email"]);
+  assert.deepEqual([...SENSITIVE_TOOLS].sort(), ["create_calendar_event", "delegate_browser_task", "draft_or_send_email", "organize_email"]);
+});
+
+test("confirmation is bound to exact arguments", () => {
+  resetToolPolicy();
+  noteUserMessage("send the draft to a@example.com");
+  assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com", subject: "A", body: "B" }).allowed, false);
+  noteUserMessage("yes");
+  assert.equal(enforceToolPolicy("draft_or_send_email", { to: "b@example.com", subject: "A", body: "B" }).allowed, false);
+  noteUserMessage("yes");
+  assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com", subject: "A", body: "B" }).allowed, false);
+  noteUserMessage("yes");
+  assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com", subject: "A", body: "B" }).allowed, true);
+});
+
+test("one tenant cannot confirm another tenant's pending action", async () => {
+  resetToolPolicy();
+  await withVelnorUser("policy-tenant-a", () => {
+    noteUserMessage("send the approved message");
+    assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com" }).allowed, false);
+  });
+  await withVelnorUser("policy-tenant-b", () => {
+    noteUserMessage("yes");
+    assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com" }).allowed, false);
+  });
+  await withVelnorUser("policy-tenant-a", () => {
+    noteUserMessage("yes");
+    assert.equal(enforceToolPolicy("draft_or_send_email", { to: "a@example.com" }).allowed, true);
+  });
 });

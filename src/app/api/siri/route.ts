@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
-import { resolveUserId, withVelnorUser } from "@/lib/store";
+import { withVelnorUser } from "@/lib/store";
+import { authorizeChatTenant } from "@/lib/security/tenant";
 import { generateSpeechWithProvider } from "@/lib/tools/multimodal";
+import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 /**
  * Apple Siri / Apple Watch / iPhone Action Button / CarPlay Endpoint
@@ -15,6 +17,8 @@ export async function GET(req: NextRequest) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      Authorization: "Bearer <short-lived identity token>",
+      "x-velnor-secret": "<deployment shared secret>",
     },
     samplePayload: {
       query: "What's on my schedule today and do I have any unread emails?",
@@ -33,7 +37,18 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const tenant = authorizeChatTenant(req.headers.get("authorization"));
+    if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401 });
+    let body: any;
+    try {
+      body = JSON.parse(await readRequestBodyLimited(req, 256 * 1024));
+    } catch (error) {
+      if (error instanceof PayloadTooLargeError) return NextResponse.json({ error: error.message }, { status: 413 });
+      return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "JSON body must be an object." }, { status: 400 });
+    }
     const query = String(body.query || body.text || body.prompt || "").trim();
     if (!query) {
       return NextResponse.json(
@@ -43,28 +58,30 @@ export async function POST(req: NextRequest) {
     }
 
     const handle = body.device ? "Siri (" + body.device + ")" : "Siri Shortcut";
-    const reply = await withVelnorUser(resolveUserId("imessage", handle), () =>
-      processUserMessage({
+    const result = await withVelnorUser(tenant.userId, async () => {
+      const reply = await processUserMessage({
         channel: "imessage",
         userHandle: handle,
         text: query,
-      })
-    );
+      });
 
-    // Clean markdown for natural Siri / CarPlay spoken output
-    const spokenText = reply.text
-      .replace(/[*#_`~]/g, "")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .replace(/\n+/g, ". ")
-      .trim();
+      // Clean markdown for natural Siri / CarPlay spoken output.
+      const spokenText = reply.text
+        .replace(/[*#_`~]/g, "")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/\n+/g, ". ")
+        .trim();
 
-    let audioDataUrl: string | undefined;
-    let ttsModel: string | undefined;
-    if (body.voiceReply) {
-      const tts = await generateSpeechWithProvider(spokenText);
-      audioDataUrl = tts.audioDataUrl;
-      ttsModel = tts.modelUsed;
-    }
+      let audioDataUrl: string | undefined;
+      let ttsModel: string | undefined;
+      if (body.voiceReply) {
+        const tts = await generateSpeechWithProvider(spokenText);
+        audioDataUrl = tts.audioDataUrl;
+        ttsModel = tts.modelUsed;
+      }
+      return { reply, spokenText, audioDataUrl, ttsModel };
+    });
+    const { reply, spokenText, audioDataUrl, ttsModel } = result;
 
     return NextResponse.json({
       ok: true,

@@ -27,6 +27,7 @@ from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_t
 # 1.5B training main(). This keeps the baseline trainer unchanged.
 from train_velnor_lora import (
     TRAIN, HELDOUT, SYS, build_example, eval_loss, generate_reply,
+    TRAIN, HELDOUT, SYS, EXTRA_CURRICULUM, EXTRA_CURRICULUM_PATH, build_example, eval_loss, generate_reply,
 )
 from grade_generations import CASES, grade_all
 
@@ -181,6 +182,9 @@ def main() -> None:
     pre_val_loss = eval_loss(model, val_batches)
     eval_prompts = [case.prompt for case in CASES]
     base_generations = {p: generate_reply(model, tokenizer, p) for p in eval_prompts}
+    # Evaluate the true unadapted Qwen3-8B base, including when resuming an adapter.
+    with model.disable_adapter():
+        base_generations = {p: generate_reply(model, tokenizer, p) for p in eval_prompts}
     base_eval = grade_all(base_generations)
 
     steps_per_epoch = math.ceil(len(train_batches) / GRAD_ACCUM)
@@ -208,6 +212,18 @@ def main() -> None:
     epochs_run = 0
     stalled_epochs = 0
     stopped_early = False
+        # Seed the run with the prior adapter, then evaluate it on this run's
+        # current held-out split. The old run's loss is not comparable because
+        # its validation dataset may differ.
+        shutil.copytree(Path(RESUME), best_dir)
+    else:
+        # Keep a valid baseline adapter if no epoch improves current validation loss.
+        model.save_pretrained(best_dir)
+        tokenizer.save_pretrained(best_dir)
+    history = []
+    best_loss = pre_val_loss
+    best_epoch = 0
+    optimizer_step = 0
 
     for epoch in range(1, EPOCHS + 1):
         model.train()
@@ -249,6 +265,8 @@ def main() -> None:
             tokenizer.save_pretrained(best_dir)
         else:
             stalled_epochs += 1
+            model.save_pretrained(best_dir)
+            tokenizer.save_pretrained(best_dir)
         history.append({
             "epoch": epoch,
             "train_loss": round(epoch_loss / len(train_batches), 5),
@@ -265,6 +283,7 @@ def main() -> None:
                 flush=True,
             )
             break
+              f"val={val_loss:.5f} best={improved}", flush=True)
 
     # Reload the selected adapter for final rubric evaluation.
     del optimizer, model, base
@@ -322,6 +341,10 @@ def main() -> None:
             "heldout_examples": len(HELDOUT),
             "resumed_from": RESUME or None,
             "prior_best_loss": None if PREV_BEST_LOSS == float("inf") else PREV_BEST_LOSS,
+            "prior_best_loss_reference_only": None if PREV_BEST_LOSS == float("inf") else PREV_BEST_LOSS,
+            "prior_loss_used_for_selection": False,
+            "general_curriculum_examples": len(EXTRA_CURRICULUM),
+            "general_curriculum_sha256": __import__("hashlib").sha256(EXTRA_CURRICULUM_PATH.read_bytes()).hexdigest(),
             "train_source": "training/train_velnor_lora.py:TRAIN",
             "heldout_source": "training/train_velnor_lora.py:HELDOUT",
         },
@@ -337,11 +360,19 @@ def main() -> None:
                     "stopped_early": stopped_early,
                 },
             },
+        "validation": {
+            "pre_training_loss": round(pre_val_loss, 5),
+            "best_loss": round(best_loss, 5),
+            "best_epoch": best_epoch,
+            "history": history,
+        },
         "rubric": {
             "base": base_eval,
             "tuned": tuned_eval,
             "delta_passed": tuned_eval["passed"] - base_eval["passed"],
         },
+        "base_generations": base_generations,
+        "tuned_generations": tuned_generations,
         "elapsed_seconds": round(time.time() - started, 2),
         "adapter_path": str(best_dir),
     }

@@ -1,8 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { DEFAULT_MODELS } from "./ai/registry";
-import { loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
+import { closeSqliteDb, listStateKeysFromSqlite, loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
 import { coerceState, migrateState, STATE_SCHEMA_VERSION } from "./security/stateSchema";
 import { isCredentialField, isSealed, openRecord, sealRecord, secretsEnabled } from "./security/secretBox";
 import {
@@ -39,10 +40,16 @@ export interface VelnorState {
   };
 }
 
-const DATA_DIR =
-  (process.env.VELNOR_DATA_DIR && process.env.VELNOR_DATA_DIR.trim()) ||
-  resolveWritableDataDir();
-const USERS_DIR = path.join(DATA_DIR, "users");
+let resolvedUsersDir: string | null = null;
+function getUsersDir(): string {
+  if (!resolvedUsersDir) {
+    const dataDir =
+      (process.env.VELNOR_DATA_DIR && process.env.VELNOR_DATA_DIR.trim()) ||
+      resolveWritableDataDir();
+    resolvedUsersDir = path.join(dataDir, "users");
+  }
+  return resolvedUsersDir;
+}
 const ROOT_USER = "default";
 
 /** Where Slack replies and reminders land when a profile has not overridden it. */
@@ -82,19 +89,33 @@ interface StoreScope {
 }
 const storage = new AsyncLocalStorage<StoreScope>();
 
-/** Stable, filesystem-safe tenant key. */
-export function sanitizeUserId(raw: string): string {
+/** Previous key format, retained only to migrate existing tenant data. */
+function legacySanitizeUserId(raw: string): string {
   const cleaned = (raw || "").trim().toLowerCase().replace(/[^a-z0-9._@+-]/g, "_");
   return cleaned.slice(0, 96) || ROOT_USER;
 }
 
+/** Collision-resistant, filesystem-safe and idempotent tenant key. */
+export function sanitizeUserId(raw: string): string {
+  const value = (raw || "").trim();
+  if (!value || value === ROOT_USER) return ROOT_USER;
+  if (/^v2h_[a-f0-9]{64}$/.test(value)) return value;
+  if (/^v2_(?:[A-Za-z0-9.@+-]|_x[0-9a-f]{2}_)*$/.test(value)) return value;
+  const encoded = value.replace(/[^A-Za-z0-9.@+-]/g, (character) =>
+    "_x" + character.charCodeAt(0).toString(16).padStart(2, "0") + "_"
+  );
+  const key = "v2_" + encoded;
+  return key.length <= 96
+    ? key
+    : "v2h_" + crypto.createHash("sha256").update(value).digest("hex");
+}
+
 export function resolveUserId(channel: ChannelType | string, handle?: string): string {
-  if (!handle) return sanitizeUserId("anon:" + channel);
-  return sanitizeUserId(String(channel) + ":" + handle);
+  return String(channel) + ":" + (handle || "anonymous");
 }
 
 function stateFile(userId: string): string {
-  return path.join(USERS_DIR, userId + ".json");
+  return path.join(getUsersDir(), userId + ".json");
 }
 
 function sqliteKey(userId: string): string {
@@ -143,63 +164,109 @@ function mergeState(loaded: Partial<VelnorState> | null | undefined): VelnorStat
 /** Load (and cache) the state for one tenant. */
 export function loadUserState(userId: string): VelnorState {
   const id = sanitizeUserId(userId);
+  const legacyId = legacySanitizeUserId(userId);
   const hit = cache().get(id);
   if (hit) return hit;
 
-  let loaded: VelnorState | null = loadStateFromSqlite(sqliteKey(id));
-  if (!loaded) {
+  const sqliteCurrent = loadStateFromSqlite(sqliteKey(id));
+  const sqliteLegacy = legacyId !== id ? loadStateFromSqlite(sqliteKey(legacyId)) : null;
+  const sqliteCandidate = sqliteCurrent
+    ? { state: sqliteCurrent, legacy: false }
+    : sqliteLegacy
+      ? { state: sqliteLegacy, legacy: true }
+      : null;
+
+  let jsonCandidate: { state: VelnorState; legacy: boolean } | null = null;
+  const jsonPaths = [
+    { file: stateFile(id), legacy: false },
+    ...(legacyId !== id ? [{ file: stateFile(legacyId), legacy: true }] : []),
+  ];
+  for (const candidate of jsonPaths) {
+    if (!fs.existsSync(candidate.file)) continue;
     try {
-      const file = stateFile(id);
-      if (fs.existsSync(file)) {
-        const parsed = JSON.parse(fs.readFileSync(file, "utf-8"));
-        const migrated = migrateState(parsed).value;
-        const coerced = coerceState(migrated);
-        if (coerced.issues.length > 0) {
-          console.warn(`State for ${id} was repaired on load: ${coerced.issues.join("; ")}`);
-        }
-        const config = coerced.value.config;
-        if (config && typeof config === "object") {
-          coerced.value.config = openRecord(config as Record<string, unknown>);
-        }
-        loaded = coerced.value as unknown as VelnorState;
-      }
+      const parsed = JSON.parse(fs.readFileSync(candidate.file, "utf-8")) as VelnorState;
+      jsonCandidate = { state: parsed, legacy: candidate.legacy };
+      break;
     } catch (err) {
-      // Recovery: keep the broken file for inspection instead of silently
-      // overwriting it, then start from a clean state.
-      console.warn("Could not read store for " + id + ", starting fresh:", err);
+      console.warn("Could not read store for " + id + " from " + candidate.file + ":", err);
       try {
-        const file = stateFile(id);
-        if (fs.existsSync(file)) {
-          const quarantine = `${file}.corrupt-${Date.now()}`;
-          fs.renameSync(file, quarantine);
-          console.warn(`Quarantined unreadable state at ${quarantine}`);
-        }
+        const quarantine = candidate.file + ".corrupt-" + Date.now();
+        fs.renameSync(candidate.file, quarantine);
+        console.warn("Quarantined unreadable state at " + quarantine);
       } catch (renameErr) {
         console.warn("Could not quarantine corrupt state:", renameErr);
       }
     }
   }
 
+  const persistedAt = (state: VelnorState | null) => {
+    const value = (state as (VelnorState & { persistedAt?: string }) | null)?.persistedAt;
+    const parsed = value ? Date.parse(value) : 0;
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const useJson = Boolean(
+    jsonCandidate &&
+    (!sqliteCandidate || persistedAt(jsonCandidate.state) > persistedAt(sqliteCandidate.state))
+  );
+  const selected = useJson ? jsonCandidate : sqliteCandidate;
+  let loaded: VelnorState | null = selected?.state || null;
+  const loadedFromLegacy = Boolean(selected?.legacy);
+
+  // SQLite and the JSON mirror can fail independently. Choose the newest
+  // durable copy, then apply identical migration, validation and decryption.
+  let needsCredentialReseal = false;
+  if (loaded) {
+    const migrated = migrateState(loaded).value;
+    const coerced = coerceState(migrated);
+    if (coerced.issues.length > 0) {
+      console.warn(`State for ${id} was repaired on load: ${coerced.issues.join("; ")}`);
+    }
+    const config = coerced.value.config;
+    if (config && typeof config === "object") {
+      const rawConfig = config as Record<string, unknown>;
+      // Older SQLite rows may contain plaintext credentials. Detect them before
+      // decryption, then rewrite the profile through saveStateForUser so AES-GCM
+      // sealing is applied to both SQLite and the JSON recovery mirror.
+      needsCredentialReseal = secretsEnabled() && Object.entries(rawConfig).some(
+        ([key, value]) =>
+          typeof value === "string" &&
+          value.length > 0 &&
+          isCredentialField(key) &&
+          !isSealed(value)
+      );
+      coerced.value.config = openRecord(rawConfig);
+    }
+    loaded = coerced.value as unknown as VelnorState;
+  }
+
   const state = mergeState(loaded);
   cache().set(id, state);
-  if (!loaded) saveStateForUser(id, state);
+  if (!loaded || loadedFromLegacy || useJson || needsCredentialReseal) {
+    saveStateForUser(id, state);
+  }
   return state;
 }
 
 function saveStateForUser(userId: string, state: VelnorState): void {
   const id = sanitizeUserId(userId);
-  const persisted = { ...state, schemaVersion: STATE_SCHEMA_VERSION };
+  const persisted = { ...state, schemaVersion: STATE_SCHEMA_VERSION, persistedAt: new Date().toISOString() };
   if (persisted.config && typeof persisted.config === "object") {
     persisted.config = sealRecord(persisted.config as unknown as Record<string, unknown>) as unknown as typeof persisted.config;
   }
-  cache().set(id, state);
-  saveStateToSqlite(persisted, sqliteKey(id));
+  const sqliteSaved = saveStateToSqlite(persisted, sqliteKey(id));
+  let jsonSaved = false;
   try {
-    if (!fs.existsSync(USERS_DIR)) fs.mkdirSync(USERS_DIR, { recursive: true });
+    const usersDir = getUsersDir();
+    if (!fs.existsSync(usersDir)) fs.mkdirSync(usersDir, { recursive: true });
     fs.writeFileSync(stateFile(id), JSON.stringify(persisted, null, 2), "utf-8");
+    jsonSaved = true;
   } catch (err) {
-    console.warn("Non-fatal: could not persist store for " + id + ":", err);
+    console.warn("Could not persist JSON recovery mirror for " + id + ":", err);
   }
+  if (!sqliteSaved && !jsonSaved) {
+    throw new Error("Velnor could not durably persist tenant state; refusing to report success.");
+  }
+  cache().set(id, state);
 }
 
 /** Run fn with the store bound to this user. */
@@ -207,7 +274,7 @@ export function withVelnorUser<T>(userId: string, fn: () => T | Promise<T>): Pro
   const id = sanitizeUserId(userId);
   const existing = storage.getStore();
   if (existing && existing.userId === id) return Promise.resolve(fn());
-  return storage.run({ userId: id, state: loadUserState(id) }, async () => fn());
+  return storage.run({ userId: id, state: loadUserState(userId) }, async () => fn());
 }
 
 export function currentUserId(): string {
@@ -257,10 +324,10 @@ export function getEffectiveKeys(state: VelnorState) {
 
 /** Every tenant that has state on disk or in cache. */
 export function listUserIds(): string[] {
-  const ids = new Set<string>(cache().keys());
+  const ids = new Set<string>([...cache().keys(), ...listStateKeysFromSqlite()]);
   try {
-    if (fs.existsSync(USERS_DIR)) {
-      for (const file of fs.readdirSync(USERS_DIR)) {
+    if (fs.existsSync(getUsersDir())) {
+      for (const file of fs.readdirSync(getUsersDir())) {
         if (file.endsWith(".json")) ids.add(file.slice(0, -5));
       }
     }
@@ -286,7 +353,8 @@ export function aggregateUsage() {
   return total;
 }
 
-/** Test hook: drop all cached tenant state. */
+/** Test hook: drop all cached tenant state and release database locks. */
 export function resetStoreCache(): void {
   cache().clear();
+  closeSqliteDb();
 }

@@ -131,7 +131,7 @@ export const VELNOR_FUNCTION_DECLARATIONS = [
       type: "object",
       properties: {
         text: { type: "string", description: "What to remind the user about" },
-        dueAt: { type: "string", description: "When to trigger the reminder (e.g. 'Tomorrow at 9:00 AM', 'In 2 hours')" },
+        dueAt: { type: "string", description: "Absolute ISO 8601 date-time including a timezone offset (for example 2026-11-12T09:00:00+01:00)" },
       },
       required: ["text", "dueAt"],
     },
