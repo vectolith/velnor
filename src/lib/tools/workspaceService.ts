@@ -324,7 +324,7 @@ export async function createReminderAsync(params: {
   dueAt: string;
   channel?: ChannelType;
   recipient?: string;
-}): ReminderItem {
+}): Promise<ReminderItem> {
   const { context } = await loadWorkspaceState();
   const dueDate = params.dueAt ? new Date(params.dueAt) : new Date(Date.now() + 60 * 60 * 1000);
   if (!Number.isFinite(dueDate.getTime())) {

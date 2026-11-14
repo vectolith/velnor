@@ -7,8 +7,11 @@ import { getGoogleAccessToken } from "../src/lib/auth/googleToken";
 
 import {
   createCalendarEvent,
+  createReminderAsync,
   draftOrSendEmail,
+  listRemindersAsync,
   organizeEmail,
+  toggleReminderAsync,
 } from "../src/lib/tools/workspaceService";
 
 process.env.VELNOR_SECRET_KEY ||= "test-secret-key-for-integration-suite-32-bytes";
@@ -241,5 +244,25 @@ test("Google token helper rejects expired access without a refresh grant", async
     state.config.googleAccessTokenExpiresAt = new Date(Date.now() - 60_000).toISOString();
     saveStore(state);
     await assert.rejects(getGoogleAccessToken(), /reconnect the Google account/);
+  });
+});
+
+
+test("async workspace reminder operations persist through the tenant repository", async () => {
+  await withVelnorUser("workspace-reminder-tenant-a", async () => {
+    const created = await createReminderAsync({
+      text: "Repository-backed reminder",
+      dueAt: new Date(Date.now() + 60_000).toISOString(),
+      channel: "imessage",
+    });
+    assert.equal(created.text, "Repository-backed reminder");
+    assert.ok((await listRemindersAsync()).some((item) => item.id === created.id));
+    const toggled = await toggleReminderAsync(created.id);
+    assert.equal(toggled?.completed, true);
+    assert.equal((await listRemindersAsync()).find((item) => item.id === created.id)?.completed, true);
+  });
+
+  await withVelnorUser("workspace-reminder-tenant-b", async () => {
+    assert.equal((await listRemindersAsync()).some((item) => item.text === "Repository-backed reminder"), false);
   });
 });
