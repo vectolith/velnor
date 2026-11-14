@@ -75,14 +75,14 @@ test("outbox enqueue is idempotent and tenant scoped",async()=>{
  const other=await enqueueTenantAction(db,{...input,tenantId:"tenant_b"});assert.equal(other.inserted,true);
 });
 test("outbox claims due actions with tenant ownership and leases",async()=>{
- const db=new FakeD1();await enqueueTenantAction(db,{id:"a",tenantId:"tenant_a",idempotencyKey:"k1",actionType:"slack.send",payload:{text:"a"}});
- await enqueueTenantAction(db,{id:"b",tenantId:"tenant_b",idempotencyKey:"k2",actionType:"slack.send",payload:{text:"b"}});
+ const db=new FakeD1();await enqueueTenantAction(db,{id:"a",tenantId:"tenant_a",idempotencyKey:"k1",actionType:"slack.send",payload:{text:"a"},availableAt:"2026-11-14T11:00:00.000Z"});
+ await enqueueTenantAction(db,{id:"b",tenantId:"tenant_b",idempotencyKey:"k2",actionType:"slack.send",payload:{text:"b"},availableAt:"2026-11-14T11:00:00.000Z"});
  const claimed=await claimTenantAction(db,"tenant_a","worker_1",60_000,fixedNow);
  assert.equal(claimed?.id,"a");assert.equal(claimed?.attempts,1);assert.equal(claimed?.leaseOwner,"worker_1");
  assert.equal(await claimTenantAction(db,"tenant_a","worker_2",60_000,fixedNow),null);
 });
 test("expired leases can be reclaimed and stale workers cannot complete",async()=>{
- const db=new FakeD1();await enqueueTenantAction(db,{id:"a",tenantId:"tenant_a",idempotencyKey:"k1",actionType:"slack.send",payload:{}});
+ const db=new FakeD1();await enqueueTenantAction(db,{id:"a",tenantId:"tenant_a",idempotencyKey:"k1",actionType:"slack.send",payload:{},availableAt:"2026-11-14T11:00:00.000Z"});
  const first=await claimTenantAction(db,"tenant_a","worker_1",1_000,fixedNow);
  const second=await claimTenantAction(db,"tenant_a","worker_2",1_000,new Date(fixedNow.getTime()+2_000));
  assert.equal(second?.id,"a");assert.equal(second?.attempts,2);
@@ -91,7 +91,7 @@ test("expired leases can be reclaimed and stale workers cannot complete",async()
  assert.equal(db.rows.get("a")?.status,"delivered");
 });
 test("retry applies backoff and dead-letters exhausted actions",async()=>{
- const db=new FakeD1();await enqueueTenantAction(db,{id:"a",tenantId:"tenant_a",idempotencyKey:"k1",actionType:"slack.send",payload:{}});
+ const db=new FakeD1();await enqueueTenantAction(db,{id:"a",tenantId:"tenant_a",idempotencyKey:"k1",actionType:"slack.send",payload:{},availableAt:"2026-11-14T11:00:00.000Z"});
  await claimTenantAction(db,"tenant_a","worker_1",60_000,fixedNow);
  const retry=await retryTenantAction(db,"tenant_a","a","worker_1",{availableAt:"2026-11-14T12:05:00.000Z",error:"provider unavailable",maxAttempts:2,now:fixedNow});
  assert.equal(retry,"pending");
