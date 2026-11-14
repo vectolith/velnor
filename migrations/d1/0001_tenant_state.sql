@@ -3,6 +3,7 @@
 CREATE TABLE IF NOT EXISTS tenant_state (
   tenant_id TEXT PRIMARY KEY NOT NULL,
   payload_json TEXT NOT NULL,
+  usage_json TEXT NOT NULL DEFAULT '{}',
   revision INTEGER NOT NULL CHECK (revision >= 1),
   updated_at TEXT NOT NULL
 ) WITHOUT ROWID;
