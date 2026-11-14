@@ -47,7 +47,7 @@ class FakeD1 implements D1Database {
       },
       async run():Promise<D1Result>{
         if(query.includes("INSERT INTO tenant_outbox")){
-          const [id,tenant,key,action,payload,status,available,owner,lease,error,created,updated]=values as unknown[];
+          const [id,tenant,key,action,payload,available,created,updated]=values as unknown[];
           if([...db.rows.values()].some(x=>x.tenant_id===tenant&&x.idempotency_key===key))return {success:true,meta:{changes:0}};
           db.rows.set(String(id),{id:String(id),tenant_id:String(tenant),idempotency_key:String(key),
             action_type:String(action),payload_json:String(payload),status:"pending",attempts:0,
