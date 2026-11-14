@@ -82,3 +82,16 @@ For a short smoke run only:
 ```bash
 VELNOR_FAST_TRAIN=1 VELNOR_ALLOW_CPU=1 ./.venv/bin/python train_velnor_lora.py
 ```
+
+
+## E2 Qwen3-8B training path
+
+Use `Velnor_Qwen3_8B_QLoRA_E2.ipynb` for the corrected continuation workflow. It invokes the canonical `train_qwen3_8b_qlora.py` entrypoint and keeps the base model fixed to `Qwen/Qwen3-8B`.
+
+E2 is free-GPU-only: it refuses CPU execution and requires at least 14 GiB total VRAM and 12 GiB free VRAM. It defaults to one epoch, sequence length 256, micro-batch 1, gradient accumulation 8, rsLoRA rank 8 / alpha 16, and 4-bit NF4 with double quantization. It does not switch to Qwen2.5 or Llama, and it rejects resume adapters whose base model, task type, rank, or target modules do not match the Qwen3-8B contract.
+
+Checkpoint selection starts with the resumed adapter's measured loss on the current held-out split. A historical validation loss from a different split is recorded only as metadata and is never used for selection. A worse epoch never overwrites the selected adapter. The trainer writes immutable epoch checkpoints, a training report, dataset fingerprints, and a SHA-256 manifest.
+
+The notebook stores model artifacts in a timestamped Google Drive run directory. It does not store GitHub tokens, force-push, create duplicate pull requests, or commit adapter weights to the repository. The existing 1.5B baseline and historical run records remain unchanged.
+
+The E2 promotion gate is a screening signal only: it requires a newly selected checkpoint, no held-out loss regression, and no regression on the deterministic generation rubric before human review. It is not production certification. No GPU training is claimed until the notebook is actually run on an eligible free CUDA runtime.

@@ -57,13 +57,20 @@ def main() -> None:
 
     cfg = json.loads((adapter_dir / "adapter_config.json").read_text(encoding="utf-8"))
     base_id = cfg.get("base_model_name_or_path")
-    load_kw = {"dtype": torch.float32} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": torch.float32}
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    dtype = (
+        torch.bfloat16 if device.type == "cuda" and torch.cuda.is_bf16_supported()
+        else torch.float16 if device.type == "cuda"
+        else torch.float32
+    )
+    load_kw = {"dtype": dtype} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": dtype}
 
     tok = AutoTokenizer.from_pretrained(str(adapter_dir))
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
     base = AutoModelForCausalLM.from_pretrained(base_id, **load_kw)
+    base.to(device)
     base.eval()
 
     # Measure the untuned base model on the same held-out set and rubric, so the
@@ -115,8 +122,8 @@ def main() -> None:
             "trained_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "host": f"{platform.system()} {platform.machine()}",
             "cpu_count": os.cpu_count(),
-            "device": "cpu",
-            "dtype": "float32",
+            "device": str(device),
+            "dtype": str(dtype).replace("torch.", ""),
             "torch": torch.__version__,
             "transformers": transformers.__version__,
             "peft": peft.__version__,

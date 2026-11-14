@@ -1,72 +1,97 @@
-"""Free-GPU QLoRA fine-tuning entrypoint for Qwen3-8B.
+"""Free-GPU Qwen3-8B NF4 QLoRA training for Velnor.
 
-This is adapter fine-tuning, not foundation-model pretraining. It deliberately
-refuses CPU execution and small/low-memory GPUs. A successful preflight is not
-a guarantee that a free Colab runtime will complete without OOM.
+This is adapter fine-tuning, not foundation-model pretraining. The base model is
+intentionally fixed to Qwen/Qwen3-8B: adapters from other architectures are
+rejected. Training requires a free CUDA GPU meeting the documented VRAM gate.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
 import platform
 import random
+import shutil
 import subprocess
 import time
-import shutil
 from pathlib import Path
 
-import torch
 import bitsandbytes as bnb
-import transformers
 import peft
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_training
+import torch
+import transformers
+from peft import (
+    PeftConfig,
+    PeftModel,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+    LoraConfig,
+)
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-# Reuse the audited VELNOR curriculum and rubric helpers without invoking its
-# 1.5B training main(). This keeps the baseline trainer unchanged.
 from train_velnor_lora import (
-    TRAIN, HELDOUT, SYS, EXTRA_CURRICULUM, EXTRA_CURRICULUM_PATH, build_example, eval_loss, generate_reply,
+    TRAIN,
+    HELDOUT,
+    EXTRA_CURRICULUM,
+    EXTRA_CURRICULUM_PATH,
+    build_example,
+    eval_loss,
+    generate_reply,
 )
 from grade_generations import CASES, grade_all
 
 MODEL_ID = "Qwen/Qwen3-8B"
+TARGET_MODULES = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
 SEED = 42
 MAX_SEQ_LEN = int(os.environ.get("VELNOR_QWEN3_MAX_SEQ_LEN", "256"))
-EPOCHS = int(os.environ.get("VELNOR_QWEN3_EPOCHS", "3"))
-MICRO_BATCH_SIZE = 1
+EPOCHS = int(os.environ.get("VELNOR_QWEN3_EPOCHS", "1"))
 GRAD_ACCUM = int(os.environ.get("VELNOR_QWEN3_GRAD_ACCUM", "8"))
 LR = float(os.environ.get("VELNOR_QWEN3_LR", "1e-4"))
+PATIENCE = int(os.environ.get("VELNOR_QWEN3_PATIENCE", "1"))
 MIN_TOTAL_VRAM_GIB = 14.0
 MIN_FREE_VRAM_GIB = 12.0
 OUT = Path(os.environ.get("VELNOR_QWEN3_OUTPUT", "outputs/qwen3-8b-qlora"))
-# Optional continuation run: resume from an existing adapter directory and carry
-# the previous best validation loss forward so a weaker continuation epoch can
-# never overwrite the better adapter.
 RESUME = os.environ.get("VELNOR_QWEN3_RESUME", "").strip()
-PREV_BEST_LOSS = float(os.environ.get("VELNOR_QWEN3_PREV_BEST_LOSS", "inf"))
+PREV_BEST_LOSS = os.environ.get("VELNOR_QWEN3_PREV_BEST_LOSS", "").strip()
+
 random.seed(SEED)
 torch.manual_seed(SEED)
 
 
+def should_stop_early(stalled_epochs: int, patience: int) -> bool:
+    """Stop after the configured number of consecutive non-improving epochs."""
+    return patience > 0 and stalled_epochs >= patience
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_manifest(root: Path) -> None:
+    entries = []
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and path.name != "SHA256SUMS":
+            entries.append(f"{sha256_file(path)}  {path.relative_to(root).as_posix()}")
+    (root / "SHA256SUMS").write_text("\n".join(entries) + "\n", encoding="utf-8")
+
+
 def gpu_preflight() -> dict:
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA GPU required. CPU training is intentionally disabled.")
-    if torch.cuda.device_count() < 1:
-        raise RuntimeError("No CUDA device is visible.")
+    if not torch.cuda.is_available() or torch.cuda.device_count() < 1:
+        raise RuntimeError("A free CUDA GPU is required. CPU training is disabled.")
     props = torch.cuda.get_device_properties(0)
+    free_bytes, _ = torch.cuda.mem_get_info(0)
     total_gib = props.total_memory / (1024 ** 3)
-    free_bytes, total_bytes = torch.cuda.mem_get_info(0)
     free_gib = free_bytes / (1024 ** 3)
-    if total_gib < MIN_TOTAL_VRAM_GIB:
+    if total_gib < MIN_TOTAL_VRAM_GIB or free_gib < MIN_FREE_VRAM_GIB:
         raise RuntimeError(
-            f"GPU has {total_gib:.2f} GiB total VRAM; this run requires at least "
-            f"{MIN_TOTAL_VRAM_GIB:.1f} GiB. No training started."
-        )
-    if free_gib < MIN_FREE_VRAM_GIB:
-        raise RuntimeError(
-            f"GPU has only {free_gib:.2f} GiB free VRAM; at least "
-            f"{MIN_FREE_VRAM_GIB:.1f} GiB is required at preflight. No training started."
+            f"GPU preflight failed: total={total_gib:.2f} GiB, free={free_gib:.2f} GiB; "
+            f"requires {MIN_TOTAL_VRAM_GIB:.1f} GiB total and "
+            f"{MIN_FREE_VRAM_GIB:.1f} GiB free. No training started."
         )
     return {
         "name": props.name,
@@ -77,32 +102,104 @@ def gpu_preflight() -> dict:
     }
 
 
+def validate_resume_adapter(path: Path) -> dict:
+    if not path.is_dir():
+        raise RuntimeError(f"Resume adapter directory does not exist: {path}")
+    config_path = path / "adapter_config.json"
+    weights = [path / "adapter_model.safetensors", path / "adapter_model.bin"]
+    if not config_path.is_file() or not any(item.is_file() for item in weights):
+        raise RuntimeError("Resume adapter is incomplete: config or weights are missing.")
+    config = PeftConfig.from_pretrained(str(path))
+    adapter_base = str(getattr(config, "base_model_name_or_path", "") or "").strip()
+    required_targets = set(TARGET_MODULES)
+    configured_targets = set(config.target_modules or [])
+    if adapter_base != MODEL_ID:
+        raise RuntimeError(
+            f"Incompatible adapter base model {adapter_base!r}; expected {MODEL_ID!r}. "
+            "Adapters are not transferable between Qwen3, Qwen2.5, and Llama."
+        )
+    if config.task_type != "CAUSAL_LM" or int(config.r) != 8 or not required_targets.issubset(configured_targets):
+        raise RuntimeError("Resume adapter LoRA task, rank, or target modules do not match the Velnor Qwen3-8B training contract.")
+    return {
+        "base_model": adapter_base,
+        "peft_type": str(config.peft_type),
+        "task_type": str(config.task_type),
+        "rank": int(config.r),
+        "target_modules": sorted(configured_targets),
+    }
+
+
 def build_batches(tokenizer, examples):
-    # One example per microbatch minimizes activation memory on a free GPU.
     batches = []
     for user_text, assistant_text in examples:
         batch = build_example(tokenizer, user_text, assistant_text, MAX_SEQ_LEN)
         if batch["labels"].ne(-100).sum().item() == 0:
             raise ValueError(
-                "An example has no assistant target tokens after truncation; "
-                "increase VELNOR_QWEN3_MAX_SEQ_LEN or shorten the prompt."
+                "An example has no assistant target tokens after truncation. "
+                "Increase VELNOR_QWEN3_MAX_SEQ_LEN or shorten the source example."
             )
         batches.append(batch)
     return batches
 
 
+def save_best_adapter(model, tokenizer, output_dir: Path, epoch: int) -> None:
+    """Write an immutable epoch checkpoint, then atomically replace the selected adapter."""
+    checkpoint_root = output_dir / "checkpoints"
+    checkpoint_root.mkdir(parents=True, exist_ok=True)
+    checkpoint = checkpoint_root / f"epoch-{epoch:03d}"
+    if checkpoint.exists():
+        raise RuntimeError(f"Checkpoint already exists; refusing overwrite: {checkpoint}")
+    model.save_pretrained(checkpoint, safe_serialization=True)
+    tokenizer.save_pretrained(checkpoint)
+    if not (checkpoint / "adapter_config.json").is_file():
+        raise RuntimeError("Checkpoint save did not produce adapter_config.json.")
+    if not any((checkpoint / name).is_file() for name in ("adapter_model.safetensors", "adapter_model.bin")):
+        raise RuntimeError("Checkpoint save did not produce adapter weights.")
+
+    staged = output_dir / "adapter.next"
+    selected = output_dir / "adapter"
+    previous = output_dir / "adapter.previous"
+    if staged.exists():
+        shutil.rmtree(staged)
+    shutil.copytree(checkpoint, staged)
+    if previous.exists():
+        shutil.rmtree(previous)
+    if selected.exists():
+        selected.replace(previous)
+    try:
+        staged.replace(selected)
+    except Exception:
+        if previous.exists() and not selected.exists():
+            previous.replace(selected)
+        raise
+    if previous.exists():
+        shutil.rmtree(previous)
+
+
 def main() -> None:
     started = time.time()
+    if EPOCHS < 1 or GRAD_ACCUM < 1 or MAX_SEQ_LEN < 128 or LR <= 0:
+        raise ValueError("Invalid training configuration.")
+    if PATIENCE < 0:
+        raise ValueError("PATIENCE cannot be negative.")
     gpu = gpu_preflight()
-    if EPOCHS < 1 or GRAD_ACCUM < 1 or MAX_SEQ_LEN < 128:
-        raise ValueError("EPOCHS/GRAD_ACCUM must be positive and MAX_SEQ_LEN >= 128.")
-    print("[qwen3-8b] GPU preflight:", json.dumps(gpu), flush=True)
-    print(
-        "[qwen3-8b] Loading 4-bit NF4 base. This is a best-effort fit on free "
-        "GPU capacity; CUDA OOM remains possible.",
-        flush=True,
-    )
 
+    if (OUT / "adapter").exists() or (OUT / "training_report.json").exists():
+        raise RuntimeError(f"Output already contains a completed/partial run: {OUT}")
+
+    resume_info = None
+    if RESUME:
+        resume_info = validate_resume_adapter(Path(RESUME))
+
+    model_config = AutoConfig.from_pretrained(MODEL_ID)
+    if getattr(model_config, "model_type", None) != "qwen3":
+        raise RuntimeError(
+            f"Unexpected model architecture {getattr(model_config, 'model_type', None)!r}; "
+            "the Qwen3-8B trainer will not substitute another model."
+        )
+
+    print("[qwen3-8b-e2] GPU:", json.dumps(gpu), flush=True)
+    print("[qwen3-8b-e2] Loading Qwen3-8B with 4-bit NF4 QLoRA.", flush=True)
     compute_dtype = torch.bfloat16 if gpu["bf16_supported"] else torch.float16
     quant_config = BitsAndBytesConfig(
         load_in_4bit=True,
@@ -128,12 +225,9 @@ def main() -> None:
         use_gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
     )
-    # These are standard Qwen-family attention and MLP projection names.
-    # Fail closed if the architecture differs rather than silently training
-    # an incomplete adapter.
+
+    targets = TARGET_MODULES
     module_names = {name.rsplit(".", 1)[-1] for name, _ in base.named_modules()}
-    targets = ["q_proj", "k_proj", "v_proj", "o_proj",
-               "gate_proj", "up_proj", "down_proj"]
     missing = [name for name in targets if name not in module_names]
     if missing:
         raise RuntimeError(f"Qwen3 architecture is missing expected LoRA modules: {missing}")
@@ -148,57 +242,55 @@ def main() -> None:
         task_type="CAUSAL_LM",
     )
     if RESUME:
-        resume_dir = Path(RESUME)
-        if not (resume_dir / "adapter_config.json").is_file():
-            raise RuntimeError(f"Resume adapter config missing under {resume_dir}")
-        model = PeftModel.from_pretrained(base, str(resume_dir), is_trainable=True)
-        print(f"[qwen3-8b] Resumed adapter from {resume_dir}", flush=True)
+        model = PeftModel.from_pretrained(base, RESUME, is_trainable=True)
+        print(f"[qwen3-8b-e2] Resumed compatible adapter: {RESUME}", flush=True)
     else:
         model = get_peft_model(base, lora_config)
+
     model.print_trainable_parameters()
-    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total_params = sum(p.numel() for p in model.parameters())
+    trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+    total_params = sum(parameter.numel() for parameter in model.parameters())
 
     train_batches = build_batches(tokenizer, TRAIN)
     val_batches = build_batches(tokenizer, HELDOUT)
+    if len(train_batches) != len(TRAIN) or len(val_batches) != len(HELDOUT):
+        raise RuntimeError("Dataset batching changed example counts unexpectedly.")
     print(
-        f"[qwen3-8b] dataset train={len(train_batches)} heldout={len(val_batches)} "
-        f"seq_len={MAX_SEQ_LEN} micro_batch={MICRO_BATCH_SIZE} grad_accum={GRAD_ACCUM}",
+        f"[qwen3-8b-e2] train={len(train_batches)} heldout={len(val_batches)} "
+        f"seq_len={MAX_SEQ_LEN} grad_accum={GRAD_ACCUM} epochs={EPOCHS}",
         flush=True,
     )
+
     pre_val_loss = eval_loss(model, val_batches)
     eval_prompts = [case.prompt for case in CASES]
-    # Evaluate the true unadapted Qwen3-8B base, including when resuming an adapter.
     with model.disable_adapter():
-        base_generations = {p: generate_reply(model, tokenizer, p) for p in eval_prompts}
+        base_generations = {prompt: generate_reply(model, tokenizer, prompt) for prompt in eval_prompts}
     base_eval = grade_all(base_generations)
 
+    OUT.mkdir(parents=True, exist_ok=True)
+    selected_dir = OUT / "adapter"
+    if RESUME:
+        shutil.copytree(Path(RESUME), selected_dir)
+        tokenizer.save_pretrained(selected_dir)
+    else:
+        model.save_pretrained(selected_dir, safe_serialization=True)
+        tokenizer.save_pretrained(selected_dir)
+
+    # The old run's loss is historical metadata only. Selection always starts
+    # from the resumed adapter's measured loss on this exact held-out split.
+    best_loss = pre_val_loss
+    best_epoch = 0
+    stalled_epochs = 0
+    stopped_early = False
+    history = []
     steps_per_epoch = math.ceil(len(train_batches) / GRAD_ACCUM)
     total_steps = EPOCHS * steps_per_epoch
     warmup_steps = max(1, int(total_steps * 0.05))
     optimizer = bnb.optim.PagedAdamW8bit(
-        [p for p in model.parameters() if p.requires_grad],
+        [parameter for parameter in model.parameters() if parameter.requires_grad],
         lr=LR,
         weight_decay=0.01,
     )
-    OUT.mkdir(parents=True, exist_ok=True)
-    best_dir = OUT / "adapter"
-    if best_dir.exists():
-        raise RuntimeError(
-            f"Output adapter directory already exists: {best_dir}. Use a fresh run directory."
-        )
-    if RESUME:
-        # Seed the run with the prior adapter, then evaluate it on this run's
-        # current held-out split. The old run's loss is not comparable because
-        # its validation dataset may differ.
-        shutil.copytree(Path(RESUME), best_dir)
-    else:
-        # Keep a valid baseline adapter if no epoch improves current validation loss.
-        model.save_pretrained(best_dir)
-        tokenizer.save_pretrained(best_dir)
-    history = []
-    best_loss = pre_val_loss
-    best_epoch = 0
     optimizer_step = 0
 
     for epoch in range(1, EPOCHS + 1):
@@ -207,10 +299,9 @@ def main() -> None:
         epoch_loss = 0.0
         optimizer.zero_grad(set_to_none=True)
         for index, batch in enumerate(train_batches, 1):
-            batch = {k: v.to("cuda", non_blocking=True) for k, v in batch.items()}
+            batch = {key: value.to("cuda", non_blocking=True) for key, value in batch.items()}
             loss = model(**batch).loss
             epoch_loss += float(loss.detach().item())
-            # Correctly scale the final, possibly incomplete accumulation group.
             group_start = ((index - 1) // GRAD_ACCUM) * GRAD_ACCUM
             group_size = min(GRAD_ACCUM, len(train_batches) - group_start)
             (loss / group_size).backward()
@@ -225,7 +316,7 @@ def main() -> None:
                 for group in optimizer.param_groups:
                     group["lr"] = lr_now
                 torch.nn.utils.clip_grad_norm_(
-                    [p for p in model.parameters() if p.requires_grad], 1.0
+                    [parameter for parameter in model.parameters() if parameter.requires_grad], 1.0
                 )
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
@@ -235,18 +326,28 @@ def main() -> None:
         if improved:
             best_loss = val_loss
             best_epoch = epoch
-            model.save_pretrained(best_dir)
-            tokenizer.save_pretrained(best_dir)
+            stalled_epochs = 0
+            save_best_adapter(model, tokenizer, OUT, epoch)
+        else:
+            stalled_epochs += 1
+
         history.append({
             "epoch": epoch,
-            "train_loss": round(epoch_loss / len(train_batches), 5),
-            "val_loss": round(val_loss, 5),
+            "train_loss": round(epoch_loss / len(train_batches), 6),
+            "val_loss": round(val_loss, 6),
             "best": improved,
+            "stalled_epochs": stalled_epochs,
         })
-        print(f"[qwen3-8b] epoch={epoch} train={epoch_loss/len(train_batches):.5f} "
-              f"val={val_loss:.5f} best={improved}", flush=True)
+        print(
+            f"[qwen3-8b-e2] epoch={epoch} train={epoch_loss / len(train_batches):.6f} "
+            f"val={val_loss:.6f} best={improved} stalled={stalled_epochs}",
+            flush=True,
+        )
+        if should_stop_early(stalled_epochs, PATIENCE):
+            stopped_early = True
+            print(f"[qwen3-8b-e2] early stopping at epoch {epoch}.", flush=True)
+            break
 
-    # Reload the selected adapter for final rubric evaluation.
     del optimizer, model, base
     torch.cuda.empty_cache()
     clean_base = AutoModelForCausalLM.from_pretrained(
@@ -256,21 +357,33 @@ def main() -> None:
         low_cpu_mem_usage=True,
         attn_implementation="sdpa",
     )
-    tuned_model = PeftModel.from_pretrained(clean_base, best_dir)
-    tuned_generations = {p: generate_reply(tuned_model, tokenizer, p) for p in eval_prompts}
+    tuned_model = PeftModel.from_pretrained(clean_base, selected_dir)
+    tuned_generations = {
+        prompt: generate_reply(tuned_model, tokenizer, prompt) for prompt in eval_prompts
+    }
     tuned_eval = grade_all(tuned_generations)
 
     try:
-        commit = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=Path(__file__).resolve().parents[1],
+        git_commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parents[1],
             text=True,
         ).strip()
     except Exception:
-        commit = None
+        git_commit = None
+
+    previous_loss_reference = None
+    if PREV_BEST_LOSS:
+        try:
+            previous_loss_reference = float(PREV_BEST_LOSS)
+        except ValueError:
+            raise ValueError("VELNOR_QWEN3_PREV_BEST_LOSS must be numeric when supplied.")
+
     report = {
         "status": "completed",
-        "training_type": "4-bit NF4 QLoRA adapter fine-tuning; not pretraining",
+        "training_type": "4-bit NF4 QLoRA adapter fine-tuning; not foundation-model pretraining",
         "base_model": MODEL_ID,
+        "run": {"output_directory": str(OUT), "resumed_from": RESUME or None},
         "method": {
             "quantization": "4-bit NF4 with double quantization",
             "compute_dtype": str(compute_dtype).replace("torch.", ""),
@@ -281,51 +394,75 @@ def main() -> None:
             "target_modules": targets,
             "gradient_checkpointing": True,
             "optimizer": "bitsandbytes PagedAdamW8bit",
-            "micro_batch_size": MICRO_BATCH_SIZE,
+            "micro_batch_size": 1,
             "gradient_accumulation": GRAD_ACCUM,
             "max_sequence_length": MAX_SEQ_LEN,
-            "epochs": EPOCHS,
+            "epochs_requested": EPOCHS,
+            "epochs_run": len(history),
+            "early_stopping_patience": PATIENCE,
+            "stopped_early": stopped_early,
             "learning_rate": LR,
         },
         "provenance": {
-            "git_commit": commit,
+            "git_commit": git_commit,
             "trained_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "host": f"{platform.system()} {platform.machine()}",
             "gpu": gpu,
             "torch": torch.__version__,
             "transformers": transformers.__version__,
             "peft": peft.__version__,
+            "bitsandbytes": getattr(bnb, "__version__", "unknown"),
             "seed": SEED,
         },
         "dataset": {
             "train_examples": len(TRAIN),
+            "train_sha256": hashlib.sha256(json.dumps(TRAIN, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest(),
+            "heldout_sha256": hashlib.sha256(json.dumps(HELDOUT, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest(),
             "heldout_examples": len(HELDOUT),
-            "resumed_from": RESUME or None,
-            "prior_best_loss_reference_only": None if PREV_BEST_LOSS == float("inf") else PREV_BEST_LOSS,
-            "prior_loss_used_for_selection": False,
             "general_curriculum_examples": len(EXTRA_CURRICULUM),
-            "general_curriculum_sha256": __import__("hashlib").sha256(EXTRA_CURRICULUM_PATH.read_bytes()).hexdigest(),
+            "general_curriculum_sha256": sha256_file(EXTRA_CURRICULUM_PATH),
             "train_source": "training/train_velnor_lora.py:TRAIN",
             "heldout_source": "training/train_velnor_lora.py:HELDOUT",
         },
+        "resume": {
+            "adapter_validation": resume_info,
+            "previous_loss_reference_only": previous_loss_reference,
+            "previous_loss_used_for_selection": False,
+        },
         "parameters": {"trainable": trainable, "total": total_params},
         "validation": {
-            "pre_training_loss": round(pre_val_loss, 5),
-            "best_loss": round(best_loss, 5),
+            "pre_training_loss": round(pre_val_loss, 6),
+            "best_loss": round(best_loss, 6),
             "best_epoch": best_epoch,
             "history": history,
         },
         "rubric": {
+            "case_count": len(CASES),
             "base": base_eval,
             "tuned": tuned_eval,
             "delta_passed": tuned_eval["passed"] - base_eval["passed"],
         },
+        "promotion_gate": {
+            "new_checkpoint_selected": best_epoch > 0,
+            "heldout_loss_non_regression": best_loss <= pre_val_loss,
+            "rubric_non_regression": tuned_eval["passed"] >= base_eval["passed"],
+            "eligible_for_human_review": (
+                best_epoch > 0 and best_loss <= pre_val_loss
+                and tuned_eval["passed"] >= base_eval["passed"]
+            ),
+            "note": "This gate is a screening signal, not production certification.",
+        },
         "base_generations": base_generations,
         "tuned_generations": tuned_generations,
         "elapsed_seconds": round(time.time() - started, 2),
-        "adapter_path": str(best_dir),
+        "adapter_path": str(selected_dir),
     }
     (OUT / "training_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    if not (selected_dir / "adapter_config.json").is_file():
+        raise RuntimeError("Final selected adapter config is missing.")
+    if not any((selected_dir / name).is_file() for name in ("adapter_model.safetensors", "adapter_model.bin")):
+        raise RuntimeError("Final selected adapter weights are missing.")
+    write_manifest(OUT)
     print(json.dumps(report, indent=2), flush=True)
 
 

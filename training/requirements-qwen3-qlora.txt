@@ -1,3 +1,5 @@
+# GPU-only dependencies. Keep the CUDA-enabled PyTorch supplied by the runtime.
+# Do not add torch here: pip could replace the CUDA wheel with a CPU build.
 # Qwen3-8B 4-bit NF4 QLoRA dependencies; keep the runtime's CUDA torch.
 -r requirements-gpu.txt
 bitsandbytes>=0.45.0,<1.0

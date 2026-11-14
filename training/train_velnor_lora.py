@@ -1,6 +1,28 @@
 """
 Velnor General v1 — General-Purpose rsLoRA Fine-Tuning & Verification
 =====================================================================
+Trains a Rank-Stabilized LoRA (rsLoRA) adapter on `Qwen/Qwen2.5-Coder-1.5B-Instruct`
+(r=8, alpha=16, dropout=0.05, q/v projections) across a 12-domain, 138-example
+executive intelligence curriculum with 20 held-out validation examples across all
+domains. Override the base model with VELNOR_BASE_MODEL.
+
+  1. Headless Messaging Identity (`Velnor` by Vectolith; iMessage, SMS, Siri, Slack)
+  2. Quantitative Reasoning, Math & Financial Modeling (ARR/runway, compound growth, latency percentiles)
+  3. Software Engineering, Systems Architecture & Debugging (TypeScript, Python, SQL, HMAC, concurrency)
+  4. Executive Inbox Triage & Communication Synthesis (priority sorting, action extraction, replies)
+  5. Calendar Scheduling & Conflict Resolution (timezone math, overlap resolution, .ics generation)
+  6. Document Intelligence & Vector RAG Grounding (strict passage synthesis, conflict detection)
+  7. Strategic First-Principles Analysis & Decision Making (build-vs-buy, risk matrices, tradeoffs)
+  8. Travel Logistics & Itinerary Engineering (weather-aware routing, transit buffers, verified spots)
+  9. Honest Execution Verification & Epistemic Humility (zero fabricated receipts or tool states)
+ 10. Credential Hygiene & Cryptographic Isolation (refusing API keys, passwords, seed phrases, CVVs)
+ 11. Multi-Tenant & Workspace Isolation (strictly isolating user handles, memories, and files)
+ 12. Consequential Action Gates & Safety Boundaries (requiring confirmation before sends/deletes)
+
+Saves the BEST held-out validation checkpoint (`val_loss`) to `outputs/velnor-coder-v2/adapter`
+to prevent late-epoch overfitting. Sample generations are graded by the objective
+rubric in `grade_generations.py` for both the base and the tuned model, so the report
+records measured behaviour (arithmetic, refusal, fabrication) instead of prose claims.
 Trains an rsLoRA adapter on Qwen2.5-1.5B-Instruct by default, using a
 cross-domain curriculum that retains software engineering and security
 while adding education, business, communication, research, creative work,
@@ -31,6 +53,22 @@ if DEVICE.type == "cuda":
     torch.backends.cuda.matmul.allow_tf32 = True
 
 ROOT = Path(__file__).resolve().parent
+LOCAL_QWEN = ROOT / "models" / "qwen2.5-coder-1.5b"
+# One canonical base model. A local snapshot is accepted only when it has a
+# Hugging Face config; otherwise Transformers resolves the pinned repo ID.
+MODEL_REPO_ID = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+MODEL_ID = os.environ.get(
+    "VELNOR_BASE_MODEL",
+    str(LOCAL_QWEN) if (LOCAL_QWEN / "config.json").is_file() else MODEL_REPO_ID,
+)
+if not MODEL_ID.strip():
+    raise ValueError("VELNOR_BASE_MODEL must be a non-empty model ID or local snapshot path")
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if DEVICE.type == "cuda":
+    _load_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+else:
+    _load_dtype = torch.float32
 LOCAL_1B_2B = ROOT / "models" / "qwen2.5-1.5b-instruct"
 # Base model: uses local model or environment override
 MODEL_ID = os.environ.get("VELNOR_BASE_MODEL")
@@ -560,12 +598,21 @@ def make_minibatches(examples, batch_size: int, pad_id: int):
     return batches
 
 
+def move_batch(batch, device):
+    return {
+        key: value.to(device, non_blocking=(device.type == "cuda"))
+        for key, value in batch.items()
+    }
+
+
 def eval_loss(model, batches):
     model.eval()
+    device = next(model.parameters()).device
     total = 0.0
     with torch.no_grad():
-        for b in batches:
-            total += float(model(**b).loss.item())
+        for batch in batches:
+            batch = move_batch(batch, device)
+            total += float(model(**batch).loss.item())
     return total / max(1, len(batches))
 
 
@@ -577,6 +624,8 @@ def generate_reply(model, tokenizer, prompt: str, max_new_tokens: int = 64) -> s
     enc = tokenizer.apply_chat_template(
         msgs, tokenize=True, add_generation_prompt=True, return_tensors="pt"
     )
+    input_ids = enc if isinstance(enc, torch.Tensor) else enc["input_ids"]
+    input_ids = input_ids.to(next(model.parameters()).device)
     input_ids = (enc if isinstance(enc, torch.Tensor) else enc["input_ids"]).to(DEVICE)
     with torch.no_grad():
         out = model.generate(
@@ -617,6 +666,8 @@ def main():
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
+    base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
+    base.to(DEVICE)
     base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW).to(DEVICE)
     lora_cfg = LoraConfig(
         r=8,
@@ -645,6 +696,7 @@ def main():
             flush=True,
         )
 
+    fast_mode = os.environ.get("VELNOR_FAST_TRAIN", "0").strip() == "1"
     fast_mode = os.environ.get("VELNOR_FAST_TRAIN", "0") == "1"
     if fast_mode and len(TRAIN) > 36:
         # Fast smoke mode is opt-in and must not be used for release evaluation.
@@ -703,7 +755,9 @@ def main():
     tok.save_pretrained(str(adapter_dir))
 
     history = []
-    best_val_loss = pre_val_loss
+    # Always persist at least one real epoch checkpoint. If every epoch is
+    # worse than the base, the report still records that regression honestly.
+    best_val_loss = float("inf")
     best_epoch = 0
     opt_step = 0
 
@@ -714,6 +768,7 @@ def main():
         opt.zero_grad()
 
         for idx, b in enumerate(train_batches, 1):
+            b = move_batch(b, DEVICE)
             loss = model(**b).loss
             ep_loss += float(loss.item())
             (loss / grad_accum).backward()
@@ -776,6 +831,13 @@ def main():
         f"[velnor-general-v1] Reloading best checkpoint from Epoch {best_epoch} (val_loss={best_val_loss:.4f})...",
         flush=True,
     )
+    # Release the training graph and optimizer state before loading a clean
+    # base model for final adapter evaluation; this avoids doubling VRAM use.
+    del model, base, opt
+    if DEVICE.type == "cuda":
+        torch.cuda.empty_cache()
+    clean_base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
+    clean_base.to(DEVICE)
     # Release the training model before loading a fresh base for checkpoint evaluation.
     # This avoids holding two full 1.5B model copies in free-GPU memory.
     del model, base
@@ -840,6 +902,8 @@ def main():
         git_commit = None
 
     report = {
+        "model_name": "velnor-coder-v2",
+        "base_model": clean_base.config.name_or_path,
         "model_name": "velnor-general-v1",
         "base_model": MODEL_ID,
         "base_model_repo": MODEL_ID if not os.path.isabs(MODEL_ID) else "local checkout",
@@ -872,6 +936,13 @@ def main():
         "base_generations": base_generations,
         "trainable_params": trainable,
         "total_params": total_p,
+        # These are the exact examples used in this run, not the full source pool.
+        "train_examples": len(train_pool),
+        "val_examples": len(val_pool),
+        "full_train_examples": len(TRAIN),
+        "full_val_examples": len(HELDOUT),
+        "fast_mode": fast_mode,
+        "curriculum_domains_available": summary["domains_covered"],
         "train_examples": len(train_pool),
         "curriculum_examples": len(TRAIN),
         "val_examples": len(val_pool),
