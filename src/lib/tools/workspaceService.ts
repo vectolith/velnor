@@ -1,71 +1,48 @@
+import crypto from "node:crypto";
 import { getStore, saveStore } from "../store";
+import { getGoogleAccessToken } from "@/lib/auth/googleToken";
 import { assertRecipientAllowed, parseAllowlist } from "@/lib/security/recipients";
 import { CalendarEventItem, ChannelType, EmailItem, ReminderItem } from "../types";
 
 export async function listEmails(query?: string, maxResults = 6): Promise<EmailItem[]> {
   const state = getStore();
-
-  // If user has connected live Google OAuth token, fetch from Gmail REST API first
-  if (state.config.googleAccessToken) {
-    try {
-      const qParam = query ? `&q=${encodeURIComponent(query)}` : "";
-      const listRes = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}${qParam}`,
-        {
-          headers: { Authorization: `Bearer ${state.config.googleAccessToken}` },
-          signal: AbortSignal.timeout(5000),
-        }
-      );
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        const messages = listData.messages || [];
-        const fetched: EmailItem[] = [];
-        for (const m of messages.slice(0, maxResults)) {
-          const detailRes = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Date`,
-            {
-              headers: { Authorization: `Bearer ${state.config.googleAccessToken}` },
-            }
-          );
-          if (detailRes.ok) {
-            const d = await detailRes.json();
-            const headers: Array<{ name: string; value: string }> = d.payload?.headers || [];
-            const getH = (n: string) =>
-              headers.find((h) => h.name.toLowerCase() === n.toLowerCase())?.value || "";
-            fetched.push({
-              id: d.id,
-              from: getH("From") || "Unknown Sender",
-              to: getH("To") || state.config.googleConnectedEmail || "you",
-              subject: getH("Subject") || "(No Subject)",
-              snippet: d.snippet || "",
-              body: d.snippet || "",
-              date: getH("Date") || "Recent",
-              unread: Array.isArray(d.labelIds) && d.labelIds.includes("UNREAD"),
-              archived: Array.isArray(d.labelIds) && !d.labelIds.includes("INBOX"),
-              labels: d.labelIds || ["INBOX"],
-              status: "inbox",
-            });
-          }
-        }
-        if (fetched.length > 0) return fetched;
-      }
-    } catch {
-      // Fallback to local inbox state
-    }
+  const token = await getGoogleAccessToken();
+  if (!token) throw new Error("Gmail inbox access requires a verified Google OAuth connection.");
+  const limit = Math.min(Math.max(Math.floor(maxResults), 1), 50);
+  const q = query ? "&q=" + encodeURIComponent(query) : "";
+  const listRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=" + limit + q, {
+    headers: { Authorization: "Bearer " + token },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!listRes.ok) throw new Error("Gmail message listing failed (" + listRes.status + ").");
+  const listData = await listRes.json();
+  const messages = Array.isArray(listData.messages) ? listData.messages.slice(0, limit) : [];
+  const fetched: EmailItem[] = [];
+  for (const message of messages) {
+    const detailRes = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/" + encodeURIComponent(message.id) + "?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Date", {
+      headers: { Authorization: "Bearer " + token },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!detailRes.ok) throw new Error("Gmail message detail failed (" + detailRes.status + ").");
+    const detail = await detailRes.json();
+    const headers: Array<{ name: string; value: string }> = detail.payload?.headers || [];
+    const getHeader = (name: string) => headers.find((header) => header.name.toLowerCase() === name.toLowerCase())?.value || "";
+    const labels: string[] = Array.isArray(detail.labelIds) ? detail.labelIds : [];
+    fetched.push({
+      id: detail.id,
+      from: getHeader("From") || "Unknown Sender",
+      to: getHeader("To") || state.config.googleConnectedEmail || "you",
+      subject: getHeader("Subject") || "(No Subject)",
+      snippet: detail.snippet || "",
+      body: detail.snippet || "",
+      date: getHeader("Date") || "Recent",
+      unread: labels.includes("UNREAD"),
+      archived: !labels.includes("INBOX"),
+      labels,
+      status: "inbox",
+    });
   }
-
-  let items = state.emails.filter((e) => !e.archived);
-  if (query && query.trim()) {
-    const q = query.toLowerCase();
-    items = items.filter(
-      (e) =>
-        e.subject.toLowerCase().includes(q) ||
-        e.from.toLowerCase().includes(q) ||
-        e.body.toLowerCase().includes(q) ||
-        e.labels.some((l) => l.toLowerCase().includes(q))
-    );
-  }
-  return items.slice(0, maxResults);
+  return fetched;
 }
 
 export async function draftOrSendEmail(params: {
@@ -75,44 +52,61 @@ export async function draftOrSendEmail(params: {
   sendImmediately?: boolean;
 }): Promise<EmailItem> {
   const state = getStore();
+  const token = await getGoogleAccessToken();
 
-  // If live Google OAuth token is configured and sendImmediately is true, send via Gmail API
   if (params.sendImmediately) {
-    // Opt-in recipient policy: refuse addresses the owner has not allowed.
     assertRecipientAllowed(params.to, parseAllowlist(process.env.VELNOR_EMAIL_ALLOWLIST));
-  }
+    const mimeMessage = [
+      `To: ${params.to}`,
+      `Subject: ${params.subject}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      params.body,
+    ].join("\r\n");
+    const raw = Buffer.from(mimeMessage)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
 
-  if (state.config.googleAccessToken && params.sendImmediately) {
-    try {
-      const mimeMessage = [
-        `To: ${params.to}`,
-        `Subject: ${params.subject}`,
-        "Content-Type: text/plain; charset=utf-8",
-        "",
-        params.body,
-      ].join("\r\n");
-      const raw = Buffer.from(mimeMessage)
-        .toString("base64")
-        .replace(/\+/g, "-")
-        .replace(/\//g, "_")
-        .replace(/=+$/, "");
-
-      const sendResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${state.config.googleAccessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ raw }),
-        signal: AbortSignal.timeout(15000),
-      });
-      // Do not report a send that Gmail rejected: surface the failure instead.
-      if (!sendResponse.ok) {
-        const detail = await sendResponse.text().catch(() => "");
-        throw new Error(`Gmail rejected the send (${sendResponse.status}): ${detail.slice(0, 200)}`);
-      }
-    } catch {
-      // Continue and record in local state
+    const sendResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/send", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ raw }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!sendResponse.ok) {
+      const detail = await sendResponse.text().catch(() => "");
+      throw new Error(`Gmail rejected the send (${sendResponse.status}): ${detail.slice(0, 200)}`);
+    }
+  } else {
+    const mimeMessage = [
+      `To: ${params.to}`,
+      `Subject: ${params.subject}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      params.body,
+    ].join("\r\n");
+    const raw = Buffer.from(mimeMessage)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    const draftResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/drafts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ message: { raw } }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!draftResponse.ok) {
+      const detail = await draftResponse.text().catch(() => "");
+      throw new Error(`Gmail rejected the draft (${draftResponse.status}): ${detail.slice(0, 200)}`);
     }
   }
 
@@ -135,81 +129,106 @@ export async function draftOrSendEmail(params: {
   return item;
 }
 
-export function organizeEmail(params: {
+export async function organizeEmail(params: {
   emailId?: string;
   query?: string;
   action: "archive" | "mark_read" | "label";
   label?: string;
-}): { updatedCount: number; affectedSubjects: string[] } {
+}): Promise<{ updatedCount: number; affectedSubjects: string[] }> {
   const state = getStore();
-  const affected: string[] = [];
+  const token = await getGoogleAccessToken();
+  if (!token) throw new Error("Gmail organization requires a verified Google OAuth connection.");
+  if (!["archive", "mark_read", "label"].includes(params.action)) throw new Error("Unsupported Gmail organization action.");
+  if (!params.emailId && !(params.query || "").trim()) throw new Error("Provide a Gmail message ID or search query.");
+  if (params.action === "label" && !(params.label || "").trim()) throw new Error("A label name is required for the label action.");
 
-  for (const email of state.emails) {
-    const matchesId = params.emailId && email.id === params.emailId;
-    const matchesQuery =
-      params.query &&
-      (email.subject.toLowerCase().includes(params.query.toLowerCase()) ||
-        email.from.toLowerCase().includes(params.query.toLowerCase()));
-
-    if (matchesId || matchesQuery) {
-      if (params.action === "archive") email.archived = true;
-      if (params.action === "mark_read") email.unread = false;
-      if (params.action === "label" && params.label && !email.labels.includes(params.label)) {
-        email.labels.push(params.label);
-      }
-      affected.push(email.subject);
-    }
+  const ids: string[] = [];
+  if (params.emailId) {
+    ids.push(params.emailId);
+  } else {
+    const listResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100&q=" + encodeURIComponent(params.query || ""), {
+      headers: { Authorization: "Bearer " + token },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!listResponse.ok) throw new Error("Gmail search failed (" + listResponse.status + ").");
+    const data = await listResponse.json();
+    for (const message of data.messages || []) if (typeof message.id === "string") ids.push(message.id);
   }
 
-  saveStore(state);
-  return { updatedCount: affected.length, affectedSubjects: affected };
+  if (ids.length === 0) return { updatedCount: 0, affectedSubjects: [] };
+  let labelId: string | undefined;
+  if (params.action === "label") {
+    const labelsResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
+      headers: { Authorization: "Bearer " + token },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!labelsResponse.ok) throw new Error("Gmail label lookup failed (" + labelsResponse.status + ").");
+    const labelsData = await labelsResponse.json();
+    const existing = (labelsData.labels || []).find((item: any) => item.name === params.label);
+    if (existing?.id) {
+      labelId = existing.id;
+    } else {
+      const createResponse = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/labels", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: params.label, labelListVisibility: "labelShow", messageListVisibility: "show" }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!createResponse.ok) throw new Error("Gmail label creation failed (" + createResponse.status + ").");
+      const created = await createResponse.json();
+      labelId = created.id;
+    }
+    if (!labelId) throw new Error("Gmail did not return a label ID.");
+  }
+
+  const body = params.action === "archive"
+    ? { removeLabelIds: ["INBOX"] }
+    : params.action === "mark_read"
+      ? { removeLabelIds: ["UNREAD"] }
+      : { addLabelIds: [labelId] };
+  for (const id of ids) {
+    const response = await fetch("https://gmail.googleapis.com/gmail/v1/users/me/messages/" + encodeURIComponent(id) + "/modify", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!response.ok) throw new Error("Gmail could not update message " + id + " (" + response.status + ").");
+  }
+  const affectedSubjects = state.emails.filter((email) => ids.includes(email.id)).map((email) => email.subject);
+  return { updatedCount: ids.length, affectedSubjects };
 }
 
 export async function listCalendarEvents(dateFilter?: string): Promise<CalendarEventItem[]> {
   const state = getStore();
-
-  if (state.config.googleAccessToken) {
-    try {
-      const timeMin = new Date();
-      timeMin.setHours(0, 0, 0, 0);
-      const res = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(
-          timeMin.toISOString()
-        )}&maxResults=10&singleEvents=true&orderBy=startTime`,
-        {
-          headers: { Authorization: `Bearer ${state.config.googleAccessToken}` },
-          signal: AbortSignal.timeout(5000),
-        }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.items) && data.items.length > 0) {
-          return data.items.map((ev: Record<string, any>) => {
-            const startRaw = ev.start?.dateTime || ev.start?.date || new Date().toISOString();
-            const endRaw = ev.end?.dateTime || ev.end?.date || startRaw;
-            return {
-              id: ev.id,
-              title: ev.summary || "Untitled Event",
-              date: String(startRaw).slice(0, 10),
-              startTime: String(startRaw).slice(11, 16) || "09:00",
-              endTime: String(endRaw).slice(11, 16) || "10:00",
-              attendees: (ev.attendees || []).map((a: Record<string, string>) => a.email),
-              location: ev.location || "Google Calendar",
-              description: ev.description || "",
-              source: "google_calendar",
-            };
-          });
-        }
-      }
-    } catch {
-      // Fallback to local calendar store
-    }
-  }
-
-  if (dateFilter) {
-    return state.calendarEvents.filter((e) => e.date.includes(dateFilter));
-  }
-  return state.calendarEvents;
+  const token = await getGoogleAccessToken();
+  if (!token) throw new Error("Google Calendar access requires a verified Google OAuth connection.");
+  const start = dateFilter ? new Date(dateFilter + "T00:00:00") : new Date();
+  if (!dateFilter) start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  const url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=" + encodeURIComponent(start.toISOString()) + "&timeMax=" + encodeURIComponent(end.toISOString()) + "&maxResults=50&singleEvents=true&orderBy=startTime";
+  const response = await fetch(url, {
+    headers: { Authorization: "Bearer " + token },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok) throw new Error("Google Calendar event listing failed (" + response.status + ").");
+  const data = await response.json();
+  return (Array.isArray(data.items) ? data.items : []).map((event: Record<string, any>) => {
+    const startRaw = event.start?.dateTime || event.start?.date || new Date().toISOString();
+    const endRaw = event.end?.dateTime || event.end?.date || startRaw;
+    return {
+      id: event.id,
+      title: event.summary || "Untitled Event",
+      date: String(startRaw).slice(0, 10),
+      startTime: String(startRaw).slice(11, 16) || "09:00",
+      endTime: String(endRaw).slice(11, 16) || "10:00",
+      attendees: (event.attendees || []).map((attendee: Record<string, string>) => attendee.email),
+      location: event.location || "Google Calendar",
+      description: event.description || "",
+      source: "google_calendar",
+    };
+  });
 }
 
 export async function createCalendarEvent(params: {
@@ -230,34 +249,38 @@ export async function createCalendarEvent(params: {
       return `${nextH}:${String(m || 0).padStart(2, "0")}`;
     })();
 
-  if (state.config.googleAccessToken) {
-    try {
-      const calendarResponse = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${state.config.googleAccessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          summary: params.title,
-          location: params.location,
-          description: params.description,
-          start: { dateTime: `${params.date}T${params.startTime}:00` },
-          end: { dateTime: `${params.date}T${computedEnd}:00` },
-          attendees: (params.attendees || []).map((email) => ({ email })),
-        }),
-      });
-      if (!calendarResponse.ok) {
-        const detail = await calendarResponse.text().catch(() => "");
-        throw new Error(`Google Calendar rejected the event (${calendarResponse.status}): ${detail.slice(0, 200)}`);
-      }
-    } catch {
-      // Continue and store locally
+  const token = await getGoogleAccessToken();
+  let remoteEventId: string | undefined;
+  {
+    const calendarResponse = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        summary: params.title,
+        location: params.location,
+        description: params.description,
+        start: { dateTime: `${params.date}T${params.startTime}:00`, timeZone: process.env.VELNOR_TIMEZONE || "UTC" },
+        end: { dateTime: `${params.date}T${computedEnd}:00`, timeZone: process.env.VELNOR_TIMEZONE || "UTC" },
+        attendees: (params.attendees || []).map((email) => ({ email })),
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!calendarResponse.ok) {
+      const detail = await calendarResponse.text().catch(() => "");
+      throw new Error(`Google Calendar rejected the event (${calendarResponse.status}): ${detail.slice(0, 200)}`);
+    }
+    const remoteEvent = await calendarResponse.json().catch(() => ({}));
+    remoteEventId = typeof remoteEvent.id === "string" ? remoteEvent.id : undefined;
+    if (!remoteEventId) {
+      throw new Error("Google Calendar accepted the request without returning an event ID; refusing to report a confirmed event.");
     }
   }
 
   const newEvent: CalendarEventItem = {
-    id: `evt-${Date.now()}`,
+    id: remoteEventId,
     title: params.title,
     date: params.date || new Date().toISOString().split("T")[0],
     startTime: params.startTime || "10:00",
@@ -265,7 +288,7 @@ export async function createCalendarEvent(params: {
     attendees: params.attendees || [],
     location: params.location || "Google Meet",
     description: params.description || "",
-    source: state.config.googleAccessToken ? "google_calendar" : "local",
+    source: "google_calendar",
   };
 
   state.calendarEvents.push(newEvent);
@@ -280,12 +303,16 @@ export function createReminder(params: {
   recipient?: string;
 }): ReminderItem {
   const state = getStore();
+  const dueDate = params.dueAt ? new Date(params.dueAt) : new Date(Date.now() + 60 * 60 * 1000);
+  if (!Number.isFinite(dueDate.getTime())) {
+    throw new Error("Reminder dueAt must be a valid ISO 8601 date-time.");
+  }
   const reminder: ReminderItem = {
-    id: `rem-${Date.now()}`,
+    id: "rem-" + crypto.randomUUID(),
     text: params.text,
-    dueAt: params.dueAt || "Later today",
+    dueAt: dueDate.toISOString(),
     channel: params.channel || "imessage",
-    recipient: params.recipient || "+1 (555) 019-2834",
+    recipient: params.recipient || "",
     completed: false,
     createdAt: new Date().toISOString(),
   };

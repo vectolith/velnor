@@ -1,71 +1,97 @@
-# Velnor Domain LoRA (`training/`)
+# Velnor model training
 
-LoRA fine-tuning harness for the behaviour layer of Velnor (`velnor-coder-v2`), built on
-`Qwen/Qwen2.5-Coder-1.5B-Instruct` (1.5B parameters). The complete training and held-out
-validation pools are used by default. This is a parameter-efficient adapter fine-tune,
-not training a new foundation model from scratch.
+This directory contains experimental parameter-efficient fine-tuning and evaluation code. Every run is an experiment; a training objective or report is not proof that a checkpoint is production-ready.
 
-## Training contract
+## Product-level training objective
 
-The authoritative implementation is `train_velnor_lora.py`. Run reports record the
-actual selected example counts and runtime provenance.
+Velnor is intended to serve **everyone**, not only engineers or developers. Its curriculum must support students, educators, business owners, professionals, creators, researchers, and everyday users while retaining strong engineering capability.
 
-| Setting | Value |
-|---|---|
-| Base model | `Qwen/Qwen2.5-Coder-1.5B-Instruct` (override with `VELNOR_BASE_MODEL`) |
-| Adapter | rsLoRA, rank 8, alpha 16, dropout 0.05, target modules `q_proj` and `v_proj` |
-| Curriculum | 138 training examples and 20 held-out validation examples in the full pool |
-| Schedule | 3 epochs, gradient accumulation 2, AdamW, cosine decay, 8% warmup |
-| Sequence length | 256 tokens, assistant-only loss masking |
-| Output | `outputs/velnor-coder-v2/adapter` and `pilot_report.json` |
+Target capabilities include:
 
-The default is a full run. For a deliberately reduced smoke run only, set
-`VELNOR_FAST_TRAIN=1`. The report will record the reduced training and validation
-counts separately from the full pool. Do not compare a smoke-run metric with a
-full-curriculum metric as though the experiments were equivalent.
+1. General reasoning, instruction following, planning, and practical problem solving.
+2. Software engineering, programming, debugging, architecture, testing, and security-aware development.
+3. Education, tutoring, explanations, study support, and learning at different skill levels.
+4. Business and professional work, including research, analysis, writing, operations, and planning.
+5. Creative ideation, content development, and structured creative workflows.
+6. Research and information synthesis with source-grounded answers and calibrated uncertainty.
+7. Tool-use planning, structured function selection, multi-step execution, and error recovery.
+8. Multimodal assistance where supported by the selected base model and runtime.
+9. Safe behaviour: privacy protection, prompt-injection resistance, refusal of disallowed requests, and respect for external permission checks.
+
+The model is an untrusted planner. Authentication, tenant isolation, tool permissions, approvals, and irreversible-action controls remain in the runtime and security layer.
+
+## Current training implementation
+
+The compact fallback script `train_velnor_lora.py` trains an rsLoRA adapter using **Qwen2.5-1.5B-Instruct** by default. Set `VELNOR_BASE_MODEL` to override the model identifier or local model path. The preferred high-capacity route is `train_qwen3_8b_qlora.py`: **Qwen3-8B with 4-bit NF4 QLoRA**, gradient checkpointing, and a free-GPU preflight requiring 14 GiB total / 12 GiB free VRAM. Both paths consume the same expanded curriculum and held-out set.
+
+The curriculum combines:
+- 138 existing examples covering engineering, quantitative reasoning, research, productivity, security, and agent boundaries, plus 150 general-purpose examples (15 each across 10 additional domains), for 288 training examples total.
+- 150 additional original examples in `general_curriculum.jsonl`, covering general reasoning, education, business, writing, research, creative work, personal productivity, data science, health information, and safe agent use.
+- 30 held-out language-model validation examples in the training script. The separate generation benchmark in `grade_generations.py` contains 27 deterministic checks across multiple domains.
+
+The added JSONL records are synthetic original examples marked `CC0-1.0`. The script records the external dataset SHA-256 in the generated report. Review the dataset and licensing metadata before adding any third-party material.
+
+**Training is full-curriculum by default.** `VELNOR_FAST_TRAIN=1` opts into a 36-example smoke run and must not be used to produce or promote a release checkpoint. The trainer requires CUDA by default and checks for at least 8 GiB of free GPU memory before loading the model. `VELNOR_ALLOW_CPU=1` bypasses that guard only for local smoke tests; CPU runs are not valid release training.
+
+## Evaluation requirements
+
+- Evaluate the unadapted base model with the adapter explicitly disabled, then evaluate the selected tuned checkpoint with the adapter enabled.
+- Use identical prompts and deterministic decoding settings for both model arms.
+- Report per-domain results, missing responses, model and adapter identifiers, dataset hash, training configuration, and hardware provenance.
+- Treat the 27 deterministic rubric checks as regression signals, not as a substitute for expert human review.
+- Keep held-out evaluation prompts out of training data and avoid promoting checkpoints based on training loss alone.
+- Reject checkpoints that improve one domain while materially degrading another or violating security and permission boundaries.
+
+## Important status distinction
+
+The committed `pilot_report.json` is a historical run using `Qwen/Qwen2.5-Coder-1.5B-Instruct` on CPU with 138 training examples and a six-check rubric. It predates the general-purpose curriculum and the new evaluation harness. Its metrics are **not** results for the new dataset, new base-model default, or expanded benchmark.
+
+No new training run or model weights are included in this change. The Qwen3 continuation path deliberately evaluates the resumed adapter against the new held-out split and resets checkpoint selection to that measured baseline; the previous run's validation loss is retained only as historical metadata, not compared across different datasets. A candidate checkpoint must be trained and evaluated on the intended free GPU environment before any quality or deployment claim is made.
 
 ## Files
 
-- `download_base_model.py` downloads the canonical Qwen 1.5B base model to
-  `models/qwen2.5-coder-1.5b`.
-- `train_velnor_lora.py` performs fine-tuning, validation, checkpoint selection,
-  and base-versus-adapter rubric evaluation.
-- `train_fast_1b.py` and `run_fast_1b_pass.py` are compatibility wrappers that delegate
-  to the canonical trainer in explicit smoke-run mode.
-- `grade_generations.py` applies deterministic checks for identity, arithmetic,
-  HMAC advice, credential refusal, and fabricated booking receipts.
-- `evaluate_adapter.py` re-evaluates an adapter saved on disk against the full
-  held-out set and rubric.
-- `serve_adapter.py` exposes the local adapter endpoint at
-  `http://127.0.0.1:8099/v1/chat`.
+- `train_velnor_lora.py`: compact 1.5B rsLoRA training path and shared curriculum helpers.
+- `train_qwen3_8b_qlora.py`: preferred 8B QLoRA training and continuation path.
+- `requirements-gpu.txt` and `requirements-qwen3-qlora.txt`: GPU-runtime dependencies that preserve the CUDA-enabled PyTorch supplied by the runtime.
+- `Velnor_Qwen3_8B_General_Free_GPU.ipynb`: preferred free-GPU Qwen3-8B notebook; resumes the prior Drive adapter if present.
+- `general_curriculum.jsonl`: 150 original general-purpose instruction examples, balanced at 15 per domain.
+- `Velnor_General_1.5B_Free_GPU.ipynb`: Colab-compatible notebook for a free CUDA GPU run and artifact export.
+- `grade_generations.py`: 27 deterministic cross-domain generation checks.
+- `pilot_report.json`: historical experiment report; not the result of the new curriculum.
+- `serve_adapter.py`: opt-in local adapter endpoint at `http://127.0.0.1:8099/v1/chat`.
 
-## Usage
+## Verification and usage
+
+Run the lightweight data/evaluator contract tests before training:
+
+```bash
+python -m unittest discover -s training -p 'test_*.py'
+```
+
+Use a free CUDA GPU runtime with the matching NVIDIA driver. Install the GPU-capable dependencies, then run the full curriculum:
 
 ```bash
 cd training
 python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r requirements.txt
-python download_base_model.py
-python train_velnor_lora.py
-python grade_generations.py pilot_report.json
-python serve_adapter.py
+./.venv/bin/pip install -r requirements.txt
+VELNOR_BASE_MODEL=Qwen/Qwen2.5-1.5B-Instruct ./.venv/bin/python train_velnor_lora.py
 ```
 
-The 1.5B base model requires several GB of storage and substantial memory for
-fine-tuning. A small free-tier VPS is not a suitable training host. The trainer
-automatically uses CUDA when available, selecting BF16 only when supported and
-FP16 otherwise; it falls back to CPU/FP32 when no GPU is present.
+For a short smoke run only:
 
-For a CUDA runtime (for example, a Colab GPU session), install
-`requirements-gpu.txt`, not the CPU-pinned `requirements.txt`. The GPU
-requirements intentionally omit PyTorch so the runtime's CUDA-enabled build is
-not replaced by a CPU-only wheel. Open `Velnor_Qwen_1.5B_Colab.ipynb` and run
-the cells in order. The notebook refuses to train if CUDA is unavailable,
-persists epoch checkpoints directly to Google Drive, and saves the final adapter
-archive, report, log, and SHA-256 manifest there as well.
-Do not start a paid instance without checking its total cost first.
+```bash
+VELNOR_FAST_TRAIN=1 VELNOR_ALLOW_CPU=1 ./.venv/bin/python train_velnor_lora.py
+```
 
-A lower validation loss is useful but does not prove better task performance.
-Review both `eval.base` and `eval.tuned`, broaden the held-out benchmark, and
-retain the previous adapter until the candidate passes the acceptance gate.
+
+## E2 Qwen3-8B training path
+
+Use `Velnor_Qwen3_8B_QLoRA_E2.ipynb` for the corrected continuation workflow. It invokes the canonical `train_qwen3_8b_qlora.py` entrypoint and keeps the base model fixed to `Qwen/Qwen3-8B`.
+
+E2 is free-GPU-only: it refuses CPU execution and requires at least 14 GiB total VRAM and 12 GiB free VRAM. It defaults to one epoch, sequence length 256, micro-batch 1, gradient accumulation 8, rsLoRA rank 8 / alpha 16, and 4-bit NF4 with double quantization. It does not switch to Qwen2.5 or Llama, and it rejects resume adapters whose base model, task type, rank, or target modules do not match the Qwen3-8B contract.
+
+Checkpoint selection starts with the resumed adapter's measured loss on the current held-out split. A historical validation loss from a different split is recorded only as metadata and is never used for selection. A worse epoch never overwrites the selected adapter. The trainer writes immutable epoch checkpoints, a training report, dataset fingerprints, and a SHA-256 manifest.
+
+The notebook stores model artifacts in a timestamped Google Drive run directory. It does not store GitHub tokens, force-push, create duplicate pull requests, or commit adapter weights to the repository. The existing 1.5B baseline and historical run records remain unchanged.
+
+The E2 promotion gate is a screening signal only: it requires a newly selected checkpoint, no held-out loss regression, and no regression on the deterministic generation rubric before human review. It is not production certification. No GPU training is claimed until the notebook is actually run on an eligible free CUDA runtime.

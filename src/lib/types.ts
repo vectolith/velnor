@@ -131,6 +131,7 @@ export interface ProviderConfig {
   twilioFromNumber?: string;
   sendblueApiKey?: string;
   sendblueApiSecret?: string;
+  sendblueFromNumber?: string;
   loopMessageAuthKey?: string;
   loopMessageSecretKey?: string;
   slackBotToken?: string;
@@ -141,6 +142,10 @@ export interface ProviderConfig {
   googleClientSecret?: string;
   googleAccessToken?: string;
   googleRefreshToken?: string;
+  googleAccessTokenExpiresAt?: string;
+  googleOAuthNonce?: string;
+  googleOAuthCodeVerifier?: string;
+  googleOAuthStartedAt?: string;
   googleConnectedEmail?: string;
 }
 

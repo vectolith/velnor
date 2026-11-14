@@ -4,19 +4,29 @@ on:
   push:
     branches:
       - main
+      - fix/security-hardening-followup
   pull_request:
     branches:
       - main
+      - fix/security-and-credential-hydration
+
+permissions:
+  contents: read
+
+concurrency:
+  group: velnor-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: "npm"
@@ -24,8 +34,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit installed dependencies for moderate and higher advisories
+        run: |
+          npm audit --json > "$RUNNER_TEMP/npm-audit.json" || true
+          node -e 'const report=require(process.env.RUNNER_TEMP+"/npm-audit.json"); for (const [name, item] of Object.entries(report.vulnerabilities || {})) console.log(JSON.stringify({name,severity:item.severity,isDirect:item.isDirect,range:item.range,fixAvailable:item.fixAvailable,via:item.via.map(v=>typeof v==="string"?v:{title:v.title,url:v.url,range:v.range})}));'
+          npm audit --audit-level=moderate
+
+      - name: Run unit and regression tests
+        run: npm test
+
       - name: TypeScript typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Build production Next.js standalone bundle
         run: npm run build
@@ -42,3 +61,32 @@ jobs:
           done
           node scripts/verify-velnor.mjs
           kill $SERVER_PID || true
+
+  training-curriculum-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate general-purpose curriculum and evaluation contracts
+        run: |
+          python3 -m py_compile training/train_velnor_lora.py training/train_qwen3_8b_qlora.py training/serve_adapter.py training/grade_generations.py
+          python3 -m unittest discover -s training -p 'test_*.py'
+          python3 training/grade_generations.py training/pilot_report.json
+          python3 -c "import json; [json.load(open(path, encoding='utf-8')) for path in ['training/Velnor_General_1.5B_Free_GPU.ipynb', 'training/Velnor_Qwen3_8B_General_Free_GPU.ipynb']]"
+
+  identity-gateway-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Bundle Cloudflare identity gateway (no deployment)
+        working-directory: identity-gateway
+        run: npx --yes wrangler@4.160.0 deploy --dry-run --outdir ../.wrangler/identity-gateway

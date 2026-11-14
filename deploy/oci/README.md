@@ -43,9 +43,9 @@ If the repository is private, clone it with a token
 `scp -r`. The script assumes the repo already exists on the VM.
 
 The script installs Docker, opens 80/443 in the host firewall, generates
-`VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY` and `CRON_SECRET` into `.env`, sets
+`VELNOR_SHARED_SECRET`, `VELNOR_SECRET_KEY`, `VELNOR_TENANT_TOKEN_SECRET`, `VELNOR_PROVISIONING_SECRET` and `CRON_SECRET` into `.env`, sets
 `VELNOR_HOST` to `<public-ip>.sslip.io`, builds the image and waits for
-`/api/health`.
+`/api/health`. Set `VELNOR_PUBLIC_URL` to the canonical public HTTPS API origin (normally `https://api.velnor.ai` when using the Cloudflare gateway) in `.env`; do not use the private/origin hostname if providers call the gateway hostname. Configure a trusted identity gateway before calling the chat, settings, Siri, TTS, or LoRA APIs; the repository verifies identity tokens but does not issue them.
 
 ## 4. Fill in Slack, then re-run
 

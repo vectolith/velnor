@@ -1,13 +1,16 @@
+import { authorizeGatewayRequest } from "../src/lib/security/gatewayAuth";
 import assert from "node:assert/strict";
 import test from "node:test";
 import crypto from "node:crypto";
 import {
+  authorizeCronRequest,
   authorizeJsonWebhook,
   authorizeSlackRequest,
   authorizeTwilioRequest,
   computeSlackSignature,
   computeTwilioSignature,
   isSimulatorAllowed,
+  publicRequestUrl,
   verifySlackSignature,
   verifyTwilioSignature,
 } from "../src/lib/security/webhookAuth";
@@ -203,4 +206,40 @@ test("twilio signature implements the documented algorithm", () => {
     .update(URL_PATH + "a" + params.a + "b" + params.b)
     .digest("base64");
   assert.equal(computeTwilioSignature("token", URL_PATH, params), expected);
+});
+
+test("gateway perimeter requires its dedicated strong secret", () => {
+  const secret = "dedicated-gateway-secret-with-at-least-32-characters";
+  assert.equal(authorizeGatewayRequest(undefined, secret).status, 503);
+  assert.equal(authorizeGatewayRequest("short", "short").status, 503);
+  assert.equal(authorizeGatewayRequest(secret, "admin-token").status, 401);
+  assert.equal(authorizeGatewayRequest(secret, secret).ok, true);
+});
+
+test("cron endpoints fail closed without a strong secret and reject mismatches", () => {
+  assert.equal(authorizeCronRequest(undefined, "anything").status, 503);
+  assert.equal(authorizeCronRequest("x".repeat(31), "x".repeat(31)).status, 503);
+  assert.equal(authorizeCronRequest("x".repeat(32), "wrong").status, 401);
+  assert.deepEqual(authorizeCronRequest("x".repeat(32), "x".repeat(32)), { ok: true });
+});
+
+test("Twilio signature URL ignores spoofable forwarded and Host headers", () => {
+  const originalEnv = process.env.VELNOR_PUBLIC_URL;
+  const originalNodeEnv = process.env.NODE_ENV;
+  try {
+    mutableEnv.NODE_ENV = "production";
+    mutableEnv.VELNOR_PUBLIC_URL = "https://api.velnor.ai";
+    const url = publicRequestUrl({
+      nextUrl: {
+        origin: "http://attacker.example",
+        pathname: "/api/webhooks/imessage",
+        search: "?x=1",
+      },
+    });
+    assert.equal(url, "https://api.velnor.ai/api/webhooks/imessage?x=1");
+  } finally {
+    mutableEnv.NODE_ENV = originalNodeEnv;
+    if (originalEnv === undefined) delete process.env.VELNOR_PUBLIC_URL;
+    else process.env.VELNOR_PUBLIC_URL = originalEnv;
+  }
 });

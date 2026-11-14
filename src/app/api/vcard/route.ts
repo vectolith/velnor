@@ -8,7 +8,23 @@ import { getStore } from "@/lib/store";
 export async function GET(req: NextRequest) {
   const state = getStore();
   const phone = state.config.twilioFromNumber || "+18885556554";
-  const origin = req.nextUrl.origin;
+  const configuredOrigin = process.env.VELNOR_PUBLIC_URL;
+  let publicOrigin: URL;
+  try {
+    publicOrigin = new URL(configuredOrigin || req.nextUrl.origin);
+  } catch {
+    return NextResponse.json({ error: "Public contact card origin is invalid." }, { status: 503 });
+  }
+  const isLoopbackOrigin = ["localhost", "127.0.0.1", "[::1]"].includes(publicOrigin.hostname);
+  if (
+    publicOrigin.username || publicOrigin.password || publicOrigin.pathname !== "/" ||
+    publicOrigin.search || publicOrigin.hash ||
+    (process.env.NODE_ENV === "production" && publicOrigin.protocol !== "https:" && !(isLoopbackOrigin && !configuredOrigin)) ||
+    (process.env.NODE_ENV === "production" && !configuredOrigin && !isLoopbackOrigin)
+  ) {
+    return NextResponse.json({ error: "Public contact card origin must be a canonical HTTPS origin." }, { status: 503 });
+  }
+  const origin = publicOrigin.origin;
 
   const vcard = [
     "BEGIN:VCARD",

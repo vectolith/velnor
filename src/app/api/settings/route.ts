@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getEffectiveKeys, getStore, saveStore, resolveSlackChannel, isValidSlackChannel } from "@/lib/store";
+import { getEffectiveKeys, getStore, saveStore, resolveSlackChannel, isValidSlackChannel, withVelnorUser } from "@/lib/store";
+import { authorizeChatTenant } from "@/lib/security/tenant";
+import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const tenant = authorizeChatTenant(req.headers.get("authorization"));
+  if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401 });
+  return withVelnorUser(tenant.userId, () => buildSettings());
+}
+
+function buildSettings() {
   const state = getStore();
   const keys = getEffectiveKeys(state);
 
@@ -15,6 +23,7 @@ export async function GET() {
     hasOpenaiKey: Boolean(keys.openaiApiKey),
     hasAnthropicKey: Boolean(keys.anthropicApiKey),
     twilioFromNumber: state.config.twilioFromNumber || "",
+    sendblueFromNumber: state.config.sendblueFromNumber || "",
     hasTwilio: Boolean(state.config.twilioAccountSid),
     hasSendblue: Boolean(state.config.sendblueApiKey),
     hasLoopMessage: Boolean(state.config.loopMessageAuthKey),
@@ -26,7 +35,24 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  const tenant = authorizeChatTenant(req.headers.get("authorization"));
+  if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401 });
+  let body: unknown;
+  try {
+    body = JSON.parse(await readRequestBodyLimited(req, 64 * 1024));
+  } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      return NextResponse.json({ error: error.message }, { status: 413 });
+    }
+    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return NextResponse.json({ error: "JSON body must be an object." }, { status: 400 });
+  }
+  return withVelnorUser(tenant.userId, () => updateSettings(body as Record<string, unknown>));
+}
+
+function updateSettings(body: any) {
   const state = getStore();
 
   if (body.activeProvider) state.config.activeProvider = body.activeProvider;
@@ -51,6 +77,7 @@ export async function POST(req: NextRequest) {
   if (typeof body.twilioFromNumber === "string") state.config.twilioFromNumber = body.twilioFromNumber.trim();
   if (typeof body.sendblueApiKey === "string") state.config.sendblueApiKey = body.sendblueApiKey.trim();
   if (typeof body.sendblueApiSecret === "string") state.config.sendblueApiSecret = body.sendblueApiSecret.trim();
+  if (typeof body.sendblueFromNumber === "string") state.config.sendblueFromNumber = body.sendblueFromNumber.trim();
   if (typeof body.loopMessageAuthKey === "string") state.config.loopMessageAuthKey = body.loopMessageAuthKey.trim();
   if (typeof body.loopMessageSecretKey === "string") state.config.loopMessageSecretKey = body.loopMessageSecretKey.trim();
   if (typeof body.slackBotToken === "string") state.config.slackBotToken = body.slackBotToken.trim();
@@ -67,8 +94,6 @@ export async function POST(req: NextRequest) {
   }
   if (typeof body.googleClientId === "string") state.config.googleClientId = body.googleClientId.trim();
   if (typeof body.googleClientSecret === "string") state.config.googleClientSecret = body.googleClientSecret.trim();
-  if (typeof body.googleAccessToken === "string") state.config.googleAccessToken = body.googleAccessToken.trim();
-  if (typeof body.googleConnectedEmail === "string") state.config.googleConnectedEmail = body.googleConnectedEmail.trim();
 
   saveStore(state);
   return NextResponse.json({ ok: true });

@@ -55,7 +55,7 @@ test("loopmessage reports transport failures", async () => {
     throw new Error("ECONNRESET");
   });
   try {
-    const result = await sendLoopMessage({ authKey: "a", secretKey: "s", recipient: "+1555", text: "hi" });
+    const result = await sendLoopMessage({ authKey: "a", recipient: "+1555", text: "hi" });
     assert.equal(result.ok, false);
     assert.match(String(result.detail), /ECONNRESET/);
   } finally {

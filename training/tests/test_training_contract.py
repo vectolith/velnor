@@ -72,7 +72,7 @@ class TrainingContractTests(unittest.TestCase):
         self.assertIn("Qwen/Qwen2.5-Coder-1.5B-Instruct", readme)
         self.assertIn("VELNOR_FAST_TRAIN=1", readme)
         self.assertIn("requirements-gpu.txt", readme)
-        self.assertIn("Velnor_Qwen_1.5B_Colab.ipynb", readme)
+        self.assertTrue("Velnor_General_1.5B_Free_GPU.ipynb" in readme or "Velnor_Qwen_1.5B_Colab.ipynb" in readme)
         self.assertNotIn("SmolLM2-135M-Instruct", readme)
 
 

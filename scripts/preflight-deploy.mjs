@@ -11,9 +11,12 @@
  */
 
 const REQUIRED = [
-  ["VELNOR_SHARED_SECRET", "protects /api/chat, /api/settings, /api/tts, /api/siri, /api/lora-pilot"],
+  ["VELNOR_SHARED_SECRET", "protects state-changing control-plane routes"],
+  ["VELNOR_TENANT_TOKEN_SECRET", "verifies short-lived per-user identity tokens"],
+  ["VELNOR_PROVISIONING_SECRET", "authorises first-time tenant provisioning by the identity gateway"],
   ["VELNOR_SECRET_KEY", "seals provider keys at rest; without it keys are never written"],
   ["CRON_SECRET", "authorises /api/cron/reminders"],
+  ["VELNOR_PUBLIC_URL", "canonical HTTPS origin for Google OAuth and Twilio webhook signatures"],
 ];
 
 const RECOMMENDED = [
@@ -21,7 +24,9 @@ const RECOMMENDED = [
   ["TWILIO_AUTH_TOKEN", "without it the Twilio webhook returns 503"],
   ["SLACK_SIGNING_SECRET", "without it the Slack webhook returns 503"],
   ["SLACK_BOT_TOKEN", "the bot cannot post into the channel without it"],
-  ["SENDBLUE_WEBHOOK_SECRET", "required for the JSON webhook path in production"],
+  ["SENDBLUE_WEBHOOK_SECRET", "required for Sendblue JSON webhooks in production"],
+  ["LOOPMESSAGE_WEBHOOK_SECRET", "must match the Authorization header configured on the LoopMessage webhook"],
+  ["LOOPMESSAGE_AUTH_KEY", "required for outbound LoopMessage messages"],
 ];
 
 const problems = [];
@@ -32,6 +37,17 @@ for (const [name, why] of REQUIRED) {
   if (!value) problems.push(`${name} is missing — ${why}`);
   else if (name === "VELNOR_SECRET_KEY" && value.length < 16) {
     problems.push(`VELNOR_SECRET_KEY is only ${value.length} characters; use 32+ random characters`);
+  } else if ((name === "VELNOR_TENANT_TOKEN_SECRET" || name === "VELNOR_PROVISIONING_SECRET") && value.length < 32) {
+    problems.push(`${name} must contain at least 32 characters`);
+  } else if (name === "VELNOR_PUBLIC_URL") {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "https:" || url.username || url.password || url.pathname !== "/" || url.search || url.hash) {
+        problems.push("VELNOR_PUBLIC_URL must be a canonical HTTPS origin without credentials, path, query, or fragment");
+      }
+    } catch {
+      problems.push("VELNOR_PUBLIC_URL must be a valid absolute HTTPS origin");
+    }
   }
 }
 
