@@ -55,3 +55,10 @@ The list above is a migration inventory, not proof that these modules are Worker
 ## Current status
 
 The D1 and R2 modules in this branch are isolated persistence primitives with contract tests. They are not connected to route handlers, no Cloudflare resources have been provisioned, and no production data has moved. This branch does not claim the application is deployable on Workers yet.
+
+## Repository contract introduced
+
+The branch now defines `TenantRepository` in `src/lib/storage/tenantRepository.ts` with explicit asynchronous operations for tenant load, mutation, tenant listing, and usage aggregation. `createD1TenantRepository()` adapts the existing D1 primitives to that contract. Its mutation callback inherits the D1 compare-and-swap rule: it must be limited to in-memory state changes and must not perform external side effects.
+
+This is an interface boundary, not a completed runtime migration. The current synchronous `getStore()`/`saveStore()` API and Node/SQLite implementation remain unchanged. No request handler or service has been switched to the new contract. A Node repository implementation and service-level call-site migration are still required before the boundary can be adopted safely.
+
