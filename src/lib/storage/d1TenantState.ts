@@ -25,7 +25,15 @@ export interface D1PreparedStatement {
 }
 export interface D1Database { prepare(query: string): D1PreparedStatement; }
 export interface PersistedTenantState {
-  usage?: { requests?: number; inputTokens?: number; outputTokens?: number; costUsd?: number };
+  usage?: {
+    requests?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    costUsd?: number;
+    lastRequestCostUsd?: number;
+    lastProvider?: string;
+    lastModel?: string;
+  };
   [key: string]: unknown;
 }
 export interface TenantStateRecord {
