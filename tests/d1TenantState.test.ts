@@ -25,9 +25,9 @@ class FakeD1 implements D1Database {
       },
       async all<T>(): Promise<D1Result<T>> {
         if (query.includes("SELECT tenant_id")) {
-          return { success: true, results: [...db.rows.keys()].sort().map((tenant_id) => ({ tenant_id }) as T) };
+          return { success: true, results: [...db.rows.keys()].sort().map((tenant_id) => ({ tenant_id }) as unknown as T) };
         }
-        return { success: true, results: [...db.rows.values()].map((row) => ({ payload_json: row.payload_json }) as T) };
+        return { success: true, results: [...db.rows.values()].map((row) => ({ payload_json: row.payload_json }) as unknown as T) };
       },
       async run(): Promise<D1Result> {
         const [tenantIdValue, payloadValue, updatedAtValue, expectedValue] = values;
