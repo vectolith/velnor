@@ -20,7 +20,7 @@ Every read and write passes through VELNOR's existing stateSchema migration and 
 
 ## Not yet implemented
 
-- Async request-scoped store API and migration of all synchronous call sites.
+- Async request-scoped store API and migration of all synchronous call sites (tracked in docs/ASYNC-STORE-MIGRATION.md).
 - D1 binding configuration, database provisioning, or remote migration.
 - Export/import tooling and per-tenant parity verification.
 - R2 document/attachment storage.
