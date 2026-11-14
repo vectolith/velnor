@@ -72,7 +72,7 @@ function getSqliteDb() {
     const sqlite = require("node:sqlite");
     if (sqlite && sqlite.DatabaseSync) {
       const db = new sqlite.DatabaseSync(getSqlitePath());
-      db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000;");
+      db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000; PRAGMA secure_delete = ON;");
       db.exec(`
         CREATE TABLE IF NOT EXISTS kv_state (
           key TEXT PRIMARY KEY,
@@ -138,12 +138,32 @@ export function saveStateToSqlite(state: VelnorState, key = "velnor_root_state")
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `);
     upsertKv.run(key, JSON.stringify(state), now);
+    try {
+      db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+    } catch {}
 
     return true;
   } catch (err) {
     console.warn("SQLite write warning:", err);
     return false;
   }
+}
+
+export function closeSqliteDb(): void {
+  if (sqliteInstance) {
+    try {
+      sqliteInstance.exec?.("PRAGMA wal_checkpoint(TRUNCATE);");
+    } catch {
+      // Ignore checkpoint error
+    }
+    try {
+      sqliteInstance.close?.();
+    } catch {
+      // Ignore cleanup error
+    }
+    sqliteInstance = null;
+  }
+  resolvedDataDir = null;
 }
 
 export function getDatabaseEngineStatus(): {

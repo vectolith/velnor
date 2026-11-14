@@ -1,9 +1,23 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { withVelnorUser, getStore } from "../src/lib/store";
+import test, { after } from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { withVelnorUser, getStore, resetStoreCache } from "../src/lib/store";
 import { ingestDocumentOrUrl } from "../src/lib/tools/documentStore";
 
+const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-doc-test-"));
+process.env.VELNOR_DATA_DIR = testDataDir;
 process.env.VELNOR_SECRET_KEY ||= "test-secret-key-for-store-suite-32-bytes";
+
+after(() => {
+  resetStoreCache();
+  try {
+    fs.rmSync(testDataDir, { recursive: true, force: true });
+  } catch {
+    // Windows file handle release guard
+  }
+});
 
 test("document ingestion rejects private-network URLs without creating a document", async () => {
   await withVelnorUser("document-ssrf-test", async () => {

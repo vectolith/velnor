@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import fs from "fs";
 import path from "path";
 import { DEFAULT_MODELS } from "./ai/registry";
-import { listStateKeysFromSqlite, loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
+import { closeSqliteDb, listStateKeysFromSqlite, loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
 import { coerceState, migrateState, STATE_SCHEMA_VERSION } from "./security/stateSchema";
 import { isCredentialField, isSealed, openRecord, sealRecord, secretsEnabled } from "./security/secretBox";
 import {
@@ -353,7 +353,8 @@ export function aggregateUsage() {
   return total;
 }
 
-/** Test hook: drop all cached tenant state. */
+/** Test hook: drop all cached tenant state and release database locks. */
 export function resetStoreCache(): void {
   cache().clear();
+  closeSqliteDb();
 }

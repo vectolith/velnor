@@ -52,5 +52,10 @@ test("provider keys never reach SQLite, or the JSON store, in plaintext", async 
   // The key must still be usable: reloading the profile must return the real value.
   const reloaded = store.loadUserState(store.sanitizeUserId("default"));
   assert.equal(reloaded.config.geminiApiKey, SENTINEL, "sealed key did not decrypt on load");
-  fs.rmSync(dir, { recursive: true, force: true });
+  store.resetStoreCache();
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // Windows file handle release guard
+  }
 });

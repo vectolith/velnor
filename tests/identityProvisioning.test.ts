@@ -33,7 +33,11 @@ function request(body: unknown, secret = process.env.VELNOR_PROVISIONING_SECRET 
 
 after(() => {
   resetStoreCache?.();
-  fs.rmSync(dataDir, { recursive: true, force: true });
+  try {
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  } catch {
+    // Windows file handle release guard
+  }
 });
 
 test("tenant provisioning refuses an incorrect gateway secret", async () => {
