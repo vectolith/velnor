@@ -82,6 +82,15 @@ test("D1 adapter rejects malformed tenant IDs and corrupt persisted JSON", async
   await assert.rejects(() => loadTenantState(db, "tenant id with spaces"), /unsanitized/);
   db.rows.set("tenant_bad", { tenant_id: "tenant_bad", payload_json: "{", usage_json: "{}", revision: 1, updated_at: "" });
   await assert.rejects(() => loadTenantState(db, "tenant_bad"), /invalid JSON/);
+  db.rows.set("tenant_invalid_shape", {
+    tenant_id: "tenant_invalid_shape", payload_json: JSON.stringify({ messages: "not-an-array" }),
+    usage_json: "{}", revision: 1, updated_at: ""
+  });
+  await assert.rejects(() => loadTenantState(db, "tenant_invalid_shape"), /schema validation/);
+  await assert.rejects(
+    () => saveTenantState(db, "tenant_invalid_write", { messages: "not-an-array" }, null),
+    /schema validation/
+  );
 });
 
 test("D1 adapter refuses tenant snapshots that exceed the safe row-size ceiling", async () => {
@@ -135,4 +144,19 @@ test("async tenant mutation surfaces a concurrent commit instead of overwriting 
     TenantStateConflictError
   );
   assert.deepEqual((await loadTenantState(db, "tenant_race"))?.state.memories, ["concurrent-winner"]);
+});
+
+test("D1 adapter migrates legacy schema versions before returning tenant state", async () => {
+  const db = new FakeD1();
+  db.rows.set("tenant_legacy", {
+    tenant_id: "tenant_legacy",
+    payload_json: JSON.stringify({ config: { channel: "legacy-channel" }, memories: [] }),
+    usage_json: "{}",
+    revision: 1,
+    updated_at: ""
+  });
+  const loaded = await loadTenantState(db, "tenant_legacy");
+  assert.equal(loaded?.state.schemaVersion, 2);
+  assert.deepEqual(loaded?.state.config, {});
+  assert.deepEqual(loaded?.state.memories, []);
 });

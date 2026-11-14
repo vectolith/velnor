@@ -1,3 +1,5 @@
+import { migrateState, validateState } from "../security/stateSchema";
+
 /**
  * Cloudflare D1 persistence primitives for VELNOR tenant state.
  * Deliberately not wired into the synchronous Node store yet.
@@ -40,16 +42,25 @@ function assertTenantId(tenantId: string): void {
     throw new Error("Invalid or unsanitized tenant storage identifier.");
   }
 }
+function normalizeTenantState(raw: unknown): PersistedTenantState {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("Persisted tenant state must be a JSON object.");
+  }
+  const migrated = migrateState(raw).value;
+  const validation = validateState(migrated);
+  if (!validation.ok) {
+    throw new Error("Persisted tenant state failed schema validation: " + validation.issues.join("; "));
+  }
+  return migrated as PersistedTenantState;
+}
 function parseRecord(row: {
   tenant_id: string; payload_json: string; revision: number; updated_at: string;
 }): TenantStateRecord {
   let state: unknown;
   try { state = JSON.parse(row.payload_json); }
   catch { throw new Error("Persisted tenant state is invalid JSON; refusing silent reset."); }
-  if (!state || typeof state !== "object" || Array.isArray(state)) {
-    throw new Error("Persisted tenant state must be a JSON object.");
-  }
-  return { tenantId: row.tenant_id, state: state as PersistedTenantState,
+  const normalized = normalizeTenantState(state);
+  return { tenantId: row.tenant_id, state: normalized,
     revision: row.revision, updatedAt: row.updated_at };
 }
 export async function loadTenantState(db: D1Database, tenantId: string): Promise<TenantStateRecord | null> {
@@ -69,13 +80,14 @@ export async function saveTenantState(
   if (expectedRevision !== null && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)) {
     throw new Error("Expected tenant revision must be a positive safe integer or null.");
   }
-  const serialized = JSON.stringify(state);
+  const normalized = normalizeTenantState(state);
+  const serialized = JSON.stringify(normalized);
   if (typeof serialized !== "string") throw new Error("Tenant state could not be serialized.");
   const bytes = new TextEncoder().encode(serialized).byteLength;
   // Cloudflare D1 caps an individual row at 2,000,000 bytes. Keep headroom for
   // SQLite row encoding and refuse an unsafe write rather than losing state.
   if (bytes > 1_900_000) throw new TenantStateTooLargeError(tenantId, bytes);
-  const usageJson = JSON.stringify(state.usage || {});
+  const usageJson = JSON.stringify(normalized.usage || {});
   const result = await db.prepare(`
     INSERT INTO tenant_state (tenant_id, payload_json, usage_json, revision, updated_at)
     VALUES (?, ?, ?, 1, ?)
