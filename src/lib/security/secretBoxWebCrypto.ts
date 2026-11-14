@@ -70,6 +70,12 @@ function fromBase64(value: string): Uint8Array {
   return bytes;
 }
 
+function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer as ArrayBuffer;
+}
+
 export function isCredentialSealed(value: unknown): boolean {
   return typeof value === "string" && (value.startsWith(V1_PREFIX) || /^v2:[A-Za-z0-9_-]{1,32}:/.test(value));
 }
@@ -94,9 +100,9 @@ export async function sealCredentialAsync(
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const aad = new TextEncoder().encode(AAD_PREFIX + id);
   const encrypted = new Uint8Array(await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv, additionalData: aad, tagLength: 128 },
+    { name: "AES-GCM", iv: asArrayBuffer(iv), additionalData: asArrayBuffer(aad), tagLength: 128 },
     key,
-    new TextEncoder().encode(plaintext),
+    asArrayBuffer(new TextEncoder().encode(plaintext)),
   ));
   const ciphertext = encrypted.subarray(0, encrypted.length - 16);
   const tag = encrypted.subarray(encrypted.length - 16);
@@ -137,9 +143,14 @@ export async function openCredentialAsync(
   try {
     const key = await importAesKey(raw);
     const plaintext = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv, ...(aad ? { additionalData: aad } : {}), tagLength: 128 },
+      {
+        name: "AES-GCM",
+        iv: asArrayBuffer(iv),
+        ...(aad ? { additionalData: asArrayBuffer(aad) } : {}),
+        tagLength: 128,
+      },
       key,
-      combined,
+      asArrayBuffer(combined),
     );
     return new TextDecoder().decode(plaintext);
   } catch {
