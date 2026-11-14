@@ -160,3 +160,26 @@ test("D1 adapter migrates legacy schema versions before returning tenant state",
   assert.deepEqual(loaded?.state.config, {});
   assert.deepEqual(loaded?.state.memories, []);
 });
+
+
+test("D1 persists credential fields encrypted and decrypts them only after load", async () => {
+  const db = new FakeD1();
+  const cryptoEnvironment = { VELNOR_SECRET_KEY: "d1-credential-encryption-test-key-32-bytes" };
+  await saveTenantState(db, "tenant_encrypted", {
+    config: {
+      googleAccessToken: "oauth-access-token",
+      googleRefreshToken: "oauth-refresh-token",
+      googleConnectedEmail: "owner@example.com",
+    },
+    usage: { requests: 1 },
+  }, null, cryptoEnvironment);
+
+  const persisted = db.rows.get("tenant_encrypted")!;
+  assert.doesNotMatch(persisted.payload_json, /oauth-access-token|oauth-refresh-token/);
+  assert.match(persisted.payload_json, /v2:legacy:/);
+  const loaded = await loadTenantState(db, "tenant_encrypted", cryptoEnvironment);
+  const config = loaded?.state.config as Record<string, unknown>;
+  assert.equal(config.googleAccessToken, "oauth-access-token");
+  assert.equal(config.googleRefreshToken, "oauth-refresh-token");
+  assert.equal(config.googleConnectedEmail, "owner@example.com");
+});

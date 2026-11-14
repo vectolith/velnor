@@ -142,9 +142,10 @@ export async function updateTenantState<TResult>(
   db: D1Database,
   tenantId: string,
   createInitialState: () => PersistedTenantState,
-  mutate: (draft: PersistedTenantState) => TResult | Promise<TResult>
+  mutate: (draft: PersistedTenantState) => TResult | Promise<TResult>,
+  cryptoEnvironment?: CredentialCryptoEnvironment,
 ): Promise<{ result: TResult; revision: number | null; changed: boolean }> {
-  const current = await loadTenantState(db, tenantId);
+  const current = await loadTenantState(db, tenantId, cryptoEnvironment);
   const source = current?.state ?? createInitialState();
   const serializedSource = JSON.stringify(source);
   if (typeof serializedSource !== "string") {
@@ -159,6 +160,6 @@ export async function updateTenantState<TResult>(
   if (serializedDraft === serializedSource) {
     return { result, revision: current?.revision ?? null, changed: false };
   }
-  const revision = await saveTenantState(db, tenantId, draft, current?.revision ?? null);
+  const revision = await saveTenantState(db, tenantId, draft, current?.revision ?? null, cryptoEnvironment);
   return { result, revision, changed: true };
 }
