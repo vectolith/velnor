@@ -82,7 +82,7 @@ export function isCredentialSealed(value: unknown): boolean {
 
 export function isCredentialFieldWebCrypto(field: string): boolean {
   return /^(loopMessageAuthKey|loopMessageSecretKey)$/i.test(field) ||
-    /(apiKey|accessToken|refreshToken|authToken|clientSecret|signingSecret|botToken|codeVerifier|secret|password|pin)$/i.test(field);
+    /(apiKey|accessToken|refreshToken|authToken|clientSecret|signingSecret|botToken|codeVerifier|oauthNonce|nonce|secret|password|pin)$/i.test(field);
 }
 
 export async function sealCredentialAsync(

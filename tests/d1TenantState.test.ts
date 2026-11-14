@@ -169,6 +169,7 @@ test("D1 persists credential fields encrypted and decrypts them only after load"
     config: {
       googleAccessToken: "oauth-access-token",
       googleRefreshToken: "oauth-refresh-token",
+      googleOAuthNonce: "oauth-state-nonce",
       googleConnectedEmail: "owner@example.com",
     },
     usage: { requests: 1 },
@@ -181,5 +182,6 @@ test("D1 persists credential fields encrypted and decrypts them only after load"
   const config = loaded?.state.config as Record<string, unknown>;
   assert.equal(config.googleAccessToken, "oauth-access-token");
   assert.equal(config.googleRefreshToken, "oauth-refresh-token");
+  assert.equal(config.googleOAuthNonce, "oauth-state-nonce");
   assert.equal(config.googleConnectedEmail, "owner@example.com");
 });

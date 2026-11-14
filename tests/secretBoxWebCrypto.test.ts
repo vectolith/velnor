@@ -31,6 +31,7 @@ test("credential record helpers seal only credential fields and fail closed on t
   const sealed = await sealCredentialRecordAsync({
     googleAccessToken: "oauth-access",
     googleRefreshToken: "oauth-refresh",
+    googleOAuthNonce: "oauth-state-nonce",
     googleConnectedEmail: "owner@example.com",
   }, env);
   assert.notEqual(sealed.googleAccessToken, "oauth-access");
@@ -38,6 +39,7 @@ test("credential record helpers seal only credential fields and fail closed on t
   assert.deepEqual(await openCredentialRecordAsync(sealed, env), {
     googleAccessToken: "oauth-access",
     googleRefreshToken: "oauth-refresh",
+    googleOAuthNonce: "oauth-state-nonce",
     googleConnectedEmail: "owner@example.com",
   });
 
