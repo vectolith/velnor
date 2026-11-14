@@ -1,8 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { safeFetchText } from "@/lib/security/outboundUrl";
-import { DEFAULT_STATE, getEffectiveKeys, getStore, requireCurrentUserId } from "../store";
+import { DEFAULT_STATE, getEffectiveKeys, getStore } from "../store";
 import type { PersistedTenantState } from "../storage/d1TenantState";
-import { createNodeSqliteTenantRepository } from "../storage/nodeSqliteTenantRepository";
+import { getNodeTenantRepositoryContext } from "../storage/currentTenantRepository";
 import type { IndexedDocument } from "../types";
 import { extractTextFromPdfBuffer } from "./pdfParser";
 import { createRepositoryDocumentStore } from "./repositoryDocumentStore";
@@ -21,13 +21,13 @@ async function computeEmbedding(text: string, geminiKey?: string): Promise<numbe
   }
 }
 
-// Shared per-process queue; SQLite revision CAS also protects other processes.
-const repository = createNodeSqliteTenantRepository();
-
-function tenantDocumentStore(tenantId: string, geminiApiKey?: string) {
+function tenantDocumentStore(
+  context: ReturnType<typeof getNodeTenantRepositoryContext>,
+  geminiApiKey?: string
+) {
   return createRepositoryDocumentStore({
-    repository,
-    tenantId,
+    repository: context.repository,
+    tenantId: context.tenantId,
     createInitialState: () => structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState,
     embed: (text) => computeEmbedding(text, geminiApiKey),
   });
@@ -40,7 +40,7 @@ export async function ingestDocumentOrUrl(params: {
   mimeType?: string;
   url?: string;
 }): Promise<IndexedDocument> {
-  const tenantId = requireCurrentUserId();
+  const context = getNodeTenantRepositoryContext();
   const { geminiApiKey } = getEffectiveKeys(getStore());
   let rawText = params.content || "";
   if (rawText.length > 2_000_000) throw new Error("Document text exceeds the 2 MB indexing limit.");
@@ -76,7 +76,7 @@ export async function ingestDocumentOrUrl(params: {
   }
 
   if (!rawText.trim()) throw new Error("No readable text was found; the document was not indexed.");
-  return tenantDocumentStore(tenantId, geminiApiKey).ingest({
+  return tenantDocumentStore(context, geminiApiKey).ingest({
     name: params.name,
     content: rawText,
     sourceType: params.url ? "url" : "file",
@@ -91,7 +91,7 @@ export async function queryVectorDocuments(
   matches: Array<{ docName: string; content: string; score: number }>;
   documents: IndexedDocument[];
 }> {
-  const tenantId = requireCurrentUserId();
+  const context = getNodeTenantRepositoryContext();
   const { geminiApiKey } = getEffectiveKeys(getStore());
-  return tenantDocumentStore(tenantId, geminiApiKey).query(query, topK);
+  return tenantDocumentStore(context, geminiApiKey).query(query, topK);
 }

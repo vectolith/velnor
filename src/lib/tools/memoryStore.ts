@@ -79,10 +79,12 @@ export async function addMemoryFactAsync(
   tenantId: string,
   params: { fact: string; category?: MemoryFact["category"] },
 ): Promise<MemoryFact> {
+  const fact = params.fact.trim();
+  if (!fact) throw new Error("Memory fact cannot be empty.");
   const newFact: MemoryFact = {
-    id: `mem-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    category: inferMemoryCategory(params.fact, params.category),
-    fact: params.fact.trim(),
+    id: `mem-${crypto.randomUUID()}`,
+    category: inferMemoryCategory(fact, params.category),
+    fact,
     createdAt: new Date().toISOString(),
   };
   await repository.update(tenantId, initialMemoryState, (draft) => {

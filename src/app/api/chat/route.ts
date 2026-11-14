@@ -3,7 +3,8 @@ import { processUserMessage } from "@/lib/ai/agent";
 import { getDatabaseEngineStatus } from "@/lib/sqliteDb";
 import { getEffectiveKeys, getStore, saveStore, withVelnorUser } from "@/lib/store";
 import { ingestDocumentOrUrl } from "@/lib/tools/documentStore";
-import { addMemoryFact, deleteMemoryFact } from "@/lib/tools/memoryStore";
+import { addMemoryFactAsync, deleteMemoryFactAsync, listMemoryFactsAsync } from "@/lib/tools/memoryStore";
+import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
 import { transcribeAudioWithProvider } from "@/lib/tools/multimodal";
 import {
   createCalendarEvent,
@@ -105,15 +106,18 @@ async function handlePost(body: any) {
     }
 
     if (action === "add_memory") {
-      const mem = addMemoryFact({
+      const { repository, tenantId } = getNodeTenantRepositoryContext();
+      const mem = await addMemoryFactAsync(repository, tenantId, {
         fact: String(body.fact || ""),
         category: body.category,
       });
-      return NextResponse.json({ memory: mem, memories: getStore().memories });
+      const memories = await listMemoryFactsAsync(repository, tenantId);
+      return NextResponse.json({ memory: mem, memories });
     }
 
     if (action === "delete_memory") {
-      const memories = deleteMemoryFact(String(body.id || ""));
+      const { repository, tenantId } = getNodeTenantRepositoryContext();
+      const memories = await deleteMemoryFactAsync(repository, tenantId, String(body.id || ""));
       return NextResponse.json({ memories });
     }
 

@@ -30,8 +30,9 @@ retried automatically.
 
 ## Rollout status
 
-The adapter is additive and is not selected by the application runtime. Existing
-synchronous service APIs remain the production path. The memory service now exposes repository-backed async add/list/delete operations
-that take an explicit tenant ID. Its existing synchronous exports remain intact
-for legacy callers; callers should be migrated one at a time after their request
-or job boundary supplies an authenticated tenant ID.
+The adapter remains the Node runtime's repository implementation while the
+Cloudflare D1 implementation is introduced separately. Document ingestion and
+retrieval, chat memory add/list/delete, and agent memory tools now use the async
+repository with an authenticated tenant ID supplied by the active request scope.
+Legacy synchronous memory exports remain available for any remaining internal
+callers; audit before removing them.

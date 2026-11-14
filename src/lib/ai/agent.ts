@@ -12,7 +12,6 @@ import {
   ToolActionSummary,
 } from "../types";
 import { ingestDocumentOrUrl, queryVectorDocuments } from "../tools/documentStore";
-import { addMemoryFact, listMemoryFacts } from "../tools/memoryStore";
 import { generateImageWithProvider } from "../tools/multimodal";
 import { buildTravelPlan } from "../tools/travelService";
 import { performWebSearch } from "../tools/webSearch";

@@ -9,7 +9,8 @@ import {
   ToolActionSummary,
 } from "../../types";
 import { ingestDocumentOrUrl, queryVectorDocuments } from "../../tools/documentStore";
-import { addMemoryFact, listMemoryFacts } from "../../tools/memoryStore";
+import { addMemoryFactAsync, listMemoryFactsAsync } from "../../tools/memoryStore";
+import { getNodeTenantRepositoryContext } from "../../storage/currentTenantRepository";
 import { generateImageWithProvider } from "../../tools/multimodal";
 import { buildTravelPlan } from "../../tools/travelService";
 import { performWebSearch } from "../../tools/webSearch";
@@ -233,7 +234,8 @@ export async function executeToolCall(
       return { plan };
     }
     case "remember_user_fact": {
-      const mem = addMemoryFact({
+      const { repository, tenantId } = getNodeTenantRepositoryContext();
+      const mem = await addMemoryFactAsync(repository, tenantId, {
         fact: String(args.fact || ""),
         category: args.category,
       });
@@ -246,7 +248,12 @@ export async function executeToolCall(
       return { memory: mem };
     }
     case "recall_user_facts": {
-      const memories = listMemoryFacts(args.query ? String(args.query) : undefined);
+      const { repository, tenantId } = getNodeTenantRepositoryContext();
+      const memories = await listMemoryFactsAsync(
+        repository,
+        tenantId,
+        args.query ? String(args.query) : undefined
+      );
       bundle.toolActions.push({
         tool: "recall_user_facts",
         label: `Recalled ${memories.length} personal memory fact(s)`,

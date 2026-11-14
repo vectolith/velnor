@@ -37,3 +37,11 @@ testCase("async memory service uses explicit tenant repository and preserves ten
   assert.deepEqual(await listMemoryFactsAsync(repository, "tenant-b", "project"), []);
   assert.deepEqual(await deleteMemoryFactAsync(repository, "tenant-a", first.id), []);
 });
+
+testCase("async memory service rejects empty facts and generates collision-resistant IDs", async () => {
+  const repository = memoryRepository();
+  await assert.rejects(addMemoryFactAsync(repository, "tenant-a", { fact: "   " }), /cannot be empty/);
+  const first = await addMemoryFactAsync(repository, "tenant-a", { fact: "First saved preference" });
+  const second = await addMemoryFactAsync(repository, "tenant-a", { fact: "Second saved preference" });
+  assert.notEqual(first.id, second.id);
+});
