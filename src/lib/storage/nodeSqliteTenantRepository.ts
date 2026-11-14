@@ -1,5 +1,6 @@
 import {
   aggregateUsage,
+  getStore,
   listUserIds,
   loadUserState,
   sanitizeUserId,
@@ -66,10 +67,11 @@ export function createNodeSqliteTenantRepository(): TenantRepository {
       const id = storageId(tenantId);
       return serialized(id, async () => {
         const exists = listUserIds().includes(id);
-        const source = exists
-          ? loadUserState(id) as unknown as PersistedTenantState
-          : createInitialState();
-        return withVelnorUserState(id, source as unknown as VelnorState, async () => {
+        const initial = exists
+          ? loadUserState(id)
+          : createInitialState() as unknown as VelnorState;
+        return withVelnorUserState(id, initial, async () => {
+          const source = structuredClone(getStore()) as unknown as PersistedTenantState;
           const before = JSON.stringify(source);
           if (typeof before !== "string") throw new Error("Initial tenant state could not be serialized.");
           const draft = JSON.parse(before) as PersistedTenantState;
