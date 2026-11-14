@@ -30,13 +30,15 @@ from train_velnor_lora import (
 )
 from grade_generations import CASES, grade_all
 
-MODEL_ID = "Qwen/Qwen3-8B"
+MODEL_ID = os.environ.get("VELNOR_QWEN3_BASE_MODEL", "Qwen/Qwen3-8B")
 SEED = 42
 MAX_SEQ_LEN = int(os.environ.get("VELNOR_QWEN3_MAX_SEQ_LEN", "256"))
 EPOCHS = int(os.environ.get("VELNOR_QWEN3_EPOCHS", "3"))
 MICRO_BATCH_SIZE = 1
 GRAD_ACCUM = int(os.environ.get("VELNOR_QWEN3_GRAD_ACCUM", "8"))
 LR = float(os.environ.get("VELNOR_QWEN3_LR", "1e-4"))
+LORA_R = int(os.environ.get("VELNOR_QWEN3_LORA_R", "16"))
+LORA_ALPHA = int(os.environ.get("VELNOR_QWEN3_LORA_ALPHA", "32"))
 MIN_TOTAL_VRAM_GIB = 14.0
 MIN_FREE_VRAM_GIB = 12.0
 OUT = Path(os.environ.get("VELNOR_QWEN3_OUTPUT", "outputs/qwen3-8b-qlora"))
@@ -139,8 +141,8 @@ def main() -> None:
         raise RuntimeError(f"Qwen3 architecture is missing expected LoRA modules: {missing}")
 
     lora_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
+        r=LORA_R,
+        lora_alpha=LORA_ALPHA,
         lora_dropout=0.05,
         bias="none",
         use_rslora=True,
@@ -275,8 +277,8 @@ def main() -> None:
             "quantization": "4-bit NF4 with double quantization",
             "compute_dtype": str(compute_dtype).replace("torch.", ""),
             "adapter": "rsLoRA",
-            "rank": 8,
-            "alpha": 16,
+            "rank": LORA_R,
+            "alpha": LORA_ALPHA,
             "dropout": 0.05,
             "target_modules": targets,
             "gradient_checkpointing": True,
