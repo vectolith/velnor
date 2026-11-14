@@ -118,3 +118,35 @@ export async function aggregateTenantUsage(db: D1Database): Promise<{
   total.costUsd = Number(total.costUsd.toFixed(6));
   return total;
 }
+
+/**
+ * Run a state mutation against an isolated snapshot and persist it with CAS.
+ * The callback may be async, but must not perform external side effects: the
+ * final compare-and-swap can fail if another request committed concurrently.
+ * A conflict is surfaced to the caller; this function never silently retries
+ * a callback that might not be idempotent.
+ */
+export async function updateTenantState<TResult>(
+  db: D1Database,
+  tenantId: string,
+  createInitialState: () => PersistedTenantState,
+  mutate: (draft: PersistedTenantState) => TResult | Promise<TResult>
+): Promise<{ result: TResult; revision: number | null; changed: boolean }> {
+  const current = await loadTenantState(db, tenantId);
+  const source = current?.state ?? createInitialState();
+  const serializedSource = JSON.stringify(source);
+  if (typeof serializedSource !== "string") {
+    throw new Error("Initial tenant state could not be serialized.");
+  }
+  const draft = JSON.parse(serializedSource) as PersistedTenantState;
+  const result = await mutate(draft);
+  const serializedDraft = JSON.stringify(draft);
+  if (typeof serializedDraft !== "string") {
+    throw new Error("Updated tenant state could not be serialized.");
+  }
+  if (serializedDraft === serializedSource) {
+    return { result, revision: current?.revision ?? null, changed: false };
+  }
+  const revision = await saveTenantState(db, tenantId, draft, current?.revision ?? null);
+  return { result, revision, changed: true };
+}

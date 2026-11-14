@@ -5,6 +5,7 @@ import {
   listTenantStateIds,
   loadTenantState,
   saveTenantState,
+  updateTenantState,
   TenantStateConflictError,
   TenantStateTooLargeError,
   type D1Database,
@@ -90,4 +91,48 @@ test("D1 adapter refuses tenant snapshots that exceed the safe row-size ceiling"
     TenantStateTooLargeError
   );
   assert.equal(db.rows.has("tenant_large"), false);
+});
+
+test("async tenant mutation persists only changed snapshots", async () => {
+  const db = new FakeD1();
+  const initial = () => ({ memories: [], usage: { requests: 0 } });
+  const noOp = await updateTenantState(db, "tenant_mutation", initial, async (draft) => {
+    await Promise.resolve();
+    return draft.memories.length;
+  });
+  assert.deepEqual(noOp, { result: 0, revision: null, changed: false });
+  assert.equal(db.rows.has("tenant_mutation"), false);
+
+  const changed = await updateTenantState(db, "tenant_mutation", initial, (draft) => {
+    draft.memories = ["first"];
+    draft.usage = { requests: 1 };
+    return "saved";
+  });
+  assert.deepEqual(changed, { result: "saved", revision: 1, changed: true });
+  assert.deepEqual((await loadTenantState(db, "tenant_mutation"))?.state.memories, ["first"]);
+});
+
+test("async tenant mutation does not commit when its callback fails", async () => {
+  const db = new FakeD1();
+  await assert.rejects(
+    () => updateTenantState(db, "tenant_failed", () => ({ memories: [] }), (draft) => {
+      draft.memories = ["must-not-persist"];
+      throw new Error("mutation failed");
+    }),
+    /mutation failed/
+  );
+  assert.equal(db.rows.has("tenant_failed"), false);
+});
+
+test("async tenant mutation surfaces a concurrent commit instead of overwriting it", async () => {
+  const db = new FakeD1();
+  await saveTenantState(db, "tenant_race", { memories: ["initial"] }, null);
+  await assert.rejects(
+    () => updateTenantState(db, "tenant_race", () => ({ memories: [] }), async (draft) => {
+      draft.memories = ["stale-request"];
+      await saveTenantState(db, "tenant_race", { memories: ["concurrent-winner"] }, 1);
+    }),
+    TenantStateConflictError
+  );
+  assert.deepEqual((await loadTenantState(db, "tenant_race"))?.state.memories, ["concurrent-winner"]);
 });
