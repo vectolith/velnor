@@ -10,7 +10,7 @@ Do not replace `saveStore()` with fire-and-forget promises, hide D1 writes in `w
 
 ### Request and scheduled entry points
 
-- `src/app/api/chat/route.ts` — authenticated tenant scope; document ingestion and memory add/list/delete now use the async repository. Snapshot/settings, messages, reactions, reminders, calendar/email actions, and other state changes still include synchronous store paths.
+- `src/app/api/chat/route.ts` — authenticated tenant scope; document ingestion, memory add/list/delete, and sensitive-action confirmation state now use the async repository. Snapshot/settings, messages, reactions, reminders, calendar/email actions, and other state changes still include synchronous store paths.
 - `src/app/api/settings/route.ts` — tenant configuration reads and writes remain synchronous.
 - `src/app/api/auth/google/route.ts` and `src/app/api/auth/google/callback/route.ts` — tenant OAuth setup, one-time state/nonce consumption, token exchange, and credential persistence remain synchronous.
 - `src/app/api/siri/route.ts` and `src/app/api/tts/route.ts` — tenant-scoped AI and speech processing; inspect each request path for remaining synchronous state access.
@@ -26,6 +26,7 @@ Do not replace `saveStore()` with fire-and-forget promises, hide D1 writes in `w
 - `src/lib/auth/googleToken.ts` — reads OAuth credentials, refreshes access tokens over the network, and saves rotated tokens.
 - `src/lib/tools/workspaceService.ts` — Gmail and Calendar API calls plus local mirrors for emails, events, and reminders. External mutations must be made outbox-backed or explicitly idempotent before conversion.
 - `src/lib/tools/memoryStore.ts` — legacy synchronous exports remain, but audited chat and agent add/list/delete callers now use the async repository.
+- `src/lib/security/toolPolicy.ts` — legacy in-memory confirmation maps remain for tests/compatibility; active agent and chat routes now use a tenant-persisted async confirmation policy with Web Crypto fingerprints and atomic one-time consumption.
 - `src/lib/tools/documentStore.ts` — document metadata/chunks are now persisted through the async repository. PDF extraction, URL fetching, and embedding generation remain in the Node boundary.
 - `src/lib/tools/multimodal.ts` — reads provider configuration.
 - `src/lib/scheduler.ts` — still uses the synchronous store while dispatching Slack/SMS/iMessage reminders. Do not move its state transition into a retryable callback; dispatch and completion must be coordinated through the durable outbox.
@@ -38,7 +39,8 @@ The list above is a migration inventory, not proof that these modules are Worker
 - `createD1TenantRepository()` adapts D1 state primitives with durable revision compare-and-swap.
 - `createNodeSqliteTenantRepository()` adapts the existing Node state store. It uses SQLite `BEGIN IMMEDIATE`, a durable `kv_state_revisions` table, and compare-and-swap writes across repository instances/processes. Existing rows begin at revision zero.
 - The Node repository bypasses the process cache for fresh reads and checks revisions around the read. Same-tenant nested scopes are refreshed after repository updates so the request sees its committed state.
-- Document ingestion/retrieval and chat/agent memory add/list/delete operations now use the async repository through a shared Node repository context. The context requires an authenticated tenant scope; it does not silently fall back to the root profile.
+- Document ingestion/retrieval, chat/agent memory add/list/delete, and sensitive-action confirmation state now use the async repository through a shared Node repository context. The context requires an authenticated tenant scope; it does not silently fall back to the root profile.
+- Sensitive-action confirmations are stored per tenant, bound to exact JSON arguments, expire after five minutes, and are consumed atomically. The async policy uses Web Crypto and contains no Node-only crypto dependency.
 - Legacy direct `saveStore()` writers still advance the durable revision but do not participate in compare-and-swap. They can still race with repository writers if they mutate stale cached state. Whole-application multi-writer safety is therefore not established until remaining writers are migrated.
 
 This is a partial service migration, not a completed runtime migration. The Node adapter remains the active backend for the current application. The D1 adapter is not wired to request handlers, and no Worker deployment or production data cutover has occurred.

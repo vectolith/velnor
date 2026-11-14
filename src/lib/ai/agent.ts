@@ -2,7 +2,8 @@ import { runAgentLoop } from "./loop";
 import { buildProviderChain, createProvider, estimateCostUsd } from "./registry";
 import { ToolSpec, Turn, Usage, emptyUsage } from "./providers/types";
 import { getEffectiveKeys, getStore, saveStore } from "../store";
-import { enforceToolPolicy, noteUserMessage } from "../security/toolPolicy";
+import { noteUserMessageAsync } from "../security/asyncToolPolicy";
+import { getNodeTenantRepositoryContext } from "../storage/currentTenantRepository";
 import {
   Attachment,
   ChannelType,
@@ -51,7 +52,8 @@ export async function processUserMessage(params: {
   userHandle?: string;
   attachments?: Attachment[];
 }): Promise<ChatMessage> {
-  noteUserMessage(params.text);
+  const tenantContext = getNodeTenantRepositoryContext();
+  await noteUserMessageAsync(tenantContext.repository, tenantContext.tenantId, params.text);
   const state = getStore();
   const { geminiApiKey, openaiApiKey, anthropicApiKey } = getEffectiveKeys(state);
 

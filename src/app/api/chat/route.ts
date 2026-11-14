@@ -14,7 +14,7 @@ import {
 } from "@/lib/tools/workspaceService";
 import { Attachment, ChannelType } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
-import { enforceToolPolicy, noteUserMessage } from "@/lib/security/toolPolicy";
+import { enforceToolPolicyAsync, noteUserMessageAsync } from "@/lib/security/asyncToolPolicy";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 export async function GET(req: NextRequest) {
@@ -79,16 +79,19 @@ export async function POST(req: NextRequest) {
   return withVelnorUser(tenant.userId, () => handlePost(body));
 }
 
-function requireActionConfirmation(
+async function requireActionConfirmation(
   toolName: "organize_email" | "create_calendar_event",
   args: Record<string, unknown>,
   confirmationText: unknown
-): NextResponse | null {
+): Promise<NextResponse | null> {
   // Confirmation is supplied as a separate explicit user affirmation on the
   // retry request. The policy binds it to the authenticated tenant and exact
   // normalized action arguments, then consumes it once.
-  if (typeof confirmationText === "string") noteUserMessage(confirmationText);
-  const decision = enforceToolPolicy(toolName, args);
+  const { repository, tenantId } = getNodeTenantRepositoryContext();
+  if (typeof confirmationText === "string") {
+    await noteUserMessageAsync(repository, tenantId, confirmationText);
+  }
+  const decision = await enforceToolPolicyAsync(repository, tenantId, toolName, args);
   if (decision.allowed) return null;
   return NextResponse.json(
     { error: decision.reason, confirmation_required: true },
@@ -128,7 +131,7 @@ async function handlePost(body: any) {
         action: body.emailAction || "archive",
         label: body.label ? String(body.label) : undefined,
       };
-      const confirmation = requireActionConfirmation("organize_email", args, body.confirmationText);
+      const confirmation = await requireActionConfirmation("organize_email", args, body.confirmationText);
       if (confirmation) return confirmation;
       await organizeEmail(args);
       return NextResponse.json({
@@ -168,7 +171,7 @@ async function handlePost(body: any) {
         attendees: Array.isArray(body.attendees) ? body.attendees : [],
         location: body.location ? String(body.location) : "Google Meet",
       };
-      const confirmation = requireActionConfirmation("create_calendar_event", args, body.confirmationText);
+      const confirmation = await requireActionConfirmation("create_calendar_event", args, body.confirmationText);
       if (confirmation) return confirmation;
       const ev = await createCalendarEvent(args);
       return NextResponse.json({ event: ev, calendarEvents: getStore().calendarEvents });

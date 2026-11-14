@@ -1,5 +1,5 @@
 import { getEffectiveKeys, getStore, saveStore } from "../../store";
-import { enforceToolPolicy, noteUserMessage } from "../../security/toolPolicy";
+import { enforceToolPolicyAsync } from "../../security/asyncToolPolicy";
 import {
   Attachment,
   ChannelType,
@@ -38,7 +38,8 @@ export async function executeToolCall(
   bundle: ToolExecutionBundle,
   userHandle?: string
 ): Promise<Record<string, any>> {
-  const policy = enforceToolPolicy(name, args);
+  const { repository, tenantId } = getNodeTenantRepositoryContext();
+  const policy = await enforceToolPolicyAsync(repository, tenantId, name, args);
   if (!policy.allowed) {
     bundle.toolActions.push({
       tool: name,
