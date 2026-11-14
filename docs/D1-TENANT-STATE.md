@@ -16,7 +16,7 @@ Do not point this schema at production traffic until the async store migration, 
 
 src/lib/storage/d1TenantState.ts provides async load, compare-and-swap save, tenant listing, and usage aggregation primitives. Save requires the revision returned by the preceding load. A concurrent write produces TenantStateConflictError; callers must reload and reconcile rather than silently overwriting another request.
 
-The adapter accepts only already-migrated, validated, sealed persisted state. It does not own encryption keys and must not be given plaintext credentials. The existing secretBox AES-GCM envelope, AAD, key IDs, and keyring remain authoritative.
+The adapter accepts only already-migrated, validated, sealed persisted state. It rejects snapshots above 1.9 MB because Cloudflare D1 enforces a 2,000,000-byte maximum row size; large message/document collections must be partitioned or moved to private R2 before production cutover. Usage totals are stored separately so health aggregation does not scan full tenant snapshots. It does not own encryption keys and must not be given plaintext credentials. The existing secretBox AES-GCM envelope, AAD, key IDs, and keyring remain authoritative.
 
 ## Not yet implemented
 
