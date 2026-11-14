@@ -1,6 +1,6 @@
 # Velnor Domain LoRA (`training/`)
 
-LoRA fine-tuning harness for the behaviour layer of Velnor (`velnor-coder-v2`), built on
+LoRA fine-tuning harness for the behaviour layer of Velnor (`velnor-core-v1`), built on
 `HuggingFaceTB/SmolLM2-135M-Instruct` (135.4M params), trained on CPU in float32.
 
 ## What actually runs
@@ -16,7 +16,7 @@ so the numbers cannot drift from the code:
 | Curriculum | 138 examples across 12 domains, 20 held-out validation examples |
 | Schedule | 3 epochs, grad accum 2, AdamW, peak LR 4e-4 to 4e-5 cosine, warmup 8% |
 | Sequence length | 384 tokens, assistant-only loss masking |
-| Checkpoint | best held-out val_loss writes `outputs/velnor-coder-v2/adapter` |
+| Checkpoint | best held-out val_loss writes `outputs/velnor-core-v1/adapter` (override with `VELNOR_MODEL_NAME`) |
 
 ## Files
 

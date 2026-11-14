@@ -1,24 +1,31 @@
-"""Download Qwen/Qwen2.5-Coder-1.5B-Instruct locally to models/qwen2.5-coder-1.5b for high-intelligence quantitative reasoning and coding."""
+"""Download HuggingFaceTB/SmolLM2-135M-Instruct locally to models/smollm2-135m.
+
+This is the base model named in the training README contract: 135.4M parameters,
+trained on CPU in float32. Override at run time with VELNOR_BASE_MODEL.
+"""
 from pathlib import Path
 from huggingface_hub import snapshot_download
 
-MODEL_ID = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
-TARGET_DIR = Path(__file__).resolve().parent / "models" / "qwen2.5-coder-1.5b"
+MODEL_ID = "HuggingFaceTB/SmolLM2-135M-Instruct"
+TARGET_DIR = Path(__file__).resolve().parent / "models" / "smollm2-135m"
 
 
 def main() -> None:
     TARGET_DIR.mkdir(parents=True, exist_ok=True)
-    safetensors_file = TARGET_DIR / "model.safetensors"
-    if safetensors_file.exists() and safetensors_file.stat().st_size > 3_000_000_000:
-        print(f"Base 1.5B model already exists at {TARGET_DIR} ({safetensors_file.stat().st_size / 1e9:.2f} GB). Skipping download.")
+    weight_files = list(TARGET_DIR.glob("*.safetensors"))
+    total_weight_bytes = sum(path.stat().st_size for path in weight_files)
+    has_config = (TARGET_DIR / "config.json").is_file()
+    # The 135M checkpoint is a single unsharded file, but validate the weight set
+    # rather than assuming one name.
+    if has_config and weight_files and total_weight_bytes > 250_000_000:
+        print(
+            f"Base model already exists at {TARGET_DIR} "
+            f"({total_weight_bytes / 1e6:.1f} MB across {len(weight_files)} weight files). Skipping download."
+        )
         return
 
-    print(f"Downloading 1.5B quantitative reasoning model ({MODEL_ID}) to {TARGET_DIR}...", flush=True)
-    snapshot_download(
-        repo_id=MODEL_ID,
-        local_dir=str(TARGET_DIR),
-        max_workers=4,
-    )
+    print(f"Downloading {MODEL_ID} to {TARGET_DIR}...", flush=True)
+    snapshot_download(repo_id=MODEL_ID, local_dir=str(TARGET_DIR), max_workers=4)
     print(f"Successfully downloaded {MODEL_ID} to {TARGET_DIR}.", flush=True)
 
 
