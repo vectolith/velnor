@@ -158,6 +158,10 @@ Before selecting either tier, run a reproducible evaluation covering general rea
 
 A foundation selection record must include `model_id`, immutable `revision`, `license`, `evaluation_report`, and `runtime_report`. The matching tier in `model_family_contract.json` must set `foundation_status` to `validated` and `base_model` to the selected model ID. Both records must agree; until then, `foundation_config.py` blocks training before model download or GPU allocation.
 
+The current `train_selected_adapter.py` implementation is limited to decoder-only `AutoModelForCausalLM` models with reviewed attention and MLP projection layouts. It is not yet a generic multimodal trainer; Gemma, Ministral, and Qwen candidates that require image-text model classes must remain unselected until their model class, tokenizer/chat template, adapter targets, and serving path are explicitly supported and tested. Granite 4.2 is also only a candidate until the exact revision and runtime are verified.
+
+The current Core Prima curriculum contains 35 seed examples (28 train / 7 validation). This is useful for pipeline smoke testing, not a sufficient flagship training corpus or statistically meaningful promotion benchmark. Expand and independently review the curriculum and held-out evaluation set before any Prima training or superiority claim.
+
 The new configurable entry point is:
 
 ```bash
