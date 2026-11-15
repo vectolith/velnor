@@ -80,6 +80,7 @@ class CorePrimaPipelineTests(unittest.TestCase):
 
     def test_legacy_qwen_trainers_require_explicit_validated_selection(self):
         for name, tier in (("train_qwen3_8b_qlora.py", "prime"),
+                           ("train_velnor_lora.py", "prime"),
                            ("train_core_prima_qwen3_14b.py", "prima")):
             source = (ROOT / name).read_text(encoding="utf-8")
             self.assertIn('assert_contract_matches_selection("' + tier + '")', source)
