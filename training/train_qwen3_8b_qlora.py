@@ -179,6 +179,10 @@ def save_best_adapter(model, tokenizer, output_dir: Path, epoch: int) -> None:
 
 
 def main() -> None:
+    # Legacy architecture-pinned entrypoint: fail closed until explicitly selected.
+    selected = assert_contract_matches_selection("prime")
+    if selected["model_id"] != MODEL_ID:
+        raise RuntimeError("This Qwen-pinned trainer is disabled for the selected foundation. Use train_selected_adapter.py.")
     started = time.time()
     if EPOCHS < 1 or GRAD_ACCUM < 1 or MAX_SEQ_LEN < 128 or LR <= 0:
         raise ValueError("Invalid training configuration.")
