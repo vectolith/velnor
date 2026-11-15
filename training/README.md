@@ -156,7 +156,7 @@ The preliminary research shortlist is in `foundation_model_candidates.json`. It 
 
 Before selecting either tier, run a reproducible evaluation covering general reasoning, coding, tool calling, instruction following, multilingual performance (including relevant African languages), context handling, factual calibration, safety, inference latency, peak VRAM, throughput, quantization quality, license obligations, and compatibility with the intended serving engine and PEFT adapter format. Compare models under matched prompts, decoding settings, hardware, and quantization. Store raw outputs, benchmark versions, model revisions, and hardware details.
 
-A foundation selection record must include `model_id`, immutable `revision`, `license`, `evaluation_report`, and `runtime_report`. The family contract's `base_model` must match that selected model. Until then, `foundation_config.py` blocks training before model download or GPU allocation.
+A foundation selection record must include `model_id`, immutable `revision`, `license`, `evaluation_report`, and `runtime_report`. The matching tier in `model_family_contract.json` must set `foundation_status` to `validated` and `base_model` to the selected model ID. Both records must agree; until then, `foundation_config.py` blocks training before model download or GPU allocation.
 
 The new configurable entry point is:
 
