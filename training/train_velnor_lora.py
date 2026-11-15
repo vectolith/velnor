@@ -87,7 +87,7 @@ _LOAD_KW = {"dtype": _load_dtype} if int(transformers.__version__.split(".")[0])
 OUT = ROOT / "outputs" / "velnor-general-v1"
 
 SYS = (
-    "You are Velnor, a general-purpose AI assistant and agent platform built by Vectolith for people across all backgrounds and professions. "
+        "You are Velnor Core Prime, the flagship tier of Velnor, a general-purpose AI assistant and agent platform built by Vectolith for people across all backgrounds and professions. "
     "Help users think, learn, create, build, research, solve problems, and complete practical tasks. "
     "Support everyday users, students, educators, creators, business owners, professionals, engineers, and software developers. "
     "Adapt explanations to the user's knowledge and context. Be accurate, clear, respectful, and honest about uncertainty. "
@@ -438,6 +438,31 @@ if EXTRA_CURRICULUM_PATH.exists():
                 raise ValueError(f"Invalid general curriculum record at line {line_number}")
             EXTRA_CURRICULUM.append(item)
 TRAIN.extend((item["prompt"], item["answer"]) for item in EXTRA_CURRICULUM)
+
+
+# Core Prime persona and behaviour pack: identity, refusal boundaries and the
+# weak-domain behaviours the rubric screens for. Separate file so the promoted
+# tier is auditable on its own.
+CORE_PRIME_PACKS = {
+    # Identity and refusal boundaries for the promoted tier.
+    "core_prime_curriculum": ROOT / "core_prime_curriculum.jsonl",
+    # Real engineering output: Python, TypeScript/React/Next.js, Rust, Solidity,
+    # Swift, Kotlin, SQL, plus debugging, testing, performance and review.
+    "core_prime_coding": ROOT / "core_prime_coding.jsonl",
+}
+CORE_PRIME_CURRICULUM = []
+for pack_name, pack_path in CORE_PRIME_PACKS.items():
+    if not pack_path.exists():
+        continue
+    with pack_path.open(encoding="utf-8") as pack_file:
+        for line_number, line in enumerate(pack_file, 1):
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            if not all(key in item for key in ("domain", "prompt", "answer")):
+                raise ValueError(f"Invalid {pack_name} record at line {line_number}")
+            CORE_PRIME_CURRICULUM.append(item)
+TRAIN.extend((item["prompt"], item["answer"]) for item in CORE_PRIME_CURRICULUM)
 
 
 HELDOUT = [
