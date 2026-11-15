@@ -29,8 +29,8 @@ class FoundationSelectionTests(unittest.TestCase):
                     "runtime_report": "runtime.json"
                 }}
             }), encoding="utf-8")
-            (root / "evaluation.json").write_text("{}", encoding="utf-8")
-            (root / "runtime.json").write_text("{}", encoding="utf-8")
+            (root / "evaluation.json").write_text(json.dumps({"status": "passed", "model_id": "org/model", "revision": "a" * 40}), encoding="utf-8")
+            (root / "runtime.json").write_text(json.dumps({"status": "compatible", "model_id": "org/model", "revision": "a" * 40}), encoding="utf-8")
             contract_path.write_text(json.dumps({
                 "tiers": {"prime": {
                     "base_model": "org/model",
@@ -57,11 +57,37 @@ class FoundationSelectionTests(unittest.TestCase):
                     "runtime_report": "runtime.json"
                 }}
             }), encoding="utf-8")
-            (root / "evaluation.json").write_text("{}", encoding="utf-8")
-            (root / "runtime.json").write_text("{}", encoding="utf-8")
+            (root / "evaluation.json").write_text(json.dumps({"status": "passed", "model_id": "org/model", "revision": "main"}), encoding="utf-8")
+            (root / "runtime.json").write_text(json.dumps({"status": "compatible", "model_id": "org/model", "revision": "main"}), encoding="utf-8")
             with patch.object(foundation_config, "ROOT", root):
                 with patch.object(foundation_config, "SELECTION_PATH", selection_path):
                     with self.assertRaisesRegex(RuntimeError, "immutable 40-character commit SHA"):
+                        foundation_config.selected_foundation("prime")
+
+    def test_evidence_reports_must_match_selected_model_and_revision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            selection_path = root / "selection.json"
+            revision = "b" * 40
+            selection_path.write_text(json.dumps({
+                "status": "validated",
+                "selection": {"prime": {
+                    "model_id": "org/model",
+                    "revision": revision,
+                    "license": "Apache-2.0",
+                    "evaluation_report": "evaluation.json",
+                    "runtime_report": "runtime.json"
+                }}
+            }), encoding="utf-8")
+            (root / "evaluation.json").write_text(json.dumps({
+                "status": "passed", "model_id": "org/other-model", "revision": revision
+            }), encoding="utf-8")
+            (root / "runtime.json").write_text(json.dumps({
+                "status": "compatible", "model_id": "org/model", "revision": revision
+            }), encoding="utf-8")
+            with patch.object(foundation_config, "ROOT", root):
+                with patch.object(foundation_config, "SELECTION_PATH", selection_path):
+                    with self.assertRaisesRegex(RuntimeError, "does not match the selected model ID"):
                         foundation_config.selected_foundation("prime")
 
     def test_unknown_tier_is_rejected(self):
