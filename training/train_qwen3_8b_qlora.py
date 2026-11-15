@@ -452,6 +452,10 @@ def main() -> None:
         },
         "rubric": {
             "case_count": len(CASES),
+            # Keep legacy report keys while adding explicit three-arm names.
+            "base": base_eval,
+            "tuned": tuned_eval,
+            "delta_passed": tuned_eval["passed"] - base_eval["passed"],
             "base_model": base_eval,
             "resumed_adapter_before_training": resume_eval,
             "selected_adapter_after_training": tuned_eval,
