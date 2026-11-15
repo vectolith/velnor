@@ -1,0 +1,9 @@
+# Free interim gateway endpoint for accounts that do not yet have an active custom domain.
+# Deploy with: npx wrangler@4.160.0 deploy --config wrangler.workers-dev.toml
+# When velnor.ai is active, use the primary wrangler.toml for the custom API route.
+name = "velnor-identity-gateway"
+main = "src/index.ts"
+compatibility_date = "2026-11-11"
+workers_dev = true
+preview_urls = false
+keep_vars = true
