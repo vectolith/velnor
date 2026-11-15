@@ -21,7 +21,7 @@ import transformers
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
-from family_config import family_system_prompt
+from family_runtime import family_system_prompt
 from foundation_config import assert_contract_matches_selection
 
 ROOT = Path(__file__).resolve().parent
