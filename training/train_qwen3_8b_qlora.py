@@ -39,8 +39,9 @@ GRAD_ACCUM = int(os.environ.get("VELNOR_QWEN3_GRAD_ACCUM", "8"))
 LR = float(os.environ.get("VELNOR_QWEN3_LR", "1e-4"))
 LORA_R = int(os.environ.get("VELNOR_QWEN3_LORA_R", "16"))
 LORA_ALPHA = int(os.environ.get("VELNOR_QWEN3_LORA_ALPHA", "32"))
-MIN_TOTAL_VRAM_GIB = 14.0
-MIN_FREE_VRAM_GIB = 12.0
+PATIENCE = int(os.environ.get("VELNOR_QWEN3_PATIENCE", "0"))
+MIN_TOTAL_VRAM_GIB = float(os.environ.get("VELNOR_QWEN3_MIN_TOTAL_VRAM", "13.0"))
+MIN_FREE_VRAM_GIB = float(os.environ.get("VELNOR_QWEN3_MIN_FREE_VRAM", "10.5"))
 OUT = Path(os.environ.get("VELNOR_QWEN3_OUTPUT", "outputs/qwen3-8b-qlora"))
 # Optional continuation run: resume from an existing adapter directory and carry
 # the previous best validation loss forward so a weaker continuation epoch can
@@ -105,7 +106,8 @@ def main() -> None:
         flush=True,
     )
 
-    compute_dtype = torch.bfloat16 if gpu["bf16_supported"] else torch.float16
+    # For Turing architecture (e.g. Tesla T4), native float16 tensor cores run significantly faster than bf16
+    compute_dtype = torch.float16 if "T4" in gpu["name"] else (torch.bfloat16 if gpu["bf16_supported"] else torch.float16)
     quant_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
@@ -201,6 +203,7 @@ def main() -> None:
     history = []
     best_loss = pre_val_loss
     best_epoch = 0
+    patience_counter = 0
     optimizer_step = 0
 
     for epoch in range(1, EPOCHS + 1):
@@ -237,8 +240,12 @@ def main() -> None:
         if improved:
             best_loss = val_loss
             best_epoch = epoch
+            patience_counter = 0
             model.save_pretrained(best_dir)
             tokenizer.save_pretrained(best_dir)
+        else:
+            patience_counter += 1
+
         history.append({
             "epoch": epoch,
             "train_loss": round(epoch_loss / len(train_batches), 5),
@@ -247,6 +254,10 @@ def main() -> None:
         })
         print(f"[qwen3-8b] epoch={epoch} train={epoch_loss/len(train_batches):.5f} "
               f"val={val_loss:.5f} best={improved}", flush=True)
+
+        if PATIENCE > 0 and patience_counter >= PATIENCE:
+            print(f"[early-stopping] Validation loss failed to improve for {patience_counter} epoch(s). Stopping early to preserve best weights.", flush=True)
+            break
 
     # Reload the selected adapter for final rubric evaluation.
     del optimizer, model, base
