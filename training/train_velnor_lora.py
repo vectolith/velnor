@@ -688,7 +688,8 @@ def main():
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
-    base = AutoModelForCausalLM.from_pretrained(MODEL_ID, revision=selected["revision"], **_LOAD_KW).to(DEVICE)
+    base = AutoModelForCausalLM.from_pretrained(MODEL_ID, revision=selected["revision"], **_LOAD_KW)
+    base.to(DEVICE)
     lora_cfg = LoraConfig(
         r=8,
         lora_alpha=16,
@@ -854,10 +855,6 @@ def main():
     # Release the training graph and optimizer state before loading a clean
     # base model for final adapter evaluation; this avoids doubling VRAM use.
     del model, base, opt
-    if DEVICE.type == "cuda":
-        torch.cuda.empty_cache()
-    # Release the training model before loading a fresh base for checkpoint evaluation.
-    del model, base
     if DEVICE.type == "cuda":
         torch.cuda.empty_cache()
     clean_base = AutoModelForCausalLM.from_pretrained(MODEL_ID, revision=selected["revision"], **_LOAD_KW).to(DEVICE)
