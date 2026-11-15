@@ -47,3 +47,7 @@ This is a staged migration, not a drop-in redeployment. Keep the current Node.js
 - Do not change the main branch or merge the existing gateway PR.
 - Do not create Cloudflare databases, buckets, DNS records, routes, or secrets during the compatibility assessment.
 - Do not deploy or switch production traffic.
+
+## Free-tier deployment plan
+
+The original free-tier target, runtime constraints, migration work, release gates, and rollback requirements are preserved in [CLOUDFLARE-FREE-DEPLOYMENT.md](./CLOUDFLARE-FREE-DEPLOYMENT.md). That plan remains a design/release-gate document; it does not authorize resource provisioning or production cutover.
