@@ -25,12 +25,12 @@ def family_system_prompt(tier: str) -> str:
     return (
         contract["shared_system_prompt"]
         + f" Active VELNOR tier: {metadata['display_name']}."
-        + f" Foundation model: {metadata['base_model']}."
+        + f" Foundation model: {metadata['base_model'] or 'not yet selected; pre-selection build'}."
         + f" Family contract version: {contract['contract_version']}."
     )
 
 
-def release_metadata(tier: str) -> dict[str, str]:
+def release_metadata(tier: str) -> dict[str, str | None]:
     contract = load_family_contract()
     if tier not in contract["tiers"]:
         raise ValueError(f"Unknown VELNOR tier: {tier!r}")
