@@ -10,7 +10,7 @@
       "reported_license": "Apache-2.0",
       "strengths_to_test": ["tool calling", "agentic workflows", "reasoning", "long context"],
       "risks_to_check": ["multilingual coverage", "quality relative to larger frontier models", "serving compatibility"],
-      "source": "https://vdf.ai/blog/best-small-language-models/"
+      "source": "https://www.ibm.com/granite/docs/models/granite/"
     },
     {
       "family": "Google Gemma 4",
@@ -19,7 +19,7 @@
       "reported_license": "Apache-2.0",
       "strengths_to_test": ["multimodal input", "reasoning", "edge efficiency", "multilingual coverage"],
       "risks_to_check": ["exact variant footprint", "commercial terms and redistribution obligations", "tool-use quality"],
-      "source": "https://ai.ozdemir.be/guides/small-language-models"
+      "source": "https://ai.google.dev/gemma/docs/core/model_card_4"
     },
     {
       "family": "Mistral Ministral 3",
@@ -28,7 +28,7 @@
       "reported_license": "Apache-2.0",
       "strengths_to_test": ["function calling", "JSON reliability", "multimodal input", "edge deployment"],
       "risks_to_check": ["reasoning depth", "target-language quality", "runtime compatibility"],
-      "source": "https://vdf.ai/blog/best-small-language-models/"
+      "source": "https://mistral.ai/news/mistral-3/"
     },
     {
       "family": "Qwen3.5",
@@ -37,7 +37,7 @@
       "reported_license": "Apache-2.0",
       "strengths_to_test": ["tool calling", "long context", "multilingual performance", "reasoning"],
       "risks_to_check": ["independent benchmark confirmation", "runtime compatibility", "comparative cost"],
-      "source": "https://vdf.ai/blog/best-small-language-models/"
+      "source": "https://huggingface.co/Qwen/Qwen3.5-9B"
     }
   ],
   "selection": {
