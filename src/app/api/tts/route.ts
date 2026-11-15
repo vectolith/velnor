@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateSpeechWithProvider } from "@/lib/tools/multimodal";
 import { authorizeChatTenant } from "@/lib/security/tenant";
-import { withVelnorUser } from "@/lib/store";
+import { withVelnorTenantScope } from "@/lib/store";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 export async function POST(req: NextRequest) {
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     if (!text) {
       return NextResponse.json({ error: "Missing text" }, { status: 400 });
     }
-    const result = await withVelnorUser(tenant.userId, () => generateSpeechWithProvider(text));
+    const result = await withVelnorTenantScope(tenant.userId, () => generateSpeechWithProvider(text));
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json(

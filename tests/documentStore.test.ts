@@ -51,3 +51,10 @@ test("text documents are indexed only from supplied readable content", async () 
     assert.equal(getStore().documents.length, 1);
   });
 });
+
+test("document operations require an authenticated tenant scope", async () => {
+  await assert.rejects(
+    ingestDocumentOrUrl({ name: "unscoped.txt", content: "This must not be written to the root profile." }),
+    /authenticated tenant scope is required/
+  );
+});

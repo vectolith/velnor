@@ -1,5 +1,6 @@
 import { after, NextRequest, NextResponse } from "next/server";
-import { getStore, resolveUserId, withVelnorUser } from "@/lib/store";
+import { resolveUserId, withVelnorTenantScope } from "@/lib/store";
+import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
 import { processUserMessage } from "@/lib/ai/agent";
 import { postSlackMessage } from "@/lib/channels/slack";
 import { authorizeSlackRequest } from "@/lib/security/webhookAuth";
@@ -12,8 +13,14 @@ export const maxDuration = 60;
 export async function POST(req: NextRequest) {
   try {
     const rawBody = await readRequestBodyLimited(req, 1_048_576);
-    const state = getStore();
-    const signingSecret = state.config.slackSigningSecret || process.env.SLACK_SIGNING_SECRET || "";
+    const signingSecret = await withVelnorTenantScope("default", async () => {
+      const { repository, tenantId } = getNodeTenantRepositoryContext();
+      const record = await repository.load(tenantId);
+      const config = record?.state.config as Record<string, unknown> | undefined;
+      return (typeof config?.slackSigningSecret === "string" ? config.slackSigningSecret : "") ||
+        process.env.SLACK_SIGNING_SECRET || "";
+    });
+    
 
     const authorization = authorizeSlackRequest({
       signingSecret,
@@ -43,14 +50,17 @@ export async function POST(req: NextRequest) {
 
       after(async () => {
         try {
-          const result = await withVelnorUser(resolveUserId("slack", workspaceId + ":" + slackUserId), async () => {
+          const result = await withVelnorTenantScope(resolveUserId("slack", workspaceId + ":" + slackUserId), async () => {
             const message = await processUserMessage({
               text,
               channel: "slack",
               userHandle: "@" + slackUserId,
             });
-            const scoped = getStore();
-            return { reply: message.text, botToken: scoped.config.slackBotToken || process.env.SLACK_BOT_TOKEN || "" };
+            const { repository, tenantId } = getNodeTenantRepositoryContext();
+            const record = await repository.load(tenantId);
+            const config = record?.state.config as Record<string, unknown> | undefined;
+            const botToken = typeof config?.slackBotToken === "string" ? config.slackBotToken : "";
+            return { reply: message.text, botToken: botToken || process.env.SLACK_BOT_TOKEN || "" };
           });
           if (responseUrl) {
             const parsed = new URL(responseUrl);
@@ -113,14 +123,17 @@ export async function POST(req: NextRequest) {
 
     after(async () => {
       try {
-        const result = await withVelnorUser(resolveUserId("slack", workspaceId + ":" + slackUserId), async () => {
+        const result = await withVelnorTenantScope(resolveUserId("slack", workspaceId + ":" + slackUserId), async () => {
           const reply = await processUserMessage({
             text: rawText,
             channel: "slack",
             userHandle: "@" + slackUserId,
           });
-          const scoped = getStore();
-          return { reply: reply.text, botToken: scoped.config.slackBotToken || process.env.SLACK_BOT_TOKEN || "" };
+          const { repository, tenantId } = getNodeTenantRepositoryContext();
+            const record = await repository.load(tenantId);
+            const config = record?.state.config as Record<string, unknown> | undefined;
+            const botToken = typeof config?.slackBotToken === "string" ? config.slackBotToken : "";
+          return { reply: reply.text, botToken: botToken || process.env.SLACK_BOT_TOKEN || "" };
         });
         if (!result.botToken) throw new Error("No Slack bot token is configured for this tenant.");
         const delivery = await postSlackMessage({

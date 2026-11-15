@@ -1,6 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
-import { getEffectiveKeys, getStore } from "../store";
+import { DEFAULT_STATE, getEffectiveKeys, type VelnorState } from "../store";
+import { getNodeTenantRepositoryContext } from "../storage/currentTenantRepository";
+
+async function loadCurrentTenantState(): Promise<VelnorState> {
+  const { repository, tenantId } = getNodeTenantRepositoryContext();
+  const record = await repository.load(tenantId);
+  return (record?.state ?? DEFAULT_STATE) as unknown as VelnorState;
+}
 
 function createFallbackSvgDataUrl(prompt: string): string {
   const safePrompt = prompt
@@ -42,7 +49,7 @@ export async function generateImageWithProvider(prompt: string): Promise<{
   dataUrl: string;
   modelUsed: string;
 }> {
-  const state = getStore();
+  const state = await loadCurrentTenantState();
   const { geminiApiKey, openaiApiKey } = getEffectiveKeys(state);
   const preferred = state.config.activeProvider;
 
@@ -102,7 +109,7 @@ export async function transcribeAudioWithProvider(params: {
   base64Audio: string;
   mimeType: string;
 }): Promise<{ transcript: string; modelUsed: string }> {
-  const state = getStore();
+  const state = await loadCurrentTenantState();
   const { geminiApiKey } = getEffectiveKeys(state);
   if (!geminiApiKey) throw new Error("Audio transcription requires a configured Gemini API key.");
   if (!params.base64Audio) throw new Error("Audio data is required for transcription.");
@@ -140,7 +147,7 @@ export async function generateSpeechWithProvider(text: string): Promise<{
   audioDataUrl?: string;
   modelUsed: string;
 }> {
-  const state = getStore();
+  const state = await loadCurrentTenantState();
   const { geminiApiKey, openaiApiKey } = getEffectiveKeys(state);
   const cleanText = text
     .replace(/[*#_`~]/g, "")

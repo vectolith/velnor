@@ -1,19 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getDatabaseEngineStatus } from "@/lib/sqliteDb";
-import { getEffectiveKeys, getStore, saveStore, withVelnorUser } from "@/lib/store";
+import {
+  DEFAULT_STATE,
+  getEffectiveKeys,
+  type VelnorState,
+  withVelnorTenantScope,
+} from "@/lib/store";
 import { ingestDocumentOrUrl } from "@/lib/tools/documentStore";
-import { addMemoryFact, deleteMemoryFact } from "@/lib/tools/memoryStore";
+import { addMemoryFactAsync, deleteMemoryFactAsync, listMemoryFactsAsync } from "@/lib/tools/memoryStore";
+import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
+import type { PersistedTenantState } from "@/lib/storage/d1TenantState";
 import { transcribeAudioWithProvider } from "@/lib/tools/multimodal";
 import {
   createCalendarEvent,
-  createReminder,
+  createReminderAsync,
   organizeEmail,
-  toggleReminder,
+  toggleReminderAsync,
 } from "@/lib/tools/workspaceService";
 import { Attachment, ChannelType } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
-import { enforceToolPolicy, noteUserMessage } from "@/lib/security/toolPolicy";
+import { enforceToolPolicyAsync, noteUserMessageAsync } from "@/lib/security/asyncToolPolicy";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 export async function GET(req: NextRequest) {
@@ -21,11 +28,14 @@ export async function GET(req: NextRequest) {
   if (!tenant.ok) {
     return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 403 });
   }
-  return withVelnorUser(tenant.userId, () => buildSnapshot());
+  return withVelnorTenantScope(tenant.userId, async () => {
+    const { repository, tenantId } = getNodeTenantRepositoryContext();
+    const record = await repository.load(tenantId);
+    return buildSnapshot((record?.state ?? DEFAULT_STATE) as unknown as VelnorState);
+  });
 }
 
-function buildSnapshot() {
-  const state = getStore();
+function buildSnapshot(state: VelnorState) {
   const keys = getEffectiveKeys(state);
   const dbStatus = getDatabaseEngineStatus();
 
@@ -75,19 +85,38 @@ export async function POST(req: NextRequest) {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return NextResponse.json({ error: "JSON body must be an object." }, { status: 400 });
   }
-  return withVelnorUser(tenant.userId, () => handlePost(body));
+  return withVelnorTenantScope(tenant.userId, () => handlePost(body));
 }
 
-function requireActionConfirmation(
+async function loadChatState(): Promise<VelnorState> {
+  const { repository, tenantId } = getNodeTenantRepositoryContext();
+  const record = await repository.load(tenantId);
+  return (record?.state ?? DEFAULT_STATE) as unknown as VelnorState;
+}
+
+async function updateChatState<TResult>(mutate: (state: VelnorState) => TResult): Promise<TResult> {
+  const { repository, tenantId } = getNodeTenantRepositoryContext();
+  const updated = await repository.update(
+    tenantId,
+    () => structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState,
+    (draft) => mutate(draft as unknown as VelnorState),
+  );
+  return updated.result;
+}
+
+async function requireActionConfirmation(
   toolName: "organize_email" | "create_calendar_event",
   args: Record<string, unknown>,
   confirmationText: unknown
-): NextResponse | null {
+): Promise<NextResponse | null> {
   // Confirmation is supplied as a separate explicit user affirmation on the
   // retry request. The policy binds it to the authenticated tenant and exact
   // normalized action arguments, then consumes it once.
-  if (typeof confirmationText === "string") noteUserMessage(confirmationText);
-  const decision = enforceToolPolicy(toolName, args);
+  const { repository, tenantId } = getNodeTenantRepositoryContext();
+  if (typeof confirmationText === "string") {
+    await noteUserMessageAsync(repository, tenantId, confirmationText);
+  }
+  const decision = await enforceToolPolicyAsync(repository, tenantId, toolName, args);
   if (decision.allowed) return null;
   return NextResponse.json(
     { error: decision.reason, confirmation_required: true },
@@ -100,20 +129,24 @@ async function handlePost(body: any) {
     const action = body.action || "message";
 
     if (action === "toggle_reminder") {
-      const updated = toggleReminder(String(body.id));
-      return NextResponse.json({ reminder: updated, reminders: getStore().reminders });
+      const updated = await toggleReminderAsync(String(body.id));
+      const state = await loadChatState();
+      return NextResponse.json({ reminder: updated, reminders: state.reminders });
     }
 
     if (action === "add_memory") {
-      const mem = addMemoryFact({
+      const { repository, tenantId } = getNodeTenantRepositoryContext();
+      const mem = await addMemoryFactAsync(repository, tenantId, {
         fact: String(body.fact || ""),
         category: body.category,
       });
-      return NextResponse.json({ memory: mem, memories: getStore().memories });
+      const memories = await listMemoryFactsAsync(repository, tenantId);
+      return NextResponse.json({ memory: mem, memories });
     }
 
     if (action === "delete_memory") {
-      const memories = deleteMemoryFact(String(body.id || ""));
+      const { repository, tenantId } = getNodeTenantRepositoryContext();
+      const memories = await deleteMemoryFactAsync(repository, tenantId, String(body.id || ""));
       return NextResponse.json({ memories });
     }
 
@@ -124,35 +157,36 @@ async function handlePost(body: any) {
         action: body.emailAction || "archive",
         label: body.label ? String(body.label) : undefined,
       };
-      const confirmation = requireActionConfirmation("organize_email", args, body.confirmationText);
+      const confirmation = await requireActionConfirmation("organize_email", args, body.confirmationText);
       if (confirmation) return confirmation;
       await organizeEmail(args);
       return NextResponse.json({
-        emails: getStore().emails.filter((e) => !e.archived),
+        emails: (await loadChatState()).emails.filter((e) => !e.archived),
       });
     }
 
     if (action === "toggle_reaction") {
-      const state = getStore();
-      const msg = state.messages.find((m) => m.id === String(body.messageId));
-      const emoji = String(body.emoji || "❤️");
-      if (msg) {
+      await updateChatState((state) => {
+        const msg = state.messages.find((m) => m.id === String(body.messageId));
+        const emoji = String(body.emoji || "❤️");
+        if (!msg) return;
         const list = msg.reactions || [];
         msg.reactions = list.includes(emoji)
           ? list.filter((r) => r !== emoji)
           : [...list, emoji];
-        saveStore(state);
-      }
+      });
+      const state = await loadChatState();
       return NextResponse.json({ messages: state.messages });
     }
 
     if (action === "create_reminder") {
-      const rem = createReminder({
+      const rem = await createReminderAsync({
         text: String(body.text || ""),
         dueAt: String(body.dueAt || "Today at 5:00 PM"),
         channel: (body.channel as ChannelType) || "imessage",
       });
-      return NextResponse.json({ reminder: rem, reminders: getStore().reminders });
+      const state = await loadChatState();
+      return NextResponse.json({ reminder: rem, reminders: state.reminders });
     }
 
     if (action === "create_event") {
@@ -164,10 +198,11 @@ async function handlePost(body: any) {
         attendees: Array.isArray(body.attendees) ? body.attendees : [],
         location: body.location ? String(body.location) : "Google Meet",
       };
-      const confirmation = requireActionConfirmation("create_calendar_event", args, body.confirmationText);
+      const confirmation = await requireActionConfirmation("create_calendar_event", args, body.confirmationText);
       if (confirmation) return confirmation;
       const ev = await createCalendarEvent(args);
-      return NextResponse.json({ event: ev, calendarEvents: getStore().calendarEvents });
+      const state = await loadChatState();
+      return NextResponse.json({ event: ev, calendarEvents: state.calendarEvents });
     }
 
     if (action === "ingest_document") {
@@ -178,7 +213,8 @@ async function handlePost(body: any) {
         mimeType: body.mimeType ? String(body.mimeType) : undefined,
         url: body.url ? String(body.url) : undefined,
       });
-      return NextResponse.json({ document: doc, documents: getStore().documents });
+      const state = await loadChatState();
+      return NextResponse.json({ document: doc, documents: state.documents });
     }
 
     if (action === "transcribe_audio") {
@@ -190,14 +226,13 @@ async function handlePost(body: any) {
     }
 
     if (action === "clear_chat") {
-      const state = getStore();
       const targetChannel = body.channel as ChannelType | undefined;
-      if (targetChannel) {
-        state.messages = state.messages.filter((m) => m.channel !== targetChannel);
-      } else {
-        state.messages = [];
-      }
-      saveStore(state);
+      await updateChatState((state) => {
+        state.messages = targetChannel
+          ? state.messages.filter((m) => m.channel !== targetChannel)
+          : [];
+      });
+      const state = await loadChatState();
       return NextResponse.json({ messages: state.messages });
     }
 
@@ -213,7 +248,7 @@ async function handlePost(body: any) {
       attachments,
     });
 
-    const state = getStore();
+    const state = await loadChatState();
     return NextResponse.json({
       reply,
       messages: state.messages,

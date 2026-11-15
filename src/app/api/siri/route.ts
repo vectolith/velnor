@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
-import { withVelnorUser } from "@/lib/store";
+import { withVelnorTenantScope } from "@/lib/store";
 import { authorizeChatTenant } from "@/lib/security/tenant";
 import { generateSpeechWithProvider } from "@/lib/tools/multimodal";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     }
 
     const handle = body.device ? "Siri (" + body.device + ")" : "Siri Shortcut";
-    const result = await withVelnorUser(tenant.userId, async () => {
+    const result = await withVelnorTenantScope(tenant.userId, async () => {
       const reply = await processUserMessage({
         channel: "imessage",
         userHandle: handle,

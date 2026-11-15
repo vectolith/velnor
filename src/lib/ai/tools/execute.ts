@@ -1,5 +1,5 @@
 import { getEffectiveKeys, getStore, saveStore } from "../../store";
-import { enforceToolPolicy, noteUserMessage } from "../../security/toolPolicy";
+import { enforceToolPolicyAsync } from "../../security/asyncToolPolicy";
 import {
   Attachment,
   ChannelType,
@@ -9,18 +9,19 @@ import {
   ToolActionSummary,
 } from "../../types";
 import { ingestDocumentOrUrl, queryVectorDocuments } from "../../tools/documentStore";
-import { addMemoryFact, listMemoryFacts } from "../../tools/memoryStore";
+import { addMemoryFactAsync, listMemoryFactsAsync } from "../../tools/memoryStore";
+import { getNodeTenantRepositoryContext } from "../../storage/currentTenantRepository";
 import { generateImageWithProvider } from "../../tools/multimodal";
 import { buildTravelPlan } from "../../tools/travelService";
 import { performWebSearch } from "../../tools/webSearch";
 import { delegateBrowserTaskToBlud } from "../../tools/bludBridge";
 import {
   createCalendarEvent,
-  createReminder,
+  createReminderAsync,
   draftOrSendEmail,
   listCalendarEvents,
   listEmails,
-  listReminders,
+  listRemindersAsync,
   organizeEmail,
 } from "../../tools/workspaceService";
 export interface ToolExecutionBundle {
@@ -37,7 +38,8 @@ export async function executeToolCall(
   bundle: ToolExecutionBundle,
   userHandle?: string
 ): Promise<Record<string, any>> {
-  const policy = enforceToolPolicy(name, args);
+  const { repository, tenantId } = getNodeTenantRepositoryContext();
+  const policy = await enforceToolPolicyAsync(repository, tenantId, name, args);
   if (!policy.allowed) {
     bundle.toolActions.push({
       tool: name,
@@ -169,7 +171,7 @@ export async function executeToolCall(
       return { event: ev };
     }
     case "create_reminder": {
-      const rem = createReminder({
+      const rem = await createReminderAsync({
         text: String(args.text || ""),
         dueAt: String(args.dueAt || new Date(Date.now() + 60 * 60 * 1000).toISOString()),
         channel,
@@ -184,7 +186,7 @@ export async function executeToolCall(
       return { reminder: rem };
     }
     case "list_reminders": {
-      const reminders = listReminders();
+      const reminders = await listRemindersAsync();
       bundle.toolActions.push({
         tool: "list_reminders",
         label: "Loaded active reminders",
@@ -233,7 +235,8 @@ export async function executeToolCall(
       return { plan };
     }
     case "remember_user_fact": {
-      const mem = addMemoryFact({
+      const { repository, tenantId } = getNodeTenantRepositoryContext();
+      const mem = await addMemoryFactAsync(repository, tenantId, {
         fact: String(args.fact || ""),
         category: args.category,
       });
@@ -246,7 +249,12 @@ export async function executeToolCall(
       return { memory: mem };
     }
     case "recall_user_facts": {
-      const memories = listMemoryFacts(args.query ? String(args.query) : undefined);
+      const { repository, tenantId } = getNodeTenantRepositoryContext();
+      const memories = await listMemoryFactsAsync(
+        repository,
+        tenantId,
+        args.query ? String(args.query) : undefined
+      );
       bundle.toolActions.push({
         tool: "recall_user_facts",
         label: `Recalled ${memories.length} personal memory fact(s)`,
