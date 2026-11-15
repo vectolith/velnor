@@ -142,3 +142,5 @@ The evaluator runs the same deterministic 27-case generation rubric and four fam
 Both tiers must preserve the same VELNOR identity, instruction hierarchy, privacy and safety boundaries, honest execution reporting, and permission requirements. Tier selection may change depth and capability, never the behavioural contract. Model weights and tokenizer artifacts remain tier-specific and are not interchangeable.
 
 **Current status:** pipeline and curriculum files are committed on the feature branch. No Core Prima GPU training, checkpoint creation, comparative evaluation, or promotion is claimed by this documentation change.
+
+The tier-aware prompt and release metadata resolver is `family_runtime.py`. Both training paths and the paired evaluator use it to inject the active tier name, base model, and family-contract version on top of the same shared behavioural prompt. This avoids maintaining divergent Prime/Prima system prompts.
