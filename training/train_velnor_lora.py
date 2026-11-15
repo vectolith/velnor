@@ -86,7 +86,7 @@ _load_dtype = (
 _LOAD_KW = {"dtype": _load_dtype} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": _load_dtype}
 OUT = ROOT / "outputs" / "velnor-general-v1"
 
-SYS = json.loads((ROOT / "model_family_contract.json").read_text(encoding="utf-8"))["shared_system_prompt"]
+from family_runtime import family_system_prompt\n\nSYS = family_system_prompt("prime")
 TRAIN = [
     # -------------------------------------------------------------------------
     # 1. Headless Messaging Identity (10 examples)
