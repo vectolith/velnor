@@ -6,6 +6,8 @@ overwriting an existing run. It uses a separate Core Prima curriculum.
 """
 from __future__ import annotations
 
+from foundation_config import assert_contract_matches_selection
+
 import hashlib
 import json
 import math
@@ -124,6 +126,10 @@ def evaluate_loss(model, encoded, pad_id):
 
 
 def main():
+    # Legacy architecture-pinned entrypoint: fail closed until explicitly selected.
+    selected = assert_contract_matches_selection("prima")
+    if selected["model_id"] != MODEL_ID:
+        raise RuntimeError("This Qwen-pinned trainer is disabled for the selected foundation. Use train_selected_adapter.py.")
     if EPOCHS < 1 or GRAD_ACCUM < 1 or MAX_SEQ_LEN < 256 or LR <= 0:
         raise ValueError("Invalid Core Prima training configuration.")
     if OUT.exists() and any(OUT.iterdir()):
