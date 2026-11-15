@@ -23,22 +23,46 @@ class FoundationSelectionTests(unittest.TestCase):
                 "status": "validated",
                 "selection": {"prime": {
                     "model_id": "org/model",
-                    "revision": "immutable-revision",
+                    "revision": "a" * 40,
                     "license": "Apache-2.0",
-                    "evaluation_report": "reports/evaluation.json",
-                    "runtime_report": "reports/runtime.json"
+                    "evaluation_report": "evaluation.json",
+                    "runtime_report": "runtime.json"
                 }}
             }), encoding="utf-8")
+            (root / "evaluation.json").write_text("{}", encoding="utf-8")
+            (root / "runtime.json").write_text("{}", encoding="utf-8")
             contract_path.write_text(json.dumps({
                 "tiers": {"prime": {
                     "base_model": "org/model",
                     "foundation_status": "unselected"
                 }}
             }), encoding="utf-8")
-            with patch.object(foundation_config, "SELECTION_PATH", selection_path):
-                with patch.object(foundation_config, "CONTRACT_PATH", contract_path):
-                    with self.assertRaisesRegex(RuntimeError, "foundation_status must be validated"):
-                        foundation_config.assert_contract_matches_selection("prime")
+            with patch.object(foundation_config, "ROOT", root):
+                with patch.object(foundation_config, "SELECTION_PATH", selection_path):
+                    with patch.object(foundation_config, "CONTRACT_PATH", contract_path):
+                        with self.assertRaisesRegex(RuntimeError, "foundation_status must be validated"):
+                            foundation_config.assert_contract_matches_selection("prime")
+
+    def test_mutable_revision_tags_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            selection_path = root / "selection.json"
+            selection_path.write_text(json.dumps({
+                "status": "validated",
+                "selection": {"prime": {
+                    "model_id": "org/model",
+                    "revision": "main",
+                    "license": "Apache-2.0",
+                    "evaluation_report": "evaluation.json",
+                    "runtime_report": "runtime.json"
+                }}
+            }), encoding="utf-8")
+            (root / "evaluation.json").write_text("{}", encoding="utf-8")
+            (root / "runtime.json").write_text("{}", encoding="utf-8")
+            with patch.object(foundation_config, "ROOT", root):
+                with patch.object(foundation_config, "SELECTION_PATH", selection_path):
+                    with self.assertRaisesRegex(RuntimeError, "immutable 40-character commit SHA"):
+                        foundation_config.selected_foundation("prime")
 
     def test_unknown_tier_is_rejected(self):
         with self.assertRaises(ValueError):
