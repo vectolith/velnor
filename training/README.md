@@ -160,7 +160,7 @@ A foundation selection record must include `model_id`, a full immutable 40-chara
 
 The current `train_selected_adapter.py` implementation is limited to decoder-only `AutoModelForCausalLM` models with reviewed attention and MLP projection layouts. It is not yet a generic multimodal trainer; Gemma, Ministral, and Qwen candidates that require image-text model classes must remain unselected until their model class, tokenizer/chat template, adapter targets, and serving path are explicitly supported and tested. Granite 4.2 is also only a candidate until the exact revision and runtime are verified.
 
-The current Core Prima curriculum contains 35 seed examples (28 train / 7 validation). This is useful for pipeline smoke testing, not a sufficient flagship training corpus or statistically meaningful promotion benchmark. Expand and independently review the curriculum and held-out evaluation set before any Prima training or superiority claim.
+The current Core Prime curriculum contains 64 seed examples (51 train / 13 validation), and Core Prima contains 35 seed examples (28 train / 7 validation). These are useful for pipeline smoke testing, not sufficient release-training corpora or statistically meaningful promotion benchmarks. Expand and independently review both curricula and their held-out evaluation sets before serious training or any Prima superiority claim.
 
 The new configurable entry point is:
 
