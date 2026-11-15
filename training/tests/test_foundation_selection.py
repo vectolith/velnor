@@ -35,10 +35,10 @@ class FoundationSelectionTests(unittest.TestCase):
                     "foundation_status": "unselected"
                 }}
             }), encoding="utf-8")
-            with patch.object(foundation_config, "SELECTION_PATH", selection_path), \\
-                 patch.object(foundation_config, "CONTRACT_PATH", contract_path):
-                with self.assertRaisesRegex(RuntimeError, "foundation_status must be validated"):
-                    foundation_config.assert_contract_matches_selection("prime")
+            with patch.object(foundation_config, "SELECTION_PATH", selection_path):
+                with patch.object(foundation_config, "CONTRACT_PATH", contract_path):
+                    with self.assertRaisesRegex(RuntimeError, "foundation_status must be validated"):
+                        foundation_config.assert_contract_matches_selection("prime")
 
     def test_unknown_tier_is_rejected(self):
         with self.assertRaises(ValueError):
