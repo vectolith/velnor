@@ -38,7 +38,7 @@ function createAppJwt(appId: string, privateKeyPem: string): string {
 export function getGitHubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig {
   return {
     appId: required(env.VELNOR_GITHUB_APP_ID, "VELNOR_GITHUB_APP_ID"),
-    privateKey: required(env.VELNOR_GITHUB_PRIVATE_KEY, "VELNOR_GITHUB_PRIVATE_KEY").replace(/\\\\n/g, "\n"),
+    privateKey: required(env.VELNOR_GITHUB_PRIVATE_KEY, "VELNOR_GITHUB_PRIVATE_KEY").replace(/\\n/g, "\n"),
     installationId: required(env.VELNOR_GITHUB_INSTALLATION_ID, "VELNOR_GITHUB_INSTALLATION_ID"),
   };
 }
