@@ -219,7 +219,7 @@ def main() -> None:
     tokenizer.padding_side = "right"
 
     base = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID, revision=selected["revision"], revision=selected["revision"],
+        MODEL_ID, revision=selected["revision"],
         quantization_config=quant_config,
         device_map={"": 0},
         low_cpu_mem_usage=True,
@@ -368,7 +368,7 @@ def main() -> None:
     del optimizer, model, base
     torch.cuda.empty_cache()
     clean_base = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
+        MODEL_ID, revision=selected["revision"],
         quantization_config=quant_config,
         device_map={"": 0},
         low_cpu_mem_usage=True,
