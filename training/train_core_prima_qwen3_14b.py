@@ -20,6 +20,7 @@ import bitsandbytes as bnb
 import peft
 import torch
 import transformers
+from family_runtime import family_system_prompt
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
@@ -132,7 +133,7 @@ def main():
     if getattr(config, "model_type", None) != "qwen3" or int(config.num_hidden_layers) < 40:
         raise RuntimeError("The selected model is not the expected Qwen3-14B architecture.")
     train_rows, val_rows, family = load_data()
-    system_prompt = family["shared_system_prompt"]
+    system_prompt = family_system_prompt("prima")
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
     if tokenizer.pad_token is None:
