@@ -51,7 +51,7 @@ def load_and_generate(base_id: str, adapter: str, tier: str, prompts: list[str],
         device_map={"": 0}, low_cpu_mem_usage=True, attn_implementation="sdpa")
     model = PeftModel.from_pretrained(base, str(adapter_path))
     model.eval()
-    system = FAMILY_PROMPT + f" Active release: {tier}. Foundation model: {base_id}."
+    system = family_system_prompt("prime" if tier == "VELNOR Core Prime" else "prima")
     outputs = {}
     for prompt in prompts:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": prompt}]
