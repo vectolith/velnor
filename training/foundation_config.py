@@ -37,6 +37,10 @@ def assert_contract_matches_selection(tier: str) -> dict[str, str]:
     selected = selected_foundation(tier)
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
     metadata = contract["tiers"][tier]
+    if metadata.get("foundation_status") != "validated":
+        raise RuntimeError(
+            f"{tier} contract foundation_status must be validated before training."
+        )
     if metadata.get("base_model") != selected["model_id"]:
         raise RuntimeError(
             f"{tier} contract base_model does not match validated selection. "
