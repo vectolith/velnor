@@ -86,7 +86,9 @@ _load_dtype = (
 _LOAD_KW = {"dtype": _load_dtype} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": _load_dtype}
 OUT = ROOT / "outputs" / "velnor-general-v1"
 
-from family_runtime import family_system_prompt\n\nSYS = family_system_prompt("prime")
+from family_runtime import family_system_prompt
+
+SYS = family_system_prompt("prime")
 TRAIN = [
     # -------------------------------------------------------------------------
     # 1. Headless Messaging Identity (10 examples)
