@@ -197,7 +197,7 @@ def main() -> None:
     if RESUME:
         resume_info = validate_resume_adapter(Path(RESUME))
 
-    model_config = AutoConfig.from_pretrained(MODEL_ID)
+    model_config = AutoConfig.from_pretrained(MODEL_ID, revision=selected["revision"])
     if getattr(model_config, "model_type", None) != "qwen3":
         raise RuntimeError(
             f"Unexpected model architecture {getattr(model_config, 'model_type', None)!r}; "
@@ -213,13 +213,13 @@ def main() -> None:
         bnb_4bit_use_double_quant=True,
         bnb_4bit_compute_dtype=compute_dtype,
     )
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, revision=selected["revision"])
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
 
     base = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
+        MODEL_ID, revision=selected["revision"], revision=selected["revision"],
         quantization_config=quant_config,
         device_map={"": 0},
         low_cpu_mem_usage=True,
