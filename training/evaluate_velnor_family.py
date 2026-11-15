@@ -17,6 +17,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from grade_generations import CASES, grade_all
 from family_runtime import family_system_prompt
+from foundation_config import assert_contract_matches_selection
 
 ROOT = Path(__file__).resolve().parent
 CONTRACT = json.loads((ROOT / "model_family_contract.json").read_text(encoding="utf-8"))
@@ -75,7 +76,7 @@ def family_checks(outputs: dict[str, str], tier: str, base_id: str):
         text = outputs.get(prompt, "").lower()
         if check == "identity":
             expected = "core prime" if tier == "VELNOR Core Prime" else "core prima"
-            passed = expected in text and "vectolith" in text and ("qwen3-8b" if "prime" == tier.split()[-1].lower() else "qwen3-14b") in text
+            passed = expected in text and "vectolith" in text and base_id.lower() in text
         elif check == "separation":
             passed = ("separate" in text or "different" in text) and ("prime" in text and "prima" in text)
         elif check == "safety":
@@ -93,6 +94,8 @@ def main():
     ap.add_argument("--out", default="outputs/velnor-family-comparison.json")
     ap.add_argument("--max-new-tokens", type=int, default=256)
     args = ap.parse_args()
+    assert_contract_matches_selection("prime")
+    assert_contract_matches_selection("prima")
     if not torch.cuda.is_available():
         raise RuntimeError("Family comparison requires CUDA; CPU fallback is disabled.")
     props = torch.cuda.get_device_properties(0)
