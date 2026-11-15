@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import random
 import time
 from pathlib import Path
@@ -54,6 +53,8 @@ def discover_lora_targets(model) -> list[str]:
         )
     mlp = [name for name in ("gate_proj", "up_proj", "down_proj", "fc1", "fc2")
            if name in available]
+    if not mlp:
+        raise RuntimeError("Unsupported MLP projection layout; add a reviewed architecture mapping.")
     return attention + mlp
 
 
@@ -65,8 +66,12 @@ def encode(tokenizer, row, system_prompt, max_length):
     prefix = tokenizer.apply_chat_template(messages[:2], tokenize=True, add_generation_prompt=True)
     if len(ids) > max_length:
         raise ValueError(f"{row['id']} exceeds max_length={max_length}; silent truncation is disabled.")
+    if len(prefix) >= len(ids):
+        raise ValueError(f"{row['id']} has no assistant target tokens after chat-template masking.")
     labels = list(ids)
-    labels[:len(prefix)] = [-100] * min(len(prefix), len(labels))
+    labels[:len(prefix)] = [-100] * len(prefix)
+    if all(token == -100 for token in labels):
+        raise ValueError(f"{row['id']} has no trainable assistant tokens.")
     return {"input_ids": torch.tensor(ids), "labels": torch.tensor(labels)}
 
 
@@ -78,6 +83,8 @@ def main():
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--rank", type=int, default=16)
     parser.add_argument("--alpha", type=int, default=32)
+    parser.add_argument("--gradient-accumulation", type=int, default=4)
+    parser.add_argument("--learning-rate", type=float, default=8e-5)
     args = parser.parse_args()
 
     # This gate executes before model download, GPU allocation, or training.
@@ -89,7 +96,8 @@ def main():
         raise RuntimeError(f"Refusing to overwrite non-empty output directory: {output}")
     if not torch.cuda.is_available():
         raise RuntimeError("Release adapter training requires CUDA; CPU fallback is disabled.")
-    if args.epochs < 1 or args.max_length < 256 or args.rank < 1 or args.alpha < 1:
+    if (args.epochs < 1 or args.max_length < 256 or args.rank < 1 or args.alpha < 1
+            or args.gradient_accumulation < 1 or args.learning_rate <= 0):
         raise ValueError("Invalid training configuration.")
     if not curriculum.is_file():
         raise FileNotFoundError(curriculum)
@@ -97,6 +105,8 @@ def main():
     random.seed(SEED)
     torch.manual_seed(SEED)
     config = AutoConfig.from_pretrained(model_id, revision=selected["revision"])
+    if getattr(config, "is_encoder_decoder", False):
+        raise RuntimeError("Only decoder-only causal language models are supported by this trainer.")
     tokenizer = AutoTokenizer.from_pretrained(model_id, revision=selected["revision"])
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -131,7 +141,7 @@ def main():
     train = [encode(tokenizer, row, system, args.max_length) for row in train_rows]
     valid = [encode(tokenizer, row, system, args.max_length) for row in valid_rows]
     optimizer = bnb.optim.PagedAdamW8bit(
-        [p for p in model.parameters() if p.requires_grad], lr=8e-5, weight_decay=0.01)
+        [p for p in model.parameters() if p.requires_grad], lr=args.learning_rate, weight_decay=0.01)
 
     def evaluate():
         model.eval()
@@ -146,21 +156,37 @@ def main():
     best_loss = initial_loss
     history = []
     started = time.time()
+    steps_per_epoch = (len(train) + args.gradient_accumulation - 1) // args.gradient_accumulation
+    total_steps = args.epochs * steps_per_epoch
+    warmup_steps = max(1, int(total_steps * 0.05))
+    optimizer_step = 0
     for epoch in range(1, args.epochs + 1):
         model.train()
         order = list(range(len(train)))
         random.shuffle(order)
         optimizer.zero_grad(set_to_none=True)
         epoch_losses = []
-        for index in order:
-            batch = {k: v.unsqueeze(0).to("cuda") for k, v in train[index].items()}
+        for index, item_index in enumerate(order, 1):
+            batch = {k: v.unsqueeze(0).to("cuda") for k, v in train[item_index].items()}
             loss = model(**batch).loss
             epoch_losses.append(float(loss.detach().cpu()))
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                [p for p in model.parameters() if p.requires_grad], 1.0)
-            optimizer.step()
-            optimizer.zero_grad(set_to_none=True)
+            group_start = ((index - 1) // args.gradient_accumulation) * args.gradient_accumulation
+            group_size = min(args.gradient_accumulation, len(order) - group_start)
+            (loss / group_size).backward()
+            boundary = index % args.gradient_accumulation == 0 or index == len(order)
+            if boundary:
+                optimizer_step += 1
+                if optimizer_step <= warmup_steps:
+                    lr_now = args.learning_rate * optimizer_step / warmup_steps
+                else:
+                    progress = (optimizer_step - warmup_steps) / max(1, total_steps - warmup_steps)
+                    lr_now = args.learning_rate * 0.1 + 0.5 * (args.learning_rate - args.learning_rate * 0.1) * (1 + math.cos(math.pi * progress))
+                for group in optimizer.param_groups:
+                    group["lr"] = lr_now
+                torch.nn.utils.clip_grad_norm_(
+                    [p for p in model.parameters() if p.requires_grad], 1.0)
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
         val_loss = evaluate()
         history.append({"epoch": epoch, "train_loss": sum(epoch_losses)/len(epoch_losses),
                         "validation_loss": val_loss})
@@ -181,6 +207,8 @@ def main():
         "runtime_report": selected["runtime_report"], "training_method": "4-bit NF4 QLoRA with rsLoRA",
         "lora_target_modules": targets, "rank": args.rank, "alpha": args.alpha,
         "epochs": args.epochs, "max_length": args.max_length,
+        "gradient_accumulation": args.gradient_accumulation, "learning_rate": args.learning_rate,
+        "warmup_steps": warmup_steps,
         "curriculum_sha256": sha256(curriculum), "train_examples": len(train_rows),
         "validation_examples": len(valid_rows), "initial_validation_loss": initial_loss,
         "best_validation_loss": best_loss, "history": history,
