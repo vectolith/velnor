@@ -86,6 +86,12 @@ class CorePrimaPipelineTests(unittest.TestCase):
             self.assertIn('assert_contract_matches_selection("' + tier + '")', source)
             self.assertIn("Use train_selected_adapter.py", source)
 
+    def test_legacy_trainers_load_the_selected_immutable_revision(self):
+        for name in ("train_qwen3_8b_qlora.py", "train_core_prima_qwen3_14b.py",
+                     "train_velnor_lora.py"):
+            source = (ROOT / name).read_text(encoding="utf-8")
+            self.assertIn('revision=selected["revision"]', source, name)
+
     def test_generic_trainer_is_foundation_configurable_and_gated(self):
         source = (ROOT / "train_selected_adapter.py").read_text(encoding="utf-8")
         self.assertIn("assert_contract_matches_selection(args.tier)", source)
