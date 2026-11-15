@@ -135,13 +135,13 @@ def main():
     if OUT.exists() and any(OUT.iterdir()):
         raise RuntimeError(f"Refusing to overwrite non-empty output directory: {OUT}")
     gpu = gpu_preflight()
-    config = AutoConfig.from_pretrained(MODEL_ID)
+    config = AutoConfig.from_pretrained(MODEL_ID, revision=selected["revision"])
     if getattr(config, "model_type", None) != "qwen3" or int(config.num_hidden_layers) < 40:
         raise RuntimeError("The selected model is not the expected Qwen3-14B architecture.")
     train_rows, val_rows, family = load_data()
     system_prompt = family_system_prompt("prima")
 
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, revision=selected["revision"])
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
@@ -152,7 +152,7 @@ def main():
     quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
         bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=compute_dtype)
     base = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID, quantization_config=quant, device_map={"": 0},
+        MODEL_ID, revision=selected["revision"], quantization_config=quant, device_map={"": 0},
         low_cpu_mem_usage=True, attn_implementation="sdpa")
     base.config.use_cache = False
     base = prepare_model_for_kbit_training(
