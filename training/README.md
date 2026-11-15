@@ -1,5 +1,7 @@
 # Velnor model training
 
+> **Foundation-selection policy (supersedes older Qwen-specific instructions below):** Qwen3-8B and Qwen3-14B are no longer approved defaults. Both VELNOR tiers are currently unselected. Do not start either legacy Qwen-pinned trainer or rent training GPUs until the relevant foundation is benchmarked, its license reviewed, runtime compatibility verified, and the selection recorded in `foundation_model_candidates.json`. Use `train_selected_adapter.py` only after this gate is satisfied. The existing Qwen-specific scripts are retained for reproducibility but fail closed unless their exact model is explicitly selected and validated.
+
 This directory contains experimental parameter-efficient fine-tuning and evaluation code. Every run is an experiment; a training objective or report is not proof that a checkpoint is production-ready.
 
 ## Product-level training objective
@@ -144,3 +146,23 @@ Both tiers must preserve the same VELNOR identity, instruction hierarchy, privac
 **Current status:** pipeline and curriculum files are committed on the feature branch. No Core Prima GPU training, checkpoint creation, comparative evaluation, or promotion is claimed by this documentation change.
 
 The tier-aware prompt and release metadata resolver is `family_runtime.py`. Both training paths and the paired evaluator use it to inject the active tier name, base model, and family-contract version on top of the same shared behavioural prompt. This avoids maintaining divergent Prime/Prima system prompts.
+
+
+## Foundation model selection (current policy)
+
+The VELNOR family contract remains architecture-neutral. Prime and Prima may use different foundation architectures; they must retain the shared VELNOR identity, behavioural contract, API conventions, safety invariants, and common regression suite. Their adapters, tokenizers, and release artifacts remain separate.
+
+The preliminary research shortlist is in `foundation_model_candidates.json`. It includes Granite 4.2, Gemma 4, Ministral 3, and Qwen3.5 as candidates only. No candidate is selected. The shortlist is not a ranking or a substitute for inspecting exact model cards and immutable revisions.
+
+Before selecting either tier, run a reproducible evaluation covering general reasoning, coding, tool calling, instruction following, multilingual performance (including relevant African languages), context handling, factual calibration, safety, inference latency, peak VRAM, throughput, quantization quality, license obligations, and compatibility with the intended serving engine and PEFT adapter format. Compare models under matched prompts, decoding settings, hardware, and quantization. Store raw outputs, benchmark versions, model revisions, and hardware details.
+
+A foundation selection record must include `model_id`, immutable `revision`, `license`, `evaluation_report`, and `runtime_report`. The family contract's `base_model` must match that selected model. Until then, `foundation_config.py` blocks training before model download or GPU allocation.
+
+The new configurable entry point is:
+
+```bash
+python train_selected_adapter.py --tier prime --output outputs/velnor-core-prime
+python train_selected_adapter.py --tier prima --output outputs/velnor-core-prima
+```
+
+These commands are intentionally blocked while the selection status is not `validated`. The trainer discovers supported LoRA projection layouts and refuses unknown layouts rather than guessing. Architecture-specific unsupported models require an explicit reviewed mapping. Training loss only selects a candidate checkpoint; it does not promote a model. Prima promotion additionally requires measurable superiority on the preregistered harder benchmark and no safety or reliability regression.
