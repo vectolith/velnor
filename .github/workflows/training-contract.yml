@@ -1,0 +1,27 @@
+name: Training contract
+
+on:
+  pull_request:
+    paths:
+      - "training/**"
+      - ".github/workflows/training-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "training/**"
+      - ".github/workflows/training-contract.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  training-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run dependency-free training contract tests
+        working-directory: training
+        run: python -m unittest discover -s tests -v

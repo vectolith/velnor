@@ -1,0 +1,95 @@
+{
+  "status": "completed",
+  "training_type": "4-bit NF4 QLoRA adapter fine-tuning; not pretraining",
+  "base_model": "Qwen/Qwen3-8B",
+  "method": {
+    "quantization": "4-bit NF4 with double quantization",
+    "compute_dtype": "bfloat16",
+    "adapter": "rsLoRA",
+    "rank": 8,
+    "alpha": 16,
+    "dropout": 0.05,
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "gate_proj",
+      "up_proj",
+      "down_proj"
+    ],
+    "gradient_checkpointing": true,
+    "optimizer": "bitsandbytes PagedAdamW8bit",
+    "micro_batch_size": 1,
+    "gradient_accumulation": 8,
+    "max_sequence_length": 256,
+    "epochs": 3,
+    "learning_rate": 0.0001
+  },
+  "provenance": {
+    "git_commit": "feb4a3b00fe8b156c60792786a3000213aac6b1b",
+    "trained_at_utc": "2026-11-12T13:13:56Z",
+    "host": "Linux x86_64",
+    "gpu": {
+      "name": "Tesla T4",
+      "total_vram_gib": 14.56,
+      "free_vram_gib": 14.36,
+      "cuda": "13.0",
+      "bf16_supported": true
+    },
+    "torch": "2.14.1+cu130",
+    "transformers": "5.22.2",
+    "peft": "0.21.2",
+    "seed": 42
+  },
+  "dataset": {
+    "train_examples": 138,
+    "heldout_examples": 20,
+    "train_source": "training/train_velnor_lora.py:TRAIN",
+    "heldout_source": "training/train_velnor_lora.py:HELDOUT"
+  },
+  "parameters": {
+    "trainable": 21823488,
+    "total": 4739675136
+  },
+  "validation": {
+    "pre_training_loss": 4.78169,
+    "best_loss": 1.19551,
+    "best_epoch": 3,
+    "history": [
+      {
+        "epoch": 1,
+        "train_loss": 2.23486,
+        "val_loss": 1.38458,
+        "best": true
+      },
+      {
+        "epoch": 2,
+        "train_loss": 1.4553,
+        "val_loss": 1.2343,
+        "best": true
+      },
+      {
+        "epoch": 3,
+        "train_loss": 1.2291,
+        "val_loss": 1.19551,
+        "best": true
+      }
+    ]
+  },
+  "rubric": {
+    "base": {
+      "passed": 1,
+      "total": 6,
+      "pass_rate": 0.167
+    },
+    "tuned": {
+      "passed": 4,
+      "total": 6,
+      "pass_rate": 0.667
+    },
+    "delta_passed": 3
+  },
+  "elapsed_seconds": 2373.19,
+  "adapter_path": "/content/drive/MyDrive/VELNOR-training-runs/qwen3-8b-20261112T123354Z/outputs/adapter"
+}
