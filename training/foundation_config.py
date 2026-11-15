@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,13 @@ def selected_foundation(tier: str) -> dict[str, str]:
     required = ("model_id", "revision", "license", "evaluation_report", "runtime_report")
     if not isinstance(selected, dict) or any(not selected.get(key) for key in required):
         raise RuntimeError(f"{tier} has no complete, validated foundation selection.")
+    revision = str(selected["revision"])
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", revision):
+        raise RuntimeError(f"{tier} foundation revision must be an immutable 40-character commit SHA.")
+    for field in ("evaluation_report", "runtime_report"):
+        report = (ROOT / str(selected[field])).resolve()
+        if not report.is_relative_to(ROOT.resolve()) or not report.is_file():
+            raise RuntimeError(f"{tier} {field} must point to an existing report file inside training/.")
     return {key: str(selected[key]) for key in required}
 
 
