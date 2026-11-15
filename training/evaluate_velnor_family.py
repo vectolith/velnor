@@ -16,6 +16,7 @@ from peft import PeftConfig, PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from grade_generations import CASES, grade_all
+from family_runtime import family_system_prompt
 
 ROOT = Path(__file__).resolve().parent
 CONTRACT = json.loads((ROOT / "model_family_contract.json").read_text(encoding="utf-8"))
