@@ -35,7 +35,7 @@ The added JSONL records are synthetic original examples marked `CC0-1.0`. The sc
 
 ## Evaluation requirements
 
-- Evaluate the unadapted base model with the adapter explicitly disabled, then evaluate the selected tuned checkpoint with the adapter enabled.
+- On continuation runs, evaluate three separate arms with identical prompts and deterministic decoding: unadapted base (adapter disabled), resumed adapter before continuation, and selected adapter after continuation. Fresh runs compare the unadapted base and selected adapter.
 - Use identical prompts and deterministic decoding settings for both model arms.
 - Report per-domain results, missing responses, model and adapter identifiers, dataset hash, training configuration, and hardware provenance.
 - Treat the 27 deterministic rubric checks as regression signals, not as a substitute for expert human review.
@@ -94,4 +94,4 @@ Checkpoint selection starts with the resumed adapter's measured loss on the curr
 
 The notebook stores model artifacts in a timestamped Google Drive run directory. It does not store GitHub tokens, force-push, create duplicate pull requests, or commit adapter weights to the repository. The existing 1.5B baseline and historical run records remain unchanged.
 
-The E2 promotion gate is a screening signal only: it requires a newly selected checkpoint, no held-out loss regression, and no regression on the deterministic generation rubric before human review. It is not production certification. No GPU training is claimed until the notebook is actually run on an eligible free CUDA runtime.
+The E2 promotion gate is a screening signal only: it requires a newly selected checkpoint, no held-out loss regression, and no regression on the deterministic generation rubric against the resumed adapter for continuation runs (or the unadapted base for fresh runs) before human review. The report preserves the legacy base/tuned rubric fields while recording all three arms explicitly. It is not production certification. No GPU training is claimed until the notebook is actually run on an eligible free CUDA runtime.
