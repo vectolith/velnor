@@ -46,6 +46,33 @@ class CorePrimaPipelineTests(unittest.TestCase):
         self.assertTrue(valid)
         self.assertFalse(train & valid)
 
+    def test_both_curricula_match_generic_trainer_schema_and_are_architecture_neutral(self):
+        for filename in ("core_prime_curriculum.jsonl", "core_prima_curriculum.jsonl"):
+            rows = [
+                json.loads(line)
+                for line in (ROOT / filename).read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            self.assertTrue(rows, filename)
+            self.assertTrue(all(row.get("id") for row in rows), filename)
+            self.assertTrue(all(row.get("split") in {"train", "validation"} for row in rows), filename)
+            self.assertTrue(any(row["split"] == "train" for row in rows), filename)
+            self.assertTrue(any(row["split"] == "validation" for row in rows), filename)
+            ids = [row["id"] for row in rows]
+            self.assertEqual(len(ids), len(set(ids)), filename)
+            train_prompts = {row["prompt"] for row in rows if row["split"] == "train"}
+            validation_prompts = {row["prompt"] for row in rows if row["split"] == "validation"}
+            self.assertFalse(train_prompts & validation_prompts, filename)
+            for row in rows:
+                if row["domain"] in {"identity", "family_identity"}:
+                    self.assertNotRegex(row["answer"], r"Qwen3-(?:8B|14B)")
+
+    def test_family_evaluator_uses_immutable_foundation_revisions(self):
+        source = (ROOT / "evaluate_velnor_family.py").read_text(encoding="utf-8")
+        self.assertIn("revision=revision", source)
+        self.assertIn("prime_selection[\"revision\"]", source)
+        self.assertIn("prima_selection[\"revision\"]", source)
+
     def test_prima_curriculum_contains_advanced_objectives(self):
         domains = {row["domain"] for row in self.rows}
         self.assertTrue({"reasoning", "technical", "planning", "analysis",
