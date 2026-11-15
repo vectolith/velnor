@@ -97,6 +97,8 @@ class CorePrimaPipelineTests(unittest.TestCase):
         self.assertIn("assert_contract_matches_selection(args.tier)", source)
         self.assertIn("AutoModelForCausalLM.from_pretrained", source)
         self.assertIn("discover_lora_targets", source)
+        self.assertIn("import math", source)
+        self.assertIn("args.gradient_accumulation", source)
 
 
     def test_runtime_injects_correct_tier_metadata_with_shared_prompt(self):
