@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0.0",
+  "status": "research_shortlist_not_selected",
+  "selection_notice": "Candidate names are leads for evaluation, not approved foundations. Verify exact model revisions, model cards, licenses, architecture support, and benchmark settings before selection.",
+  "candidates": [
+    {
+      "family": "IBM Granite 4.2",
+      "candidate_size": "8B",
+      "candidate_role": ["prime", "prima"],
+      "reported_license": "Apache-2.0",
+      "strengths_to_test": ["tool calling", "agentic workflows", "reasoning", "long context"],
+      "risks_to_check": ["multilingual coverage", "quality relative to larger frontier models", "serving compatibility"],
+      "source": "https://vdf.ai/blog/best-small-language-models/"
+    },
+    {
+      "family": "Google Gemma 4",
+      "candidate_size": "E4B / 12B",
+      "candidate_role": ["prime", "prima"],
+      "reported_license": "Apache-2.0",
+      "strengths_to_test": ["multimodal input", "reasoning", "edge efficiency", "multilingual coverage"],
+      "risks_to_check": ["exact variant footprint", "commercial terms and redistribution obligations", "tool-use quality"],
+      "source": "https://ai.ozdemir.be/guides/small-language-models"
+    },
+    {
+      "family": "Mistral Ministral 3",
+      "candidate_size": "8B / 14B",
+      "candidate_role": ["prime", "prima"],
+      "reported_license": "Apache-2.0",
+      "strengths_to_test": ["function calling", "JSON reliability", "multimodal input", "edge deployment"],
+      "risks_to_check": ["reasoning depth", "target-language quality", "runtime compatibility"],
+      "source": "https://vdf.ai/blog/best-small-language-models/"
+    },
+    {
+      "family": "Qwen3.5",
+      "candidate_size": "4B / 9B",
+      "candidate_role": ["prime", "prima"],
+      "reported_license": "Apache-2.0",
+      "strengths_to_test": ["tool calling", "long context", "multilingual performance", "reasoning"],
+      "risks_to_check": ["independent benchmark confirmation", "runtime compatibility", "comparative cost"],
+      "source": "https://vdf.ai/blog/best-small-language-models/"
+    }
+  ],
+  "selection": {
+    "prime": null,
+    "prima": null
+  },
+  "promotion_rule": "Do not train or publish a tier until its selected model ID, immutable revision, license review, evaluation report, and runtime compatibility report are recorded."
+}
