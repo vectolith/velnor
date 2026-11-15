@@ -56,6 +56,20 @@ class CorePrimaPipelineTests(unittest.TestCase):
         self.assertIn("Refusing to overwrite non-empty output directory", source)
         self.assertIn("No epoch improved held-out loss", source)
 
+
+    def test_runtime_injects_correct_tier_metadata_with_shared_prompt(self):
+        import sys
+        sys.path.insert(0, str(ROOT))
+        from family_runtime import family_system_prompt, release_metadata
+        prime_prompt = family_system_prompt("prime")
+        prima_prompt = family_system_prompt("prima")
+        self.assertIn("VELNOR Core Prime", prime_prompt)
+        self.assertIn("Qwen/Qwen3-8B", prime_prompt)
+        self.assertIn("VELNOR Core Prima", prima_prompt)
+        self.assertIn("Qwen/Qwen3-14B", prima_prompt)
+        self.assertEqual(release_metadata("prime")["family"], "VELNOR")
+        self.assertEqual(release_metadata("prima")["role"], "advanced_flagship")
+
     def test_family_evaluator_uses_same_generation_rubric(self):
         source = (ROOT / "evaluate_velnor_family.py").read_text(encoding="utf-8")
         self.assertIn("from grade_generations import CASES, grade_all", source)
