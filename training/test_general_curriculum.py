@@ -75,7 +75,7 @@ class GeneralCurriculumTests(unittest.TestCase):
         script = (ROOT / "train_qwen3_8b_qlora.py").read_text(encoding="utf-8")
         self.assertIn("with model.disable_adapter():", script)
         self.assertIn("best_loss = pre_val_loss", script)
-        self.assertIn('"prior_loss_used_for_selection": False', script)
+        self.assertIn('"previous_loss_used_for_selection": False', script)
         self.assertIn("general_curriculum_sha256", script)
 
 
