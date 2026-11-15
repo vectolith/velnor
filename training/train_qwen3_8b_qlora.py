@@ -267,6 +267,17 @@ def main() -> None:
         base_generations = {prompt: generate_reply(model, tokenizer, prompt) for prompt in eval_prompts}
     base_eval = grade_all(base_generations)
 
+    # On continuation runs, measure the resumed adapter before training so
+    # checkpoint promotion is compared against the actual starting adapter,
+    # not only against the unadapted base model.
+    resume_generations = None
+    resume_eval = None
+    if RESUME:
+        resume_generations = {
+            prompt: generate_reply(model, tokenizer, prompt) for prompt in eval_prompts
+        }
+        resume_eval = grade_all(resume_generations)
+
     OUT.mkdir(parents=True, exist_ok=True)
     selected_dir = OUT / "adapter"
     if RESUME:
@@ -379,6 +390,9 @@ def main() -> None:
         except ValueError:
             raise ValueError("VELNOR_QWEN3_PREV_BEST_LOSS must be numeric when supplied.")
 
+    rubric_reference = resume_eval if resume_eval is not None else base_eval
+    rubric_reference_name = "resumed_adapter" if resume_eval is not None else "base_model"
+
     report = {
         "status": "completed",
         "training_type": "4-bit NF4 QLoRA adapter fine-tuning; not foundation-model pretraining",
@@ -438,22 +452,27 @@ def main() -> None:
         },
         "rubric": {
             "case_count": len(CASES),
-            "base": base_eval,
-            "tuned": tuned_eval,
-            "delta_passed": tuned_eval["passed"] - base_eval["passed"],
+            "base_model": base_eval,
+            "resumed_adapter_before_training": resume_eval,
+            "selected_adapter_after_training": tuned_eval,
+            "reference_arm": rubric_reference_name,
+            "delta_passed_vs_base": tuned_eval["passed"] - base_eval["passed"],
+            "delta_passed_vs_reference": tuned_eval["passed"] - rubric_reference["passed"],
         },
+        "base_generations": base_generations,
+        "resume_generations": resume_generations,
+        "tuned_generations": tuned_generations,
         "promotion_gate": {
             "new_checkpoint_selected": best_epoch > 0,
             "heldout_loss_non_regression": best_loss <= pre_val_loss,
-            "rubric_non_regression": tuned_eval["passed"] >= base_eval["passed"],
+            "rubric_non_regression": tuned_eval["passed"] >= rubric_reference["passed"],
             "eligible_for_human_review": (
                 best_epoch > 0 and best_loss <= pre_val_loss
-                and tuned_eval["passed"] >= base_eval["passed"]
+                and tuned_eval["passed"] >= rubric_reference["passed"]
             ),
-            "note": "This gate is a screening signal, not production certification.",
+            "rubric_reference_arm": rubric_reference_name,
+            "note": "This gate is a screening signal, not production certification. Continuation runs are compared with the resumed adapter measured before training.",
         },
-        "base_generations": base_generations,
-        "tuned_generations": tuned_generations,
         "elapsed_seconds": round(time.time() - started, 2),
         "adapter_path": str(selected_dir),
     }
