@@ -49,6 +49,18 @@ class Qwen3E2ContractTests(unittest.TestCase):
         ):
             self.assertIn(token, self.source)
 
+    def test_continuation_evaluates_base_resumed_and_selected_adapter(self):
+        for token in (
+            "resume_generations = None",
+            "resume_eval = None",
+            "resumed_adapter_before_training",
+            "selected_adapter_after_training",
+            '"delta_passed_vs_reference"',
+            '"rubric_reference_arm"',
+        ):
+            self.assertIn(token, self.source)
+        self.assertIn('rubric_reference = resume_eval if resume_eval is not None else base_eval', self.source)
+
     def test_notebook_is_valid_and_has_no_token_or_force_push_workflow(self):
         notebook = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
         self.assertEqual(notebook["nbformat"], 4)
