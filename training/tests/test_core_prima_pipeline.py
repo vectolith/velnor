@@ -17,11 +17,13 @@ class CorePrimaPipelineTests(unittest.TestCase):
             if line.strip()
         ]
 
-    def test_family_base_models_are_explicit_and_distinct(self):
+    def test_foundations_remain_unselected_until_validation(self):
         tiers = self.contract["tiers"]
-        self.assertEqual(tiers["prime"]["base_model"], "Qwen/Qwen3-8B")
-        self.assertEqual(tiers["prima"]["base_model"], "Qwen/Qwen3-14B")
-        self.assertNotEqual(tiers["prime"]["base_model"], tiers["prima"]["base_model"])
+        self.assertIsNone(tiers["prime"]["base_model"])
+        self.assertIsNone(tiers["prima"]["base_model"])
+        self.assertEqual(tiers["prime"]["foundation_status"], "unselected")
+        self.assertEqual(tiers["prima"]["foundation_status"], "unselected")
+        self.assertTrue(self.contract["selection_policy"]["training_blocked_until_foundation_validation"])
 
     def test_shared_contract_is_tier_neutral(self):
         prompt = self.contract["shared_system_prompt"].lower()
@@ -49,13 +51,18 @@ class CorePrimaPipelineTests(unittest.TestCase):
         self.assertTrue({"reasoning", "technical", "planning", "analysis",
                          "tool_use", "reliability", "security", "synthesis"} <= domains)
 
-    def test_trainer_pins_qwen3_14b_and_fails_closed(self):
-        source = (ROOT / "train_core_prima_qwen3_14b.py").read_text(encoding="utf-8")
-        self.assertIn('MODEL_ID = "Qwen/Qwen3-14B"', source)
-        self.assertIn("requires CUDA; CPU training is disabled", source)
-        self.assertIn("No model was loaded and no training started", source)
-        self.assertIn("Refusing to overwrite non-empty output directory", source)
-        self.assertIn("No epoch improved held-out loss", source)
+    def test_legacy_qwen_trainers_require_explicit_validated_selection(self):
+        for name, tier in (("train_qwen3_8b_qlora.py", "prime"),
+                           ("train_core_prima_qwen3_14b.py", "prima")):
+            source = (ROOT / name).read_text(encoding="utf-8")
+            self.assertIn('assert_contract_matches_selection("' + tier + '")', source)
+            self.assertIn("Use train_selected_adapter.py", source)
+
+    def test_generic_trainer_is_foundation_configurable_and_gated(self):
+        source = (ROOT / "train_selected_adapter.py").read_text(encoding="utf-8")
+        self.assertIn("assert_contract_matches_selection(args.tier)", source)
+        self.assertIn("AutoModelForCausalLM.from_pretrained", source)
+        self.assertIn("discover_lora_targets", source)
 
 
     def test_runtime_injects_correct_tier_metadata_with_shared_prompt(self):
@@ -65,15 +72,16 @@ class CorePrimaPipelineTests(unittest.TestCase):
         prime_prompt = family_system_prompt("prime")
         prima_prompt = family_system_prompt("prima")
         self.assertIn("VELNOR Core Prime", prime_prompt)
-        self.assertIn("Qwen/Qwen3-8B", prime_prompt)
+        self.assertIn("not yet selected", prime_prompt)
         self.assertIn("VELNOR Core Prima", prima_prompt)
-        self.assertIn("Qwen/Qwen3-14B", prima_prompt)
+        self.assertIn("not yet selected", prima_prompt)
         self.assertEqual(release_metadata("prime")["family"], "VELNOR")
         self.assertEqual(release_metadata("prima")["role"], "advanced_flagship")
 
     def test_all_training_and_runtime_python_files_parse(self):
-        for name in ("train_core_prima_qwen3_14b.py", "evaluate_velnor_family.py",
-                     "family_runtime.py", "train_velnor_lora.py"):
+        for name in ("train_core_prima_qwen3_14b.py", "train_selected_adapter.py",
+                     "evaluate_velnor_family.py", "family_runtime.py",
+                     "foundation_config.py", "train_velnor_lora.py"):
             with self.subTest(path=name):
                 ast.parse((ROOT / name).read_text(encoding="utf-8"), filename=name)
 
