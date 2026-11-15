@@ -38,6 +38,15 @@ def selected_foundation(tier: str) -> dict[str, str]:
         report = (ROOT / str(selected[field])).resolve()
         if not report.is_relative_to(ROOT.resolve()) or not report.is_file():
             raise RuntimeError(f"{tier} {field} must point to an existing report file inside training/.")
+        try:
+            evidence = json.loads(report.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise RuntimeError(f"{tier} {field} must be a UTF-8 JSON evidence report.") from exc
+        if evidence.get("model_id") != selected["model_id"] or evidence.get("revision") != revision:
+            raise RuntimeError(f"{tier} {field} does not match the selected model ID and immutable revision.")
+        expected_status = "passed" if field == "evaluation_report" else "compatible"
+        if evidence.get("status") != expected_status:
+            raise RuntimeError(f"{tier} {field} must have status={expected_status!r}.")
     return {key: str(selected[key]) for key in required}
 
 
