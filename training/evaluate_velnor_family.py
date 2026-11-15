@@ -30,7 +30,7 @@ IDENTITY_CASES = [
 ]
 
 
-def load_and_generate(base_id: str, adapter: str, tier: str, prompts: list[str], max_new: int):
+def load_and_generate(base_id: str, revision: str, adapter: str, tier: str, prompts: list[str], max_new: int):
     adapter_path = Path(adapter)
     if not (adapter_path / "adapter_config.json").is_file():
         raise FileNotFoundError(f"Missing adapter_config.json: {adapter_path}")
@@ -39,7 +39,7 @@ def load_and_generate(base_id: str, adapter: str, tier: str, prompts: list[str],
         raise RuntimeError(f"{tier}: adapter base {cfg.base_model_name_or_path!r} != expected {base_id!r}")
     if cfg.task_type != "CAUSAL_LM":
         raise RuntimeError(f"{tier}: expected CAUSAL_LM adapter.")
-    tokenizer = AutoTokenizer.from_pretrained(base_id)
+    tokenizer = AutoTokenizer.from_pretrained(base_id, revision=revision)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     free, _ = torch.cuda.mem_get_info(0)
@@ -48,7 +48,7 @@ def load_and_generate(base_id: str, adapter: str, tier: str, prompts: list[str],
     dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
     quant = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
         bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=dtype)
-    base = AutoModelForCausalLM.from_pretrained(base_id, quantization_config=quant,
+    base = AutoModelForCausalLM.from_pretrained(base_id, revision=revision, quantization_config=quant,
         device_map={"": 0}, low_cpu_mem_usage=True, attn_implementation="sdpa")
     model = PeftModel.from_pretrained(base, str(adapter_path))
     model.eval()
@@ -94,8 +94,8 @@ def main():
     ap.add_argument("--out", default="outputs/velnor-family-comparison.json")
     ap.add_argument("--max-new-tokens", type=int, default=256)
     args = ap.parse_args()
-    assert_contract_matches_selection("prime")
-    assert_contract_matches_selection("prima")
+    prime_selection = assert_contract_matches_selection("prime")
+    prima_selection = assert_contract_matches_selection("prima")
     if not torch.cuda.is_available():
         raise RuntimeError("Family comparison requires CUDA; CPU fallback is disabled.")
     props = torch.cuda.get_device_properties(0)
@@ -106,9 +106,9 @@ def main():
     prima_cfg = CONTRACT["tiers"]["prima"]
     prompts = [case.prompt for case in CASES] + [item[0] for item in IDENTITY_CASES]
     started = time.time()
-    prime_outputs = load_and_generate(prime_cfg["base_model"], args.prime_adapter,
+    prime_outputs = load_and_generate(prime_selection["model_id"], prime_selection["revision"], args.prime_adapter,
         prime_cfg["display_name"], prompts, args.max_new_tokens)
-    prima_outputs = load_and_generate(prima_cfg["base_model"], args.prima_adapter,
+    prima_outputs = load_and_generate(prima_selection["model_id"], prima_selection["revision"], args.prima_adapter,
         prima_cfg["display_name"], prompts, args.max_new_tokens)
     prime_rubric = grade_all(prime_outputs)
     prima_rubric = grade_all(prima_outputs)
@@ -122,10 +122,10 @@ def main():
             "decoding": {"do_sample": False, "max_new_tokens": args.max_new_tokens}},
         "hardware": {"gpu": props.name, "total_vram_gib": round(props.total_memory/1024**3,2)},
         "models": {
-            "prime": {"tier": prime_cfg["display_name"], "base_model": prime_cfg["base_model"],
+            "prime": {"tier": prime_cfg["display_name"], "base_model": prime_selection["model_id"], "base_revision": prime_selection["revision"],
                 "adapter": args.prime_adapter, "rubric": prime_rubric, "family_checks": prime_family,
                 "generations": prime_outputs},
-            "prima": {"tier": prima_cfg["display_name"], "base_model": prima_cfg["base_model"],
+            "prima": {"tier": prima_cfg["display_name"], "base_model": prima_selection["model_id"], "base_revision": prima_selection["revision"],
                 "adapter": args.prima_adapter, "rubric": prima_rubric, "family_checks": prima_family,
                 "generations": prima_outputs}
         },
