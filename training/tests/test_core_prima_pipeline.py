@@ -1,3 +1,4 @@
+import ast
 import json
 import re
 import unittest
@@ -69,6 +70,12 @@ class CorePrimaPipelineTests(unittest.TestCase):
         self.assertIn("Qwen/Qwen3-14B", prima_prompt)
         self.assertEqual(release_metadata("prime")["family"], "VELNOR")
         self.assertEqual(release_metadata("prima")["role"], "advanced_flagship")
+
+    def test_all_training_and_runtime_python_files_parse(self):
+        for name in ("train_core_prima_qwen3_14b.py", "evaluate_velnor_family.py",
+                     "family_runtime.py", "train_velnor_lora.py"):
+            with self.subTest(path=name):
+                ast.parse((ROOT / name).read_text(encoding="utf-8"), filename=name)
 
     def test_family_evaluator_uses_same_generation_rubric(self):
         source = (ROOT / "evaluate_velnor_family.py").read_text(encoding="utf-8")
