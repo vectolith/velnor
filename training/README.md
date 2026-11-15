@@ -95,3 +95,50 @@ Checkpoint selection starts with the resumed adapter's measured loss on the curr
 The notebook stores model artifacts in a timestamped Google Drive run directory. It does not store GitHub tokens, force-push, create duplicate pull requests, or commit adapter weights to the repository. The existing 1.5B baseline and historical run records remain unchanged.
 
 The E2 promotion gate is a screening signal only: it requires a newly selected checkpoint, no held-out loss regression, and no regression on the deterministic generation rubric against the resumed adapter for continuation runs (or the unadapted base for fresh runs) before human review. The report preserves the legacy base/tuned rubric fields while recording all three arms explicitly. It is not production certification. No GPU training is claimed until the notebook is actually run on an eligible free CUDA runtime.
+
+
+## VELNOR model family: Core Prime and Core Prima
+
+The two tiers share a versioned behavioural contract in `model_family_contract.json`. The canonical shared system prompt is loaded by `train_velnor_lora.py`, which supplies the prompt used by the Prime QLoRA path. Tier-specific identity is supplied by release metadata and each tier's own curriculum.
+
+- **Core Prime** — foundational tier, `Qwen/Qwen3-8B`.
+- **Core Prima** — advanced flagship tier, `Qwen/Qwen3-14B`.
+
+The adapters and curricula are separate. Prima is not trained by simply appending more examples to Prime. Its independent `core_prima_curriculum.jsonl` targets difficult multi-step reasoning, concurrency, distributed systems, quantitative analysis, planning, tool-failure recovery, research methodology, reliability, and family-contract behaviour.
+
+### Core Prima QLoRA run
+
+Entry point: `train_core_prima_qwen3_14b.py`
+
+The trainer is free-CUDA-only and deliberately fails closed. Defaults are Qwen3-14B, 4-bit NF4 with double quantization, rsLoRA rank 16 / alpha 32, dropout 0.05, gradient checkpointing, micro-batch 1, gradient accumulation 16, sequence length 512, and two epochs. The default preflight requires at least 24 GiB total and 22 GiB free VRAM. These are conservative guardrails, not a guarantee that every 24 GiB GPU can complete the run; memory headroom depends on runtime overhead and sequence lengths. The trainer does not silently truncate examples or fall back to CPU/another base model.
+
+Run on an eligible CUDA runtime:
+
+```bash
+cd training
+pip install -r requirements-qwen3-qlora.txt
+python train_core_prima_qwen3_14b.py
+```
+
+Optional environment overrides are `VELNOR_PRIMA_EPOCHS`, `VELNOR_PRIMA_MAX_SEQ_LEN`, `VELNOR_PRIMA_GRAD_ACCUM`, `VELNOR_PRIMA_LR`, `VELNOR_PRIMA_OUTPUT`, `VELNOR_PRIMA_MIN_TOTAL_VRAM_GIB`, and `VELNOR_PRIMA_MIN_FREE_VRAM_GIB`. Do not lower the VRAM gate merely to force an unsupported run.
+
+The trainer writes adapter weights, tokenizer artifacts, a training report, and SHA-256 manifest under `outputs/velnor-core-prima-qwen3-14b`. The report marks the result as a candidate, not promoted.
+
+### Paired family evaluation
+
+After both release adapters exist, run:
+
+```bash
+python evaluate_velnor_family.py \
+  --prime-adapter /path/to/core-prime/adapter \
+  --prima-adapter /path/to/core-prima/adapter \
+  --out outputs/velnor-family-comparison.json
+```
+
+The evaluator runs the same deterministic 27-case generation rubric and four family identity/behaviour checks against both tiers, loading one model at a time. It records raw generations, per-domain rubric results, tier identity checks, and the Prima-minus-Prime delta. The compact rubric is a screening signal only; it does not establish flagship promotion. Promotion requires a broader pre-registered hard-task benchmark, expert review, safety non-regression, and reproducible evidence. A completed training run or lower validation loss is never sufficient by itself.
+
+### Shared family invariants
+
+Both tiers must preserve the same VELNOR identity, instruction hierarchy, privacy and safety boundaries, honest execution reporting, and permission requirements. Tier selection may change depth and capability, never the behavioural contract. Model weights and tokenizer artifacts remain tier-specific and are not interchangeable.
+
+**Current status:** pipeline and curriculum files are committed on the feature branch. No Core Prima GPU training, checkpoint creation, comparative evaluation, or promotion is claimed by this documentation change.
