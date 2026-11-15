@@ -6,6 +6,8 @@ rejected. Training requires a free CUDA GPU meeting the documented VRAM gate.
 """
 from __future__ import annotations
 
+from foundation_config import assert_contract_matches_selection
+
 import hashlib
 import json
 import math
