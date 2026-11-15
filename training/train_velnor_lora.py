@@ -87,6 +87,7 @@ _LOAD_KW = {"dtype": _load_dtype} if int(transformers.__version__.split(".")[0])
 OUT = ROOT / "outputs" / "velnor-general-v1"
 
 from family_runtime import family_system_prompt
+from foundation_config import assert_contract_matches_selection
 
 SYS = family_system_prompt("prime")
 TRAIN = [
@@ -661,6 +662,9 @@ def generate_reply(model, tokenizer, prompt: str, max_new_tokens: int = 64) -> s
 
 
 def main():
+    selected = assert_contract_matches_selection("prime")
+    if selected["model_id"] != MODEL_ID:
+        raise RuntimeError("This legacy Prime trainer is disabled for the selected foundation. Use train_selected_adapter.py.")
     t0 = time.time()
     if DEVICE.type != "cuda" and os.environ.get("VELNOR_ALLOW_CPU", "0") != "1":
         raise RuntimeError(
