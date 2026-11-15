@@ -684,13 +684,13 @@ def main():
                 f"VELNOR_MIN_GPU_FREE_GB requires {min_free_gb} GiB."
             )
     print(f"[velnor-general-v1] Loading base model: {MODEL_ID} on {DEVICE}", flush=True)
-    tok = AutoTokenizer.from_pretrained(MODEL_ID)
+    tok = AutoTokenizer.from_pretrained(MODEL_ID, revision=selected["revision"])
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
 
-    base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW)
+    base = AutoModelForCausalLM.from_pretrained(MODEL_ID, revision=selected["revision"], **_LOAD_KW)
     base.to(DEVICE)
-    base = AutoModelForCausalLM.from_pretrained(MODEL_ID, **_LOAD_KW).to(DEVICE)
+    base = AutoModelForCausalLM.from_pretrained(MODEL_ID, revision=selected["revision"], **_LOAD_KW).to(DEVICE)
     lora_cfg = LoraConfig(
         r=8,
         lora_alpha=16,
