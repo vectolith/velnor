@@ -135,6 +135,9 @@ export async function POST(req: NextRequest) {
           messageId: trackedMessageId, tenantId, taskId,
           recipient: knownRecipient, senderId: originalSenderId || senderId,
           status: providerStatus.status, errorCode: providerStatus.errorCode,
+          errorDetail: providerStatus.wasDowngraded
+            ? "Sendblue downgraded to SMS; the message may have reached the recipient and an iMessage retry could duplicate it."
+            : undefined,
         });
         syncLoopMessageAttemptFromProviderStatus({
           tenantId, taskId, messageId: trackedMessageId,
@@ -151,7 +154,8 @@ export async function POST(req: NextRequest) {
       }
       // Retryable: an explicit provider rejection, an ambiguous attempt, or a task
       // that finished without any outbound attempt at all (never sent).
-      const duplicateRisk = attempt?.state === "unconfirmed" || attempt?.state === "unknown" || delivery?.status === "unknown";
+      const smsFallbackRisk = Boolean(attempt?.errorDetail?.includes("downgraded to SMS"));
+      const duplicateRisk = attempt?.state === "unconfirmed" || attempt?.state === "unknown" || delivery?.status === "unknown" || smsFallbackRisk;
       const messages = (record?.state as { messages?: Array<Record<string, unknown>> } | undefined)?.messages || [];
       const resultMessage = messages.find((message) =>
         message.sender === "velnor" && message.interactionId === taskId && typeof message.text === "string"
@@ -164,12 +168,14 @@ export async function POST(req: NextRequest) {
         fromNumber: senderId, statusCallback,
         tenantId, taskId, allowAmbiguousRetry: true,
       });
-      if (!tracked.result.ok || !tracked.result.messageId) {
+      if (!tracked.result.ok || !tracked.result.messageId || tracked.attempt.state === "failed") {
         return NextResponse.json({
-          error: "Sendblue did not confirm this delivery attempt. The attempt is durably recorded and stays retryable.",
+          error: tracked.attempt.errorDetail?.includes("downgraded to SMS")
+            ? "Sendblue used SMS fallback. VELNOR does not count this as iMessage delivery; an explicit retry may duplicate the content."
+            : "Sendblue did not confirm this delivery attempt. The attempt is durably recorded and stays retryable.",
           detail: tracked.result.detail,
           attempt: describeAttempt(tracked.attempt),
-          duplicateRisk: tracked.duplicateRisk,
+          duplicateRisk: duplicateRisk || tracked.duplicateRisk,
         }, { status: 502 });
       }
       return NextResponse.json({
@@ -180,9 +186,11 @@ export async function POST(req: NextRequest) {
         duplicateRisk: duplicateRisk || tracked.duplicateRisk,
         trackingDegraded: tracked.trackingDegraded,
         note: "Queued by Sendblue; wait for an authenticated DELIVERED callback with service=iMessage before treating this as delivered. " +
-          (duplicateRisk
-            ? "An earlier attempt had an unknown outcome, so this retry may be a duplicate because provider-side idempotency is not established."
-            : "An earlier attempt was explicitly rejected or never sent."),
+          (smsFallbackRisk
+            ? "A previous attempt may have reached the recipient by SMS; this iMessage retry may duplicate the content."
+            : duplicateRisk
+              ? "An earlier attempt had an unknown outcome, so this retry may be a duplicate because provider-side idempotency is not established."
+              : "An earlier attempt was explicitly rejected or never sent."),
       });
     }
     if (action === "retry") {
@@ -245,9 +253,11 @@ export async function POST(req: NextRequest) {
           fromNumber: senderId, statusCallback,
           tenantId, taskId: reply.interactionId,
         });
-        if (!tracked.result.ok || !tracked.result.messageId) {
+        if (!tracked.result.ok || !tracked.result.messageId || tracked.attempt.state === "failed") {
           return NextResponse.json({
-            error: "The retried task completed, but Sendblue did not confirm result delivery. The attempt is durably recorded and retryable.",
+            error: tracked.attempt.errorDetail?.includes("downgraded to SMS")
+              ? "The retried task was sent through SMS fallback, not iMessage. A later retry may duplicate the content."
+              : "The retried task completed, but Sendblue did not confirm result delivery. The attempt is durably recorded and retryable.",
             detail: tracked.result.detail,
             taskId: reply.interactionId,
             attempt: describeAttempt(tracked.attempt),
