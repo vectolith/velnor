@@ -115,6 +115,25 @@ export function applyLoopMessageDeliveryEvent(input: {
   }
 }
 
+/** A queued send with no callback after the grace period becomes ambiguous, not failed. */
+export function markLoopMessageDeliveryUnknownIfStale(
+  tenantId: string, taskId: string, staleAfterMs = 15 * 60_000,
+): boolean {
+  if (!tenantId || !taskId || !Number.isSafeInteger(staleAfterMs) || staleAfterMs < 0) return false;
+  const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
+  const row = db().prepare(`
+    SELECT message_id FROM imessage_deliveries
+    WHERE tenant_id = ? AND task_id = ? AND status = 'queued'
+    ORDER BY created_at DESC LIMIT 1
+  `).get(tenantId, taskId) as {message_id:string}|undefined;
+  if (!row) return false;
+  const result = db().prepare(`
+    UPDATE imessage_deliveries SET status = 'unknown', updated_at = ?
+    WHERE message_id = ? AND tenant_id = ? AND status = 'queued' AND updated_at <= ?
+  `).run(new Date().toISOString(), row.message_id, tenantId, cutoff) as {changes?:number};
+  return Number(result.changes) === 1;
+}
+
 export function getLoopMessageDelivery(tenantId: string, taskId: string): LoopMessageDelivery | null {
   const row = db().prepare(`
     SELECT message_id, tenant_id, task_id, recipient, sender_id, status, error_code, created_at, updated_at
