@@ -15,7 +15,7 @@ function db() {
 }
 
 function applyMatchedEvent(input: {
-  messageId: string; recipient: string; senderId: string; status: "delivered" | "failed"; errorCode?: number;
+  messageId: string; recipient: string; senderId: string; status: "delivered" | "failed"; errorCode?: number; errorDetail?: string;
 }): boolean {
   const now = new Date().toISOString();
   const result = db().prepare(`
@@ -27,37 +27,37 @@ function applyMatchedEvent(input: {
   if (changed) {
     db().prepare(`
       UPDATE imessage_delivery_attempts
-      SET state = ?, error_code = COALESCE(?, error_code), updated_at = ?
+      SET state = ?, error_code = COALESCE(?, error_code), error_detail = COALESCE(?, error_detail), updated_at = ?
       WHERE message_id = ? AND state IN ('queued', 'processing', 'unknown', 'unconfirmed')
-    `).run(input.status, input.errorCode ?? null, now, input.messageId);
+    `).run(input.status, input.errorCode ?? null, input.errorDetail ? String(input.errorDetail).slice(0, 500) : null, now, input.messageId);
   }
   return changed;
 }
 
 /** Persist an early callback before trying to correlate it with an outbound send. */
 function persistCallback(input: {
-  messageId: string; recipient: string; senderId: string; status: "delivered" | "failed"; errorCode?: number;
+  messageId: string; recipient: string; senderId: string; status: "delivered" | "failed"; errorCode?: number; errorDetail?: string;
 }): boolean {
   const now = new Date().toISOString();
   const inserted = db().prepare(`
     INSERT INTO imessage_delivery_events
-      (message_id, recipient, sender_id, event_status, error_code, received_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+      (message_id, recipient, sender_id, event_status, error_code, error_detail, received_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(message_id, recipient, sender_id, event_status) DO NOTHING
-  `).run(input.messageId, input.recipient, input.senderId, input.status, input.errorCode ?? null, now) as {changes?:number};
+  `).run(input.messageId, input.recipient, input.senderId, input.status, input.errorCode ?? null, input.errorDetail ? String(input.errorDetail).slice(0, 500) : null, now) as {changes?:number};
   return Number(inserted.changes) === 1;
 }
 
 function reconcilePending(messageId: string, recipient: string, senderId: string): void {
   const events = db().prepare(`
-    SELECT event_status, error_code, sender_id FROM imessage_delivery_events
+    SELECT event_status, error_code, error_detail, sender_id FROM imessage_delivery_events
     WHERE message_id = ? AND recipient = ? AND sender_id IN (?, '')
     ORDER BY received_at ASC
-  `).all(messageId, recipient, senderId) as Array<{event_status:"delivered"|"failed";error_code:number|null;sender_id:string}>;
+  `).all(messageId, recipient, senderId) as Array<{event_status:"delivered"|"failed";error_code:number|null;error_detail:string|null;sender_id:string}>;
   for (const event of events) {
     // Documented callbacks may omit sender; exact message ID + recipient are then correlated to the stored sender ID.
     if (!event.sender_id || event.sender_id === senderId) {
-      applyMatchedEvent({ messageId, recipient, senderId, status: event.event_status, errorCode: event.error_code ?? undefined });
+      applyMatchedEvent({ messageId, recipient, senderId, status: event.event_status, errorCode: event.error_code ?? undefined, errorDetail: event.error_detail ?? undefined });
     }
   }
   db().prepare(`
@@ -101,7 +101,7 @@ export function recordLoopMessageQueued(input: {
  * reconciled when the send response is later persisted by the outbound worker.
  */
 export function applyLoopMessageDeliveryEvent(input: {
-  messageId: string; recipient: string; senderId: string; status: "delivered" | "failed"; errorCode?: number;
+  messageId: string; recipient: string; senderId: string; status: "delivered" | "failed"; errorCode?: number; errorDetail?: string;
 }): DeliveryEventResult {
   if (!input.messageId || !input.recipient || !input.senderId) return "unmatched";
   const database = db();
@@ -190,6 +190,9 @@ export function processSendblueDeliveryCallbackPayload(
     senderId,
     status: eventStatus,
     errorCode: Number.isInteger(payload.error_code) ? Number(payload.error_code) : undefined,
+    errorDetail: downgraded
+      ? "Sendblue downgraded this message to SMS; it may have reached the recipient by SMS and an iMessage retry could duplicate it."
+      : (typeof payload.error_message === "string" ? payload.error_message : undefined),
   });
 }
 
