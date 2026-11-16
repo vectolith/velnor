@@ -66,7 +66,7 @@ Dataset quality, provenance, licensing, privacy, deduplication, contamination ch
   - **Sendblue**: Accepts JSON (`number`, `content`, `media_url`) and dispatches replies via `https://api.sendblue.co/api/send-message`.
   - **LoopMessage**: Accepts phone-number or Apple ID email identities and dispatches replies via `https://server.loopmessage.com/api/v1/message/send/`. See docs/IMESSAGE-EMAIL-IDENTITIES.md.
 - **Discord Interactions**: `POST /api/webhooks/discord` — Ed25519 signature verification, timestamp freshness checks, /ask command handling, private deferred responses. See docs/DISCORD-INTEGRATION.md.
-- **Task History & Control**: `GET /api/tasks` lists tenant-scoped execution history; `POST /api/tasks` accepts cancel or retry actions. See docs/EXECUTION-TASKS.md.
+- **Task History & Control**: `GET /api/tasks` lists tenant-scoped execution history; `POST /api/tasks` accepts cancel, task retry, and guarded iMessage delivery retry actions. See docs/EXECUTION-TASKS.md.
 - **Slack Bot Webhook**: `POST /api/webhooks/slack`
   - Handles `url_verification`, `event_callback` (`app_mention`, `message.im`), `x-slack-signature` verification, and `/velnor` slash commands with Slack Block Kit formatting.
 - **Apple Siri / Shortcuts Endpoint**: `GET, POST /api/siri`
