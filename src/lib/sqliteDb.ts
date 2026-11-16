@@ -107,6 +107,25 @@ export function getSqliteDb() {
         );
         CREATE INDEX IF NOT EXISTS imessage_deliveries_tenant_task ON imessage_deliveries(tenant_id, task_id);
 
+        -- Durable outbound attempts exist before the provider request begins.
+        -- A worker crash or transport timeout therefore remains visible and is
+        -- treated as ambiguous instead of silently disappearing or being resent.
+        CREATE TABLE IF NOT EXISTS imessage_delivery_attempts (
+          attempt_id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          recipient TEXT NOT NULL,
+          sender_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('sending', 'accepted', 'failed', 'unknown')),
+          provider_message_id TEXT,
+          error_code INTEGER,
+          error_text TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS imessage_delivery_attempts_tenant_task
+          ON imessage_delivery_attempts(tenant_id, task_id, created_at DESC);
+
         -- Callback inbox closes the race where LoopMessage calls back before
         -- the outbound worker has persisted the provider message_id.
         CREATE TABLE IF NOT EXISTS imessage_delivery_events (
