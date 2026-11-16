@@ -1,4 +1,5 @@
 import { getSqliteDb } from "../sqliteDb";
+import { normalizeImessageIdentity } from "./imessageIdentity";
 
 export type LoopMessageDeliveryStatus = "queued" | "processing" | "delivered" | "failed" | "unknown";
 export interface LoopMessageDelivery {
@@ -115,6 +116,22 @@ export function applyLoopMessageDeliveryEvent(input: {
   }
 }
 
+/** Parse and apply the documented LoopMessage callback shape. */
+export function processLoopMessageCallbackPayload(payload: Record<string, unknown>): DeliveryEventResult | null {
+  if (payload.event !== "message_delivered" && payload.event !== "message_failed") return null;
+  const recipient = normalizeImessageIdentity(payload.contact);
+  const senderId = typeof payload.sender === "string" ? payload.sender.trim() : "";
+  const messageId = typeof payload.message_id === "string" ? payload.message_id.trim() : "";
+  if (!recipient || !senderId || !messageId) return "unmatched";
+  return applyLoopMessageDeliveryEvent({
+    messageId,
+    recipient,
+    senderId,
+    status: payload.event === "message_delivered" ? "delivered" : "failed",
+    errorCode: Number.isInteger(payload.error_code) ? Number(payload.error_code) : undefined,
+  });
+}
+
 /** A queued send with no callback after the grace period becomes ambiguous, not failed. */
 export function markLoopMessageDeliveryUnknownIfStale(
   tenantId: string, taskId: string, staleAfterMs = 15 * 60_000,
@@ -137,7 +154,8 @@ export function markLoopMessageDeliveryUnknownIfStale(
 export function getLoopMessageDelivery(tenantId: string, taskId: string): LoopMessageDelivery | null {
   const row = db().prepare(`
     SELECT message_id, tenant_id, task_id, recipient, sender_id, status, error_code, created_at, updated_at
-    FROM imessage_deliveries WHERE tenant_id = ? AND task_id = ? ORDER BY created_at DESC LIMIT 1
+    FROM imessage_deliveries WHERE tenant_id = ? AND task_id = ?
+    ORDER BY CASE WHEN status = 'delivered' THEN 0 ELSE 1 END, created_at DESC LIMIT 1
   `).get(tenantId, taskId) as {
     message_id:string;tenant_id:string;task_id:string;recipient:string;sender_id:string;
     status:LoopMessageDeliveryStatus;error_code:number|null;created_at:string;updated_at:string;
