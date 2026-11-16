@@ -5,6 +5,7 @@ import {
   getLatestLoopMessageAttempt, type LoopMessageDeliveryAttempt,
 } from "./imessageDeliveryAttempts";
 import { recordLoopMessageQueued } from "./imessageDeliveryStore";
+import { normalizeImessageIdentity } from "./imessageIdentity";
 
 export interface TrackedLoopMessageSend {
   result: SendResult;
@@ -32,9 +33,23 @@ export async function sendTrackedLoopMessage(input: {
   authKey: string;
   text: string;
   timeoutMs?: number;
+  /** True only for an explicit user-requested retry after an ambiguous outcome. */
+  allowAmbiguousRetry?: boolean;
 }): Promise<TrackedLoopMessageSend> {
   const previous = getLatestLoopMessageAttempt(input.tenantId, input.taskId);
   const previousWasAmbiguous = previous?.state === "unconfirmed" || previous?.state === "unknown";
+  if (previous && normalizeImessageIdentity(previous.recipient) !== normalizeImessageIdentity(input.recipient)) {
+    throw new Error("LoopMessage retry recipient differs from the original attempt; send blocked.");
+  }
+  if (previous && previous.senderId !== input.senderId) {
+    throw new Error("LoopMessage retry sender differs from the original attempt; send blocked.");
+  }
+  if (previous && ["queued", "processing", "delivered", "pending_send"].includes(previous.state)) {
+    throw new Error(`LoopMessage attempt is already ${previous.state}; another send is blocked.`);
+  }
+  if (previousWasAmbiguous && !input.allowAmbiguousRetry) {
+    throw new Error("LoopMessage outcome is ambiguous; an explicit retry is required because a duplicate may be delivered.");
+  }
 
   const started = beginLoopMessageAttempt({
     tenantId: input.tenantId, taskId: input.taskId,
