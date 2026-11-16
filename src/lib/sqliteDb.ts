@@ -80,6 +80,15 @@ function getSqliteDb() {
           key TEXT PRIMARY KEY,
           revision INTEGER NOT NULL CHECK (revision >= 0)
         );
+        CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
+          tenant_id TEXT NOT NULL,
+          reminder_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('claimed', 'delivered')),
+          worker_id TEXT,
+          lease_until TEXT,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (tenant_id, reminder_id)
+        );
       `);
       const legacyVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vector_chunks'").get();
       const quarantinedVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'legacy_vector_chunks_quarantined'").get();
@@ -236,17 +245,6 @@ export function claimReminderDispatch(
   }
   const db = getSqliteDb();
   if (!db) throw new Error("SQLite is required for durable reminder dispatch claims.");
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
-      tenant_id TEXT NOT NULL,
-      reminder_id TEXT NOT NULL,
-      status TEXT NOT NULL CHECK (status IN ('claimed', 'delivered')),
-      worker_id TEXT,
-      lease_until TEXT,
-      updated_at TEXT NOT NULL,
-      PRIMARY KEY (tenant_id, reminder_id)
-    )
-  `);
   const nowIso = now.toISOString();
   const leaseUntil = new Date(now.getTime() + leaseMs).toISOString();
   db.exec("BEGIN IMMEDIATE");
