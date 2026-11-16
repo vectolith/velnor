@@ -119,9 +119,11 @@ async function dispatchTenantReminderNotification(
   // Persist the in-app notification and completed flag before making the
   // durable claim terminal. If persistence fails, the lease expires and the
   // reminder can be retried instead of being lost.
-  saveStore(state);
-  for (const claimedId of claimedReminderIds) {
-    completeReminderDispatch(tenantId, claimedId, workerId);
+  if (claimedReminderIds.length > 0) {
+    saveStore(state);
+    for (const claimedId of claimedReminderIds) {
+      completeReminderDispatch(tenantId, claimedId, workerId);
+    }
   }
   return results;
 }
