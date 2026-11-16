@@ -262,7 +262,7 @@ test("LoopMessage status lookup rejects a mismatched provider message ID", async
   }), { status: 200, headers: { "content-type": "application/json" } }));
   try {
     const result = await getLoopMessageStatus({ authKey: "loop-api-key", messageId: "expected-message" });
-    assert.equal(result.ok, false);
+    if (result.ok) assert.fail("Expected a mismatched message ID to be rejected.");
     assert.match(result.detail, /mismatched/);
   } finally { restore(); }
 });
