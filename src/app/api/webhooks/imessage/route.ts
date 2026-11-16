@@ -15,7 +15,7 @@ import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepos
 import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
 import { getLoopMessageRecipient, isLoopMessagePayload, normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
-import { applyLoopMessageDeliveryEvent, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
+import { processLoopMessageCallbackPayload, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 const MAX_INPUT_CHARS = 8000;
@@ -194,25 +194,18 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     const payload: any = jsonPayload;
     const provider = isLoopMessagePayload(payload) ? "loopmessage" : "sendblue";
-    if (provider === "loopmessage" && (payload.event === "message_delivered" || payload.event === "message_failed")) {
-      const recipient = normalizeImessageIdentity(payload.contact);
-      const senderId = typeof payload.sender === "string" ? payload.sender : "";
-      const messageId = typeof payload.message_id === "string" ? payload.message_id : "";
-      const outcome = applyLoopMessageDeliveryEvent({
-        messageId,
-        recipient: recipient || "",
-        senderId,
-        status: payload.event === "message_delivered" ? "delivered" : "failed",
-        errorCode: Number.isInteger(payload.error_code) ? payload.error_code : undefined,
-      });
-      if (outcome === "unmatched") {
-        // A callback may beat persistence of the send response. The event is
-        // durably queued and reconciled when the provider message ID is saved.
-        return NextResponse.json({ status: "callback_persisted_pending_correlation" }, { status: 202 });
+    if (provider === "loopmessage") {
+      const outcome = processLoopMessageCallbackPayload(payload);
+      if (outcome !== null) {
+        if (outcome === "unmatched") {
+          // A callback may beat persistence of the send response. The event is
+          // durably queued and reconciled when the provider message ID is saved.
+          return NextResponse.json({ status: "callback_persisted_pending_correlation" }, { status: 202 });
+        }
+        return NextResponse.json({
+          status: outcome === "applied" ? payload.event : "duplicate_callback",
+        });
       }
-      return NextResponse.json({
-        status: outcome === "applied" ? payload.event : "duplicate_callback",
-      });
     }
     if (provider === "loopmessage" && payload.event && payload.event !== "message_inbound") {
       return NextResponse.json({ status: "ignored", event: payload.event });
