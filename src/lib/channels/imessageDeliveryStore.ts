@@ -191,6 +191,20 @@ export function applyLoopMessageDeliveryEvent(input: {
   }
 }
 
+export function applyLoopMessageProviderStatus(input: {
+  providerMessageId: string; recipient: string;
+  status: "processing" | "failed" | "delivered" | "unknown"; errorCode?: number;
+}): boolean {
+  if (!input.providerMessageId || !input.recipient) return false;
+  const result = db().prepare(`
+    UPDATE imessage_deliveries SET status = ?, error_code = ?, updated_at = ?
+    WHERE provider_message_id = ? AND recipient = ?
+      AND status IN ('processing', 'queued', 'unknown')
+  `).run(input.status, input.errorCode ?? null, new Date().toISOString(),
+    input.providerMessageId, input.recipient) as { changes?: number };
+  return Number(result.changes) === 1;
+}
+
 export function getLoopMessageDelivery(tenantId: string, taskId: string): LoopMessageDelivery | null {
   const row = db().prepare(`
     SELECT message_id, provider_message_id, tenant_id, task_id, recipient, sender_id,
