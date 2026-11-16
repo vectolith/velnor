@@ -131,6 +131,7 @@ export function getSqliteDb() {
           sender_id TEXT NOT NULL,
           event_status TEXT NOT NULL CHECK (event_status IN ('delivered', 'failed')),
           error_code INTEGER,
+          error_detail TEXT,
           received_at TEXT NOT NULL,
           PRIMARY KEY (message_id, recipient, sender_id, event_status)
         );
@@ -167,6 +168,10 @@ export function getSqliteDb() {
           PRIMARY KEY (tenant_id, reminder_id)
         );
       `);
+      const deliveryEventColumns = db.prepare("PRAGMA table_info(imessage_delivery_events)").all() as Array<{name:string}>;
+      if (!deliveryEventColumns.some((column) => column.name === "error_detail")) {
+        db.exec("ALTER TABLE imessage_delivery_events ADD COLUMN error_detail TEXT;");
+      }
       if (legacyAttemptTable) {
         db.exec(`
           INSERT INTO imessage_delivery_attempts
