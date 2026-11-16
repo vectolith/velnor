@@ -258,12 +258,16 @@ export async function POST(req: NextRequest) {
                 }
         
                 // Outbound dispatch via LoopMessage if configured
+                const loopMessageAuthKey =
+                  (typeof scoped.config.loopMessageAuthKey === "string" ? scoped.config.loopMessageAuthKey : "") ||
+                  process.env.LOOPMESSAGE_AUTH_KEY ||
+                  "";
                 if (
-                  scoped.config.loopMessageAuthKey &&
+                  loopMessageAuthKey &&
                   (payload.contact || payload.email || payload.from_email || payload.apple_id)
                 ) {
                   deliveryResults.push(await sendLoopMessage({
-                    authKey: scoped.config.loopMessageAuthKey,
+                    authKey: loopMessageAuthKey,
                     recipient: getLoopMessageRecipient(payload) || senderHandle,
                     text: outboundText,
                     senderId: process.env.LOOPMESSAGE_SENDER_ID,
