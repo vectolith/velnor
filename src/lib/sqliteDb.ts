@@ -109,6 +109,7 @@ export function getSqliteDb() {
         CREATE TABLE IF NOT EXISTS imessage_delivery_events (
           event_fingerprint TEXT PRIMARY KEY,
           provider_message_id TEXT NOT NULL,
+          delivery_id TEXT,
           recipient TEXT NOT NULL,
           sender_id TEXT NOT NULL,
           status TEXT NOT NULL CHECK (status IN ('delivered', 'failed')),
