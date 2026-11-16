@@ -1,4 +1,4 @@
-import { readFailure, SendResult } from "./types";
+import type { SendResult } from "./types";
 
 const SENDBLUE_ENDPOINT = "https://api.sendblue.co/api/send-message";
 
@@ -37,9 +37,8 @@ export async function sendSendblueMessage(params: {
       }),
       signal: AbortSignal.timeout(params.timeoutMs ?? 12000),
     });
-    const payload = await response.json().catch(async () => ({
-      raw: await readFailure(response),
-    })) as {
+    const responseText = await response.text();
+    let payload: {
       status?: string;
       error_message?: string;
       error_key?: string;
@@ -47,7 +46,13 @@ export async function sendSendblueMessage(params: {
       message_handle?: string;
       service?: string;
       was_downgraded?: boolean;
-    };
+      raw?: string;
+    } = {};
+    try {
+      payload = JSON.parse(responseText) as typeof payload;
+    } catch {
+      payload.raw = responseText.slice(0, 200);
+    }
     if (!response.ok || payload.status === "ERROR" || payload.status === "DECLINED" || payload.error_key || payload.error_message) {
       const rejected = response.status >= 400 && response.status < 500;
       return {
