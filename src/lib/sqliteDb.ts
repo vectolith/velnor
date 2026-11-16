@@ -94,6 +94,19 @@ export function getSqliteDb() {
           lease_until TEXT
         );
         CREATE INDEX IF NOT EXISTS execution_tasks_tenant_created ON execution_tasks(tenant_id, created_at DESC);
+        CREATE TABLE IF NOT EXISTS imessage_deliveries (
+          message_id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          recipient TEXT NOT NULL,
+          sender_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'delivered', 'failed', 'unknown')),
+          error_code INTEGER,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS imessage_deliveries_tenant_task ON imessage_deliveries(tenant_id, task_id);
+
         CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
           tenant_id TEXT NOT NULL,
           reminder_id TEXT NOT NULL,
