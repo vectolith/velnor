@@ -18,16 +18,16 @@ test("sendblue sends the documented headers and body", async () => {
   let seen: { url: string; headers: any; body: any } | null = null;
   const restore = stubFetch((input, init) => {
     seen = { url: String(input), headers: init?.headers, body: JSON.parse(String(init?.body)) };
-    return new Response(JSON.stringify({ status: "OK" }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ status: "QUEUED", message_handle: "sb-test-handle" }), { status: 200, headers: { "content-type": "application/json" } });
   });
   try {
-    const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+15550100", content: "hi" });
+    const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+15550100", fromNumber: "+15550001", content: "hi", statusCallback: "https://example.com/api/webhooks/imessage" });
     assert.equal(result.ok, true);
     assert.equal(result.provider, "sendblue");
     assert.equal(seen!.url, "https://api.sendblue.co/api/send-message");
     assert.equal(seen!.headers["sb-api-key-id"], "key");
     assert.equal(seen!.headers["sb-api-secret-key"], "secret");
-    assert.deepEqual(seen!.body, { number: "+15550100", content: "hi" });
+    assert.deepEqual(seen!.body, { number: "+15550100", from_number: "+15550001", content: "hi", status_callback: "https://example.com/api/webhooks/imessage" });
   } finally {
     restore();
   }
@@ -36,7 +36,7 @@ test("sendblue sends the documented headers and body", async () => {
 test("sendblue reports a provider rejection instead of claiming success", async () => {
   const restore = stubFetch(() => new Response("bad key", { status: 401 }));
   try {
-    const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+1555", content: "hi" });
+    const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+1555", fromNumber: "+15550001", content: "hi", statusCallback: "https://example.com/api/webhooks/imessage" });
     assert.equal(result.ok, false);
     assert.equal(result.status, 401);
     assert.match(String(result.detail), /bad key/);
@@ -48,7 +48,7 @@ test("sendblue reports a provider rejection instead of claiming success", async 
 test("sendblue refuses to run without credentials", async () => {
   const result = await sendSendblueMessage({ apiKeyId: "", apiSecretKey: "", number: "+1555", content: "hi" });
   assert.equal(result.ok, false);
-  assert.match(String(result.detail), /not configured/);
+  assert.match(String(result.detail), /requires API credentials/);
 });
 
 test("loopmessage sends Apple ID email recipients through the configured email sender ID", async () => {
