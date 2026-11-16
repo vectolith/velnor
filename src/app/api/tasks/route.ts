@@ -58,7 +58,10 @@ export async function POST(req: NextRequest) {
       // reconcile the provider's authoritative status before permitting retry.
       markLoopMessageDeliveryUnknownIfStale(tenantId, taskId);
       let delivery = getLoopMessageDelivery(tenantId, taskId);
-      if (delivery?.status === "delivered") {
+      if (!delivery) {
+        return NextResponse.json({ error: "No durable delivery attempt exists for this task; automatic retry is blocked to avoid duplicate sends." }, { status: 409 });
+      }
+      if (delivery.status === "delivered") {
         return NextResponse.json({ error: "This result has already been delivered.", delivery }, { status: 409 });
       }
       const record = await repository.load(tenantId);
