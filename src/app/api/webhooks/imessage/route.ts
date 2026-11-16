@@ -290,13 +290,21 @@ export async function POST(req: NextRequest) {
                   (typeof scoped.config.sendblueFromNumber === "string" ? scoped.config.sendblueFromNumber : "") ||
                   process.env.SENDBLUE_FROM_NUMBER ||
                   "";
+                const sendblueApiKey =
+                  (typeof scoped.config.sendblueApiKey === "string" ? scoped.config.sendblueApiKey : "") ||
+                  process.env.SENDBLUE_API_KEY ||
+                  "";
+                const sendblueApiSecret =
+                  (typeof scoped.config.sendblueApiSecret === "string" ? scoped.config.sendblueApiSecret : "") ||
+                  process.env.SENDBLUE_API_SECRET ||
+                  "";
                 const statusCallback = process.env.VELNOR_PUBLIC_URL
-                  ? process.env.VELNOR_PUBLIC_URL.replace(/\/+$/, "") + "/api/webhooks/imessage"
+                  ? process.env.VELNOR_PUBLIC_URL.replace(/\\/+$/, "") + "/api/webhooks/imessage"
                   : "";
-                if (scoped.config.sendblueApiKey && scoped.config.sendblueApiSecret && sendblueFromNumber) {
+                if (sendblueApiKey && sendblueApiSecret && sendblueFromNumber && statusCallback) {
                   const tracked = await sendTrackedSendblueMessage({
-                    apiKeyId: scoped.config.sendblueApiKey,
-                    apiSecretKey: scoped.config.sendblueApiSecret,
+                    apiKeyId: sendblueApiKey,
+                    apiSecretKey: sendblueApiSecret,
                     recipient: senderHandle,
                     fromNumber: sendblueFromNumber,
                     content: outboundText,
