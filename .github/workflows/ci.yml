@@ -6,10 +6,8 @@ on:
       - main
       - fix/security-hardening-followup
       - cloudflare/vinext-migration
+  # Run CI for every PR target, including stacked implementation branches.
   pull_request:
-    branches:
-      - main
-      - fix/security-and-credential-hydration
 
 permissions:
   contents: read
