@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getStore, saveStore, resolveSlackChannel, listUserIds, withVelnorUser, currentUserId } from "./store";
 import { claimReminderDispatch, completeReminderDispatch, releaseReminderDispatch } from "./sqliteDb";
-import { sendSendblueMessage } from "./channels/sendblue";
-import { sendTrackedLoopMessage } from "./channels/trackedLoopMessageSend";
+import { sendTrackedSendblueMessage } from "./channels/trackedSendblueSend";
 import { postSlackMessage } from "./channels/slack";
 import { sendTwilioSms } from "./channels/twilio";
 import { ChatMessage, ReminderItem } from "./types";
@@ -51,42 +50,31 @@ async function dispatchTenantReminderNotification(
 
     if (rem.channel === "imessage" && rem.recipient) {
       deliveryAccepted = false;
-      if (state.config.sendblueApiKey && state.config.sendblueApiSecret) {
-        const result = await sendSendblueMessage({
+      const fromNumber = state.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER || "";
+      const statusCallback = process.env.VELNOR_PUBLIC_URL
+        ? process.env.VELNOR_PUBLIC_URL.replace(/\\/+$/, "") + "/api/webhooks/imessage"
+        : "";
+      if (state.config.sendblueApiKey && state.config.sendblueApiSecret && fromNumber) {
+        const tracked = await sendTrackedSendblueMessage({
           apiKeyId: state.config.sendblueApiKey,
           apiSecretKey: state.config.sendblueApiSecret,
-          number: rem.recipient,
-          fromNumber: state.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
-          content: `🔔 Reminder from Velnor: ${rem.text}`,
-        });
-        if (result.ok) {
-          deliveryAccepted = true;
-          channelsUsed.push("sendblue-imessage");
-        } else {
-          console.warn(`Sendblue reminder failed: ${result.detail}`);
-        }
-      }
-      if (state.config.loopMessageAuthKey) {
-        // Reminders get the same durable attempt ledger as tasks so a reminder
-        // that fails without a provider message ID is not silently lost.
-        const tracked = await sendTrackedLoopMessage({
-          authKey: state.config.loopMessageAuthKey,
           recipient: rem.recipient,
-          text: `🔔 Reminder from Velnor: ${rem.text}`,
-          senderId: process.env.LOOPMESSAGE_SENDER_ID || "",
+          fromNumber,
+          content: `🔔 Reminder from Velnor: ${rem.text}`,
+          statusCallback,
           tenantId,
           taskId: "reminder_" + rem.id,
         });
-        const result = tracked.result;
-        if (!result.ok) {
-          console.warn(`LoopMessage reminder attempt recorded as ${tracked.attempt.state} (${tracked.attempt.attemptId})`);
-        }
-        if (result.ok) {
+        if (tracked.result.ok && tracked.result.messageId) {
+          // Provider acceptance is not delivery. The callback remains the
+          // authoritative delivered state; the reminder is queued only once.
           deliveryAccepted = true;
-          channelsUsed.push("loopmessage-imessage");
+          channelsUsed.push("sendblue-imessage-queued");
         } else {
-          console.warn(`LoopMessage reminder failed: ${result.detail}`);
+          console.warn(`Sendblue reminder attempt recorded as ${tracked.attempt.state} (${tracked.attempt.attemptId}): ${tracked.result.detail}`);
         }
+      } else {
+        console.warn("Sendblue reminder not sent: credentials and SENDBLUE_FROM_NUMBER are required.");
       }
     } else if (rem.channel === "slack") {
       const slackToken = state.config.slackBotToken || process.env.SLACK_BOT_TOKEN;
@@ -140,7 +128,7 @@ async function dispatchTenantReminderNotification(
       modelUsed: "velnor-proactive-cron",
       toolActions: [{
         tool: "proactive_reminder",
-        label: `Delivered scheduled reminder (${rem.dueAt})`,
+        label: `Queued scheduled reminder (${rem.dueAt})`,
         status: "success",
         details: rem.text,
       }],
@@ -160,7 +148,7 @@ async function dispatchTenantReminderNotification(
     }
   }
 
-  // Persist only accepted deliveries. Failed external sends remain incomplete;
+  // Persist only provider-accepted dispatches. Failed external sends remain incomplete;
   // their leases expire and the scheduler can retry them.
   if (completedReminderIds.length > 0) {
     saveStore(state);
