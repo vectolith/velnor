@@ -130,6 +130,11 @@ export function listExecutionTasks(tenantId: string, limit = 50): ExecutionTask[
       updated_at = ?, completed_at = ?, lease_until = NULL
     WHERE tenant_id = ? AND status = 'running' AND lease_until IS NOT NULL AND lease_until <= ?
   `).run(now, now, tenantId, now);
+  db.prepare(`
+    UPDATE execution_tasks SET status = 'cancelled', error = NULL,
+      updated_at = ?, completed_at = ?, lease_until = NULL
+    WHERE tenant_id = ? AND status = 'cancel_requested' AND lease_until IS NOT NULL AND lease_until <= ?
+  `).run(now, now, tenantId, now);
   const rows = db.prepare("SELECT * FROM execution_tasks WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?")
     .all(tenantId, limit) as TaskRow[];
   return rows.map(fromRow);
