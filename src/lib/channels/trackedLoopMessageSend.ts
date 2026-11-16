@@ -68,7 +68,7 @@ export async function sendTrackedLoopMessage(input: {
 
   if (result.ok && result.messageId) {
     // Attach the provider ID to the attempt before reconciling the callback inbox.
-    const attempt = finalize({ state: "queued", messageId: result.messageId });
+    let attempt = finalize({ state: "queued", messageId: result.messageId });
     let trackingDegraded = false;
     let detail = result.detail;
     try {
@@ -83,6 +83,7 @@ export async function sendTrackedLoopMessage(input: {
       detail = (result.detail ? result.detail + " " : "") +
         "Delivery record could not be linked: " + (error instanceof Error ? error.message : "unknown error");
     }
+    attempt = getLatestLoopMessageAttempt(input.tenantId, input.taskId) || attempt;
     // An earlier ambiguous attempt may have landed, so this accepted send can
     // still be the second copy the recipient sees.
     return {
