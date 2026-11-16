@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
 
       // Each provider must prove possession of its own webhook secret. A
       // LoopMessage secret must never authenticate a Sendblue callback (or vice versa).
-      const isLoopMessage = Boolean(jsonPayload.contact) || jsonPayload.event === "message_inbound";
+      const isLoopMessage = Boolean(jsonPayload.contact || jsonPayload.email || jsonPayload.from_email || jsonPayload.apple_id) || jsonPayload.event === "message_inbound";
       const expectedSecret = isLoopMessage
         ? process.env.LOOPMESSAGE_WEBHOOK_SECRET
         : process.env.SENDBLUE_WEBHOOK_SECRET;
@@ -205,7 +205,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: "ignored", event: eventType || "outbound_or_non_message" });
       }
     }
-    const senderHandle = String(payload.contact || payload.number || payload.from_number || "").slice(0, 64);
+    const rawSenderHandle = String(payload.contact || payload.email || payload.from_email || payload.apple_id || payload.number || payload.from_number || "").trim();
+    const senderHandle = rawSenderHandle.includes("@") ? rawSenderHandle.toLowerCase().slice(0, 254) : rawSenderHandle.slice(0, 64);
     if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
     const providerAccount = String(payload.organization_id || payload.sendblue_number || payload.to_number || "default");
     const webhookId = String(payload.message_handle || payload.webhook_id || payload.message_id || "");
@@ -259,11 +260,11 @@ export async function POST(req: NextRequest) {
                 // Outbound dispatch via LoopMessage if configured
                 if (
                   scoped.config.loopMessageAuthKey &&
-                  payload.contact
+                  (payload.contact || payload.email || payload.from_email || payload.apple_id)
                 ) {
                   deliveryResults.push(await sendLoopMessage({
                     authKey: scoped.config.loopMessageAuthKey,
-                    recipient: payload.contact,
+                    recipient: payload.contact || payload.email || payload.from_email || payload.apple_id,
                     text: outboundText,
                   }));
                 }
