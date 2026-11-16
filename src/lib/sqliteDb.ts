@@ -273,6 +273,18 @@ export function claimReminderDispatch(
   }
 }
 
+export function releaseReminderDispatch(
+  tenantId: string, reminderId: string, workerId: string, now = new Date(),
+): void {
+  const db = getSqliteDb();
+  if (!db) throw new Error("SQLite is required for durable reminder dispatch claims.");
+  db.prepare(`
+    UPDATE reminder_dispatch_claims
+    SET lease_until = ?, updated_at = ?
+    WHERE tenant_id = ? AND reminder_id = ? AND status = 'claimed' AND worker_id = ?
+  `).run(now.toISOString(), now.toISOString(), tenantId, reminderId, workerId);
+}
+
 export function completeReminderDispatch(
   tenantId: string, reminderId: string, workerId: string, now = new Date(),
 ): void {
