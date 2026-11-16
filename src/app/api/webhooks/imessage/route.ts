@@ -197,6 +197,12 @@ export async function POST(req: NextRequest) {
     if (provider === "loopmessage") {
       const outcome = processLoopMessageCallbackPayload(payload);
       if (outcome !== null) {
+        if (outcome === "invalid") {
+          return NextResponse.json(
+            { error: "LoopMessage delivery callback is missing a valid contact or message_id." },
+            { status: 400 }
+          );
+        }
         if (outcome === "unmatched") {
           // A callback may beat persistence of the send response. The event is
           // durably queued and reconciled when the provider message ID is saved.
