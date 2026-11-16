@@ -86,6 +86,7 @@ export async function POST(req: NextRequest) {
       });
       const sent = await sendLoopMessage({
         authKey, recipient: task.userHandle, text: String(resultMessage.text), senderId,
+        passthrough: deliveryId,
       });
       if (!sent.ok || !sent.messageId) {
         recordLoopMessageSendFailure({
@@ -152,6 +153,7 @@ export async function POST(req: NextRequest) {
         });
         const sent = await sendLoopMessage({
           authKey, recipient: task.userHandle, text: reply.text, senderId,
+          passthrough: deliveryId,
         });
         if (!sent.ok || !sent.messageId) {
           recordLoopMessageSendFailure({
