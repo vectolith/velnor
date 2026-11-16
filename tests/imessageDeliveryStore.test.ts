@@ -7,7 +7,7 @@ import path from "node:path";
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-imessage-delivery-"));
 process.env.VELNOR_DATA_DIR = dataDir;
 
-import { applyLoopMessageDeliveryEvent, getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, recordLoopMessageQueued } from "../src/lib/channels/imessageDeliveryStore";
+import { applyLoopMessageDeliveryEvent, getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, processLoopMessageCallbackPayload, recordLoopMessageQueued } from "../src/lib/channels/imessageDeliveryStore";
 import { closeSqliteDb, getSqliteDb } from "../src/lib/sqliteDb";
 
 test("LoopMessage callbacks require matching message, recipient, and sender and are idempotent", () => {
@@ -100,6 +100,41 @@ test("stale queued deliveries become ambiguous before an explicit retry", () => 
       senderId: "velnor-email-sender", status: "delivered",
     }), "applied");
     assert.equal(getLoopMessageDelivery("tenant-stale", "task-stale")?.status, "delivered");
+  } finally {
+    closeSqliteDb();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("documented LoopMessage callback JSON is parsed, persisted early, and reconciled", () => {
+  try {
+    const deliveredPayload = {
+      event: "message_delivered",
+      message_id: "loop-documented-email-1",
+      contact: "Alex@iCloud.com",
+      sender: "velnor-email-sender",
+    };
+    assert.equal(processLoopMessageCallbackPayload(deliveredPayload), "unmatched");
+    recordLoopMessageQueued({
+      messageId: "loop-documented-email-1", tenantId: "tenant-contract", taskId: "task-contract",
+      recipient: "alex@icloud.com", senderId: "velnor-email-sender",
+    });
+    assert.equal(getLoopMessageDelivery("tenant-contract", "task-contract")?.status, "delivered");
+    assert.equal(processLoopMessageCallbackPayload(deliveredPayload), "duplicate");
+
+    recordLoopMessageQueued({
+      messageId: "loop-documented-phone-1", tenantId: "tenant-contract", taskId: "task-phone-contract",
+      recipient: "+2348012345678", senderId: "velnor-email-sender",
+    });
+    assert.equal(processLoopMessageCallbackPayload({
+      event: "message_failed",
+      message_id: "loop-documented-phone-1",
+      contact: "+2348012345678",
+      sender: "velnor-email-sender",
+      error_code: 42,
+    }), "applied");
+    assert.equal(getLoopMessageDelivery("tenant-contract", "task-phone-contract")?.status, "failed");
+    assert.equal(processLoopMessageCallbackPayload({ event: "message_queued" }), null);
   } finally {
     closeSqliteDb();
     fs.rmSync(dataDir, { recursive: true, force: true });
