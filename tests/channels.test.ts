@@ -73,6 +73,8 @@ test("loopmessage sends Apple ID email recipients through the configured email s
       text: "Here is your result",
       sender: "email-sender-id",
     });
+    assert.equal(result.messageId, "msg-1");
+    assert.equal(result.deliveryStatus, "queued");
   } finally {
     restore();
   }
@@ -83,7 +85,7 @@ test("loopmessage reports transport failures", async () => {
     throw new Error("ECONNRESET");
   });
   try {
-    const result = await sendLoopMessage({ authKey: "a", recipient: "+1555", text: "hi" });
+    const result = await sendLoopMessage({ authKey: "a", recipient: "+1555", text: "hi", senderId: "velnor-email-sender" });
     assert.equal(result.ok, false);
     assert.match(String(result.detail), /ECONNRESET/);
   } finally {
@@ -203,4 +205,28 @@ test("Twilio rejects empty and oversized SMS bodies", async () => {
   });
   assert.equal(empty.ok, false);
   assert.equal(oversized.ok, false);
+});
+
+test("loopmessage requires an explicit VELNOR sender identity", async () => {
+  const result = await sendLoopMessage({ authKey: "api-key", recipient: "+15551234567", text: "hi", senderId: "" });
+  assert.equal(result.ok, false);
+  assert.match(String(result.detail), /explicit sender ID/);
+});
+
+test("loopmessage sends to a phone number with the same explicit email sender", async () => {
+  let body: any = null;
+  const restore = stubFetch((_input, init) => {
+    body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ message_id: "phone-msg-1" }), { status: 200 });
+  });
+  try {
+    const result = await sendLoopMessage({
+      authKey: "api-key", recipient: "+2348012345678", text: "Result", senderId: "velnor-email-sender",
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(body, {
+      contact: "+2348012345678", text: "Result", sender: "velnor-email-sender",
+    });
+    assert.equal(result.deliveryStatus, "queued");
+  } finally { restore(); }
 });
