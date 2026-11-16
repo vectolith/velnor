@@ -132,6 +132,22 @@ export function processLoopMessageCallbackPayload(payload: Record<string, unknow
   });
 }
 
+/** Apply an authenticated status lookup to the exact tenant-scoped outbound record. */
+export function updateLoopMessageProviderStatus(input: {
+  messageId: string; tenantId: string; taskId: string; recipient: string; senderId: string;
+  status: "processing" | "failed" | "delivered" | "unknown"; errorCode?: number;
+}): boolean {
+  const result = db().prepare(`
+    UPDATE imessage_deliveries SET status = ?, error_code = ?, updated_at = ?
+    WHERE message_id = ? AND tenant_id = ? AND task_id = ? AND recipient = ? AND sender_id = ?
+      AND status != 'delivered'
+  `).run(
+    input.status, input.errorCode ?? null, new Date().toISOString(),
+    input.messageId, input.tenantId, input.taskId, input.recipient, input.senderId,
+  ) as {changes?:number};
+  return Number(result.changes) === 1;
+}
+
 /** A queued send with no callback after the grace period becomes ambiguous, not failed. */
 export function markLoopMessageDeliveryUnknownIfStale(
   tenantId: string, taskId: string, staleAfterMs = 15 * 60_000,
