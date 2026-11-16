@@ -80,7 +80,21 @@ export function getSqliteDb() {
           key TEXT PRIMARY KEY,
           revision INTEGER NOT NULL CHECK (revision >= 0)
         );
-        CREATE TABLE IF NOT EXISTS execution_tasks (\n          id TEXT PRIMARY KEY,\n          tenant_id TEXT NOT NULL,\n          channel TEXT NOT NULL,\n          user_handle TEXT,\n          status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'cancel_requested', 'succeeded', 'failed', 'cancelled', 'interrupted')),\n          error TEXT,\n          created_at TEXT NOT NULL,\n          started_at TEXT,\n          updated_at TEXT NOT NULL,\n          completed_at TEXT,\n          lease_until TEXT\n        );\n        CREATE INDEX IF NOT EXISTS execution_tasks_tenant_created ON execution_tasks(tenant_id, created_at DESC);\n        CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
+        CREATE TABLE IF NOT EXISTS execution_tasks (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          channel TEXT NOT NULL,
+          user_handle TEXT,
+          status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'cancel_requested', 'succeeded', 'failed', 'cancelled', 'interrupted')),
+          error TEXT,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          updated_at TEXT NOT NULL,
+          completed_at TEXT,
+          lease_until TEXT
+        );
+        CREATE INDEX IF NOT EXISTS execution_tasks_tenant_created ON execution_tasks(tenant_id, created_at DESC);
+        CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
           tenant_id TEXT NOT NULL,
           reminder_id TEXT NOT NULL,
           status TEXT NOT NULL CHECK (status IN ('claimed', 'delivered')),
