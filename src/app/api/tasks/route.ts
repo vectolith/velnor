@@ -7,7 +7,7 @@ import { authorizeChatTenant } from "@/lib/security/tenant";
 import { withVelnorTenantScope } from "@/lib/store";
 import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
 import {
-  getExecutionTask, listExecutionTasks, requestExecutionTaskCancellation,
+  getExecutionTask, getExecutionTaskRetry, listExecutionTasks, requestExecutionTaskCancellation,
 } from "@/lib/tasks/taskStore";
 
 export const runtime = "nodejs";
@@ -99,6 +99,13 @@ export async function POST(req: NextRequest) {
       if (task.status !== "failed" && task.status !== "interrupted") {
         return NextResponse.json({ error: "Only failed or interrupted tasks can be retried.", task }, { status: 409 });
       }
+      const existingRetry = getExecutionTaskRetry(tenantId, taskId);
+      if (existingRetry) {
+        return NextResponse.json({
+          error: "This task already has a retry attempt. Retry the latest attempt instead.",
+          retryTask: existingRetry,
+        }, { status: 409 });
+      }
       const record = await repository.load(tenantId);
       const messages = (record?.state as { messages?: Array<Record<string, unknown>> } | undefined)?.messages || [];
       const original = messages.find((message) =>
@@ -107,12 +114,21 @@ export async function POST(req: NextRequest) {
       if (!original || typeof original.text !== "string") {
         return NextResponse.json({ error: "Original request is no longer available for retry.", task }, { status: 410 });
       }
-      const reply = await processUserMessage({
-        channel: task.channel,
-        text: original.text,
-        userHandle: task.userHandle || undefined,
-        attachments: Array.isArray(original.attachments) ? original.attachments as Attachment[] : undefined,
-      });
+      let reply;
+      try {
+        reply = await processUserMessage({
+          channel: task.channel,
+          text: original.text,
+          userHandle: task.userHandle || undefined,
+          attachments: Array.isArray(original.attachments) ? original.attachments as Attachment[] : undefined,
+          retryOfTaskId: task.id,
+        });
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("execution_tasks.retry_of")) {
+          return NextResponse.json({ error: "A retry attempt was created concurrently. Refresh task history." }, { status: 409 });
+        }
+        throw error;
+      }
       if (task.channel === "imessage") {
         if (!task.userHandle) return NextResponse.json({ error: "Original iMessage recipient identity is missing." }, { status: 409 });
         const refreshed = await repository.load(tenantId);
