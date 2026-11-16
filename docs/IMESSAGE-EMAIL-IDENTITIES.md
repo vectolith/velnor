@@ -14,13 +14,15 @@ Email-only senders have provider-side warm-up and deliverability limitations. Us
 - The inbound sender identity is taken from LoopMessage's contact field (or supported email aliases when supplied by a provider adapter). Email identities are normalized to lowercase before tenant resolution.
 - VELNOR uses the exact normalized inbound `contact` value as the outbound `contact`, whether it is an E.164 phone number or Apple ID email.
 - Every outbound message includes the configured `LOOPMESSAGE_SENDER_ID`. This is the LoopMessage sender-name ID for VELNOR's email-based iMessage identity.
-- A successful send API response is only `queued`, not delivered. VELNOR stores the LoopMessage message ID, tenant, task ID, exact recipient, and sender ID. `message_delivered` and `message_failed` callbacks update the durable delivery record only when message ID, recipient, and sender all match.
-- Task retries reuse the original persisted `userHandle`; delivery retries are tenant-scoped and refuse to resend a result already marked delivered.
+- A successful send API response is only `queued`, not delivered. VELNOR first persists a delivery attempt, then sends its opaque attempt ID in LoopMessage's documented `passthrough` field. The callback inbox stores events durably and correlates them by provider message ID plus `passthrough`, exact recipient, and sender ID. This handles callbacks arriving before the send response and ambiguous send timeouts.
+- Duplicate callbacks are idempotent; terminal `delivered` and `failed` states cannot regress. Unmatched callbacks remain durable for reconciliation.
+- Delivery retries are tenant-scoped and allowed only after a provider-confirmed `failed` state. Queued or unknown attempts are reconciled through LoopMessage's documented message-status endpoint before any resend. A network timeout without a provider message ID is not blindly resent.
+- Task retries re-use the original persisted `userHandle`, but re-execute the request. Because external tool side effects may repeat, the task API requires explicit `confirmSideEffectReplay=true`.
 - LoopMessage documents its contact field as accepting a phone number or iMessage email address. The provider must have an active sender name and the recipient must be reachable through the sender's enabled iMessage channel.
 
 ## Delivery verification
 
-LoopMessage documents `message_delivered` and `message_failed` callbacks and a message-status endpoint. A queued API response must never be presented as delivered. The integration acceptance suite must verify both phone and email contacts, sender selection, recovery/retry identity preservation, and mismatched callback rejection. Live delivery confirmation still requires an actual configured LoopMessage account and reachable test phone/email identities.
+LoopMessage documents `message_delivered` and `message_failed` callbacks, the `passthrough` field, and a message-status endpoint. A queued API response must never be presented as delivered. The authenticated VELNOR endpoint `GET /api/integrations/loopmessage/verify` checks that `LOOPMESSAGE_SENDER_ID` exists and is active in the provider account. The provider's sender-details response does not expose the Apple ID email address, so this check does not prove which email appears to recipients. The integration acceptance suite must verify both phone and email contacts, sender selection, recovery/retry identity preservation, and mismatched callback rejection. Live delivery confirmation still requires an actual configured LoopMessage account and reachable test phone/email identities.
 
 ## Tenant isolation
 
