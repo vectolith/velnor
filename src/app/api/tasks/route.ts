@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
-import { sendLoopMessage } from "@/lib/channels/loopmessage";
-import { getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
+import { getLoopMessageStatus, sendLoopMessage } from "@/lib/channels/loopmessage";
+import { getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, recordLoopMessageQueued, updateLoopMessageProviderStatus } from "@/lib/channels/imessageDeliveryStore";
 import type { Attachment } from "@/lib/types";
+import { normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
 import { authorizeChatTenant } from "@/lib/security/tenant";
 import { withVelnorTenantScope } from "@/lib/store";
 import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
@@ -53,30 +54,51 @@ export async function POST(req: NextRequest) {
       if (task.channel !== "imessage" || !task.userHandle) {
         return NextResponse.json({ error: "This task has no iMessage recipient identity." }, { status: 409 });
       }
-      // A missing callback does not mean failure. Only after a 15-minute
-      // callback grace period is a queued attempt marked ambiguous/retryable.
+      // A missing callback does not mean failure. After the grace period,
+      // reconcile the provider's authoritative status before permitting retry.
       markLoopMessageDeliveryUnknownIfStale(tenantId, taskId);
-      const delivery = getLoopMessageDelivery(tenantId, taskId);
+      let delivery = getLoopMessageDelivery(tenantId, taskId);
       if (delivery?.status === "delivered") {
         return NextResponse.json({ error: "This result has already been delivered.", delivery }, { status: 409 });
       }
-      if (delivery && delivery.status !== "failed" && delivery.status !== "unknown") {
-        return NextResponse.json({ error: "Delivery is not in a retryable state.", delivery }, { status: 409 });
-      }
       const record = await repository.load(tenantId);
-      const messages = (record?.state as { messages?: Array<Record<string, unknown>> } | undefined)?.messages || [];
-      const resultMessage = messages.find((message) =>
-        message.sender === "velnor" && message.interactionId === taskId && typeof message.text === "string"
-      );
-      if (!resultMessage || typeof resultMessage.text !== "string") {
-        return NextResponse.json({ error: "The task has no completed result to deliver." }, { status: 409 });
-      }
       const config = (record?.state as { config?: Record<string, unknown> } | undefined)?.config || {};
       const authKey = typeof config.loopMessageAuthKey === "string" && config.loopMessageAuthKey
         ? config.loopMessageAuthKey : process.env.LOOPMESSAGE_AUTH_KEY || "";
       const senderId = (process.env.LOOPMESSAGE_SENDER_ID || "").trim();
       if (!authKey || !senderId) {
         return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
+      }
+      if (delivery && (delivery.status === "queued" || delivery.status === "processing" || delivery.status === "unknown")) {
+        const providerStatus = await getLoopMessageStatus({ authKey, messageId: delivery.messageId });
+        if (!providerStatus.ok) {
+          return NextResponse.json({
+            error: "Could not reconcile LoopMessage delivery status; no retry was sent.",
+            detail: providerStatus.detail,
+          }, { status: 502 });
+        }
+        if (normalizeImessageIdentity(providerStatus.contact) !== delivery.recipient) {
+          return NextResponse.json({ error: "LoopMessage status identity does not match the stored recipient; retry blocked." }, { status: 409 });
+        }
+        updateLoopMessageProviderStatus({
+          messageId: delivery.messageId, tenantId, taskId,
+          recipient: delivery.recipient, senderId: delivery.senderId,
+          status: providerStatus.status, errorCode: providerStatus.errorCode,
+        });
+        delivery = getLoopMessageDelivery(tenantId, taskId);
+      }
+      if (delivery?.status === "delivered") {
+        return NextResponse.json({ error: "This result has already been delivered.", delivery }, { status: 409 });
+      }
+      if (delivery && delivery.status !== "failed" && delivery.status !== "unknown") {
+        return NextResponse.json({ error: "Delivery is not in a retryable state.", delivery }, { status: 409 });
+      }
+      const messages = (record?.state as { messages?: Array<Record<string, unknown>> } | undefined)?.messages || [];
+      const resultMessage = messages.find((message) =>
+        message.sender === "velnor" && message.interactionId === taskId && typeof message.text === "string"
+      );
+      if (!resultMessage || typeof resultMessage.text !== "string") {
+        return NextResponse.json({ error: "The task has no completed result to deliver." }, { status: 409 });
       }
       const sent = await sendLoopMessage({
         authKey, recipient: task.userHandle, text: String(resultMessage.text), senderId,
