@@ -34,6 +34,7 @@ test("LoopMessage documented message_delivered webhook is durably reconciled bef
         message_id: "provider-message-123",
         contact: "alex@icloud.com",
         sender: "sender-id-123",
+        passthrough: deliveryId,
       }),
     });
     const response = await POST(request);
