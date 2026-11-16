@@ -21,7 +21,7 @@ All endpoints require the same short-lived tenant bearer token used by /api/chat
 
 ## Durable outbound attempt ledger
 
-Every LoopMessage send writes a row to imessage_delivery_attempts before the provider request is made, scoped to tenant, task, recipient and sender ID. It exists so a send that never returns a message ID is still recoverable and attributable.
+Every Sendblue send writes a row to imessage_delivery_attempts before the provider request is made, scoped to tenant, task, recipient and sender line. The existing table and helper names are retained for migration compatibility; the ledger ensures a send that never returns a message handle is still recoverable and attributable.
 
 States: pending_send -> queued | failed | unconfirmed, then queued -> processing | delivered | failed | unknown from provider status/callbacks.
 
