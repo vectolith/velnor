@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
     const tasks = listExecutionTasks(tenantId, 50).map((task) => ({
       ...task,
       delivery: task.channel === "imessage" ? getLoopMessageDelivery(tenantId, task.id) : null,
+      deliveryAttempt: task.channel === "imessage" ? getLatestLoopMessageDeliveryAttempt(tenantId, task.id) : null,
     }));
     return NextResponse.json({ tasks });
   });
@@ -77,9 +78,11 @@ export async function POST(req: NextRequest) {
       if (!authKey || !senderId) {
         return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
       }
-      if (senderId !== delivery.senderId) {
+      const originalSenderId = delivery?.senderId ?? previousAttempt?.senderId;
+      const originalRecipient = delivery?.recipient ?? previousAttempt?.recipient;
+      if (!originalSenderId || senderId !== originalSenderId || originalRecipient !== task.userHandle) {
         return NextResponse.json({
-          error: "The configured LoopMessage sender ID differs from the sender used for the original attempt; retry blocked to preserve sender identity.",
+          error: "The configured LoopMessage sender or recipient differs from the original attempt; retry blocked to preserve delivery identity.",
           delivery,
         }, { status: 409 });
       }
