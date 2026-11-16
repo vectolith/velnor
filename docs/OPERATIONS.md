@@ -61,8 +61,7 @@ Provider credentials entered through `POST /api/settings` are sealed with AES-25
 | Endpoint | Auth |
 | --- | --- |
 | `POST /api/webhooks/imessage` (Twilio form) | gateway-injected `x-velnor-secret` + `X-Twilio-Signature`, fail closed |
-| `POST /api/webhooks/imessage` (Sendblue JSON) | gateway-injected `x-velnor-secret` + `sb-signing-secret` or configured webhook secret |
-| `POST /api/webhooks/imessage` (Sendblue outbound status callback) | gateway-injected `x-velnor-secret` + `sb-signing-secret` matching `SENDBLUE_WEBHOOK_SECRET` |
+| `POST /api/webhooks/imessage` (Sendblue inbound messages and outbound status callbacks) | gateway-injected `x-velnor-secret` + `sb-signing-secret` matching `SENDBLUE_WEBHOOK_SECRET` |
 | `POST /api/webhooks/slack` | gateway-injected `x-velnor-secret` + v0 signature + 300s freshness |
 | `POST /api/webhooks/discord` | gateway-injected `x-velnor-secret` + Discord Ed25519 signature + 300s freshness |
 | `GET/POST /api/tasks` | signed tenant bearer token + shared deployment-secret perimeter |
