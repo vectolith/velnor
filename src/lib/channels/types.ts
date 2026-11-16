@@ -3,6 +3,8 @@ export interface SendResult {
   ok: boolean;
   status?: number;
   detail?: string;
+  messageId?: string;
+  deliveryStatus?: "queued" | "processing" | "delivered" | "failed" | "unknown";
 }
 
 /** Read an error body without letting a broken stream mask the failure. */
