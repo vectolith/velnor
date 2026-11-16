@@ -100,3 +100,57 @@ export async function verifyLoopMessageSender(params: {
     };
   }
 }
+
+
+export type LoopMessageProviderStatus = "processing" | "failed" | "delivered" | "unknown";
+
+export async function fetchLoopMessageStatus(params: {
+  authKey: string;
+  messageId: string;
+  timeoutMs?: number;
+}): Promise<{
+  ok: boolean;
+  messageId: string;
+  status?: LoopMessageProviderStatus;
+  contact?: string;
+  errorCode?: number;
+  detail?: string;
+}> {
+  if (!params.authKey || !params.messageId) {
+    return { ok: false, messageId: params.messageId, detail: "LoopMessage API key and provider message ID are required." };
+  }
+  try {
+    const response = await fetch(
+      "https://a.loopmessage.com/api/v1/message/status/" + encodeURIComponent(params.messageId) + "/",
+      {
+        method: "GET",
+        headers: { Authorization: params.authKey, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(params.timeoutMs ?? 10000),
+      }
+    );
+    if (!response.ok) {
+      return { ok: false, messageId: params.messageId, detail: "LoopMessage status lookup failed with HTTP " + response.status + "." };
+    }
+    const payload = await response.json().catch(() => null) as {
+      message_id?: string; status?: string; contact?: string; error_code?: number;
+    } | null;
+    const statuses = ["processing", "failed", "delivered", "unknown"];
+    if (!payload || payload.message_id !== params.messageId ||
+        typeof payload.status !== "string" || !statuses.includes(payload.status)) {
+      return { ok: false, messageId: params.messageId, detail: "LoopMessage returned an invalid status response." };
+    }
+    return {
+      ok: true,
+      messageId: params.messageId,
+      status: payload.status as LoopMessageProviderStatus,
+      contact: typeof payload.contact === "string" ? payload.contact : undefined,
+      errorCode: Number.isInteger(payload.error_code) ? payload.error_code : undefined,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      messageId: params.messageId,
+      detail: "LoopMessage status lookup failed: " + (error instanceof Error ? error.message : String(error)),
+    };
+  }
+}
