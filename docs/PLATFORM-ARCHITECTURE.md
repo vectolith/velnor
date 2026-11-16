@@ -4,15 +4,15 @@
 
 ## Product decision
 
-Build VELNOR as an independent, general-purpose AI platform now. Design every service boundary so that a future VELNOR operating system can consume the same platform without requiring a rewrite. Do not begin operating-system development as part of this work.
+Build VELNOR as an independent, general-purpose AI platform. Operating-system development and  compatibility are out of scope.
 
 VELNOR is not a model wrapper and must not be coupled to one model family, inference provider, cloud vendor, client application, or operating system. Models by vectolith is the preferred first-party model family, but the platform must be able to register and route to other explicitly approved model backends.
 
 ## Architectural invariants
 
-1. **Platform before shell:** business logic, identity, orchestration, memory, tools, and policy live behind stable platform contracts. A web page, mobile app, desktop app, messaging channel, and future OS shell are clients.
+1. **Platform first:** business logic, identity, orchestration, memory, tools, and policy live behind stable platform contracts. The web dashboard and mobile app are companion control-centre clients; messaging and other approved channels are interaction/invocation surfaces.
 2. **Model neutrality:** the orchestration layer uses a provider/model adapter contract. No client calls a model provider directly, and no model is allowed to grant itself capabilities.
-3. **OS neutrality:** core services must not depend on desktop windowing, mobile lifecycle APIs, kernel interfaces, or OS-specific identity. Native OS capabilities are exposed later through separately permissioned adapters.
+3. **Platform independence:** core services must not be coupled to a particular client, hosting provider, or model provider. No operating-system architecture, compatibility layer, kernel integration, or OS roadmap is part of VELNOR.
 4. **Security outside the model:** authentication, tenant isolation, authorization, approvals, quotas, and audit decisions are enforced by trusted services. Model-generated text or tool arguments are untrusted input.
 5. **Portable identity and data:** stable user, tenant, conversation, task, artifact, and capability identifiers are independent of a device or channel. Users must be able to export their data through documented formats.
 6. **Versioned contracts:** public APIs and internal service contracts are versioned. Breaking changes require an explicit migration path.
@@ -22,7 +22,7 @@ VELNOR is not a model wrapper and must not be coupled to one model family, infer
 ## Logical architecture
 
 ```text
- Web client   Mobile client   Desktop client   Messaging clients   Future VELNOR OS
+ Web dashboard   Mobile companion   Messaging / invocation channels
       \            |              |                 |                    /
        +------------+--------------+-----------------+-------------------+
                                     |
@@ -51,7 +51,7 @@ This is a logical view, not a claim that every box is currently a separate deplo
 ### 1. Client adapters
 
 Clients render the experience and translate platform contracts into their native interaction patterns. They may include:
-- Web application: primary general-purpose interactive experience.
+- Mobile applications: native chat, voice, notifications, camera, and file handoff.
 - Mobile applications: native chat, voice, notifications, camera, and file handoff.
 - Desktop application: chat plus approved local-file and application workflows.
 - Messaging adapters: iMessage/SMS, Slack, and future channels.
@@ -101,13 +101,13 @@ Separate these states: registered, evaluated, approved, deployed, healthy, avail
 
 Tools are declared with schemas, descriptions, risk classes, required scopes, timeout limits, and execution policies. The runtime validates arguments, checks authorization, obtains required user approval, executes with bounded resources, and records the outcome. The model can request an action; only the runtime can authorize and execute it.
 
-For future OS integration, native capabilities such as file access, app control, notifications, clipboard, microphone, camera, and system settings must be represented as explicit tools with narrow scopes and visible permission prompts. No general-purpose unrestricted shell or implicit device access is granted to the model.
+Connected services and approved device integrations must be represented as explicit tools with narrow scopes and visible permission prompts. No general-purpose unrestricted shell or implicit device access is granted to the model.
 
 ### 7. Memory, files, and artifacts
 
 Keep conversation history, user-approved memory, project state, uploaded files, and generated artifacts as distinct resource types with separate retention and access rules. Memory must be inspectable, correctable, and deletable under documented policy. Files and artifacts need ownership, provenance, content type, size limits, and access checks.
 
-Use portable formats and stable IDs so data can move between clients and future deployments. Avoid making a device-local database the only copy of a user's canonical data.
+Use portable formats and stable IDs so data can move between supported clients and deployments. Avoid making a device-local database the only copy of a user's canonical data.
 
 ### 8. Events, audit, and observability
 
@@ -148,7 +148,7 @@ The existing repository has API routes, an agent loop, provider adapters, tenant
 
 ## Future VELNOR OS compatibility
 
-The future OS must be a first-party client and capability host, not a prerequisite for the platform. Preserve that option through these rules:
+The  must be a first-party client and capability host, not a prerequisite for the platform. Preserve that option through these rules:
 
 - No platform service imports OS UI frameworks or assumes a particular filesystem layout.
 - A device agent communicates with the platform through authenticated, versioned APIs.
@@ -188,4 +188,4 @@ These are workstreams, not approval gates. Work can proceed concurrently when de
 - Long-running tasks have stable IDs, observable states, and safe cancellation semantics.
 - Every tool action is schema-validated, permission-checked, and auditable.
 - Data export and deletion do not depend on a specific client or operating system.
-- A future OS client can be added without changing the public conversation/task contract or moving business logic into the OS shell.
+- A  client can be added without changing the public conversation/task contract or moving business logic into the OS shell.
