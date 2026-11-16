@@ -106,6 +106,31 @@ export async function POST(req: NextRequest) {
         userHandle: task.userHandle || undefined,
         attachments: Array.isArray(original.attachments) ? original.attachments as Attachment[] : undefined,
       });
+      if (task.channel === "imessage") {
+        if (!task.userHandle) return NextResponse.json({ error: "Original iMessage recipient identity is missing." }, { status: 409 });
+        const refreshed = await repository.load(tenantId);
+        const config = (refreshed?.state as { config?: Record<string, unknown> } | undefined)?.config || {};
+        const authKey = typeof config.loopMessageAuthKey === "string" && config.loopMessageAuthKey
+          ? config.loopMessageAuthKey : process.env.LOOPMESSAGE_AUTH_KEY || "";
+        const senderId = (process.env.LOOPMESSAGE_SENDER_ID || "").trim();
+        if (!authKey || !senderId) {
+          return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
+        }
+        const sent = await sendLoopMessage({
+          authKey, recipient: task.userHandle, text: reply.text, senderId,
+        });
+        if (!sent.ok || !sent.messageId) {
+          return NextResponse.json({ error: "The retried task completed, but LoopMessage did not accept result delivery.", detail: sent.detail, taskId: reply.interactionId }, { status: 502 });
+        }
+        recordLoopMessageQueued({
+          messageId: sent.messageId, tenantId, taskId: reply.interactionId || "",
+          recipient: task.userHandle, senderId,
+        });
+        return NextResponse.json({
+          taskId: reply.interactionId, reply, recipient: task.userHandle, senderId,
+          deliveryStatus: "queued", messageId: sent.messageId,
+        });
+      }
       return NextResponse.json({ taskId: reply.interactionId, reply });
     }
     return NextResponse.json({ error: "Action must be cancel or retry." }, { status: 400 });
