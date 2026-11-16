@@ -15,6 +15,7 @@ import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepos
 import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
 import { getLoopMessageRecipient, isLoopMessagePayload, normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
+import { applyLoopMessageDeliveryEvent, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 const MAX_INPUT_CHARS = 8000;
@@ -193,6 +194,19 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     const payload: any = jsonPayload;
     const provider = isLoopMessagePayload(payload) ? "loopmessage" : "sendblue";
+    if (provider === "loopmessage" && (payload.event === "message_delivered" || payload.event === "message_failed")) {
+      const recipient = normalizeImessageIdentity(payload.contact);
+      const senderId = typeof payload.sender === "string" ? payload.sender : "";
+      const messageId = typeof payload.message_id === "string" ? payload.message_id : "";
+      const applied = applyLoopMessageDeliveryEvent({
+        messageId,
+        recipient: recipient || "",
+        senderId,
+        status: payload.event === "message_delivered" ? "delivered" : "failed",
+        errorCode: Number.isInteger(payload.error_code) ? payload.error_code : undefined,
+      });
+      return NextResponse.json({ status: applied ? payload.event : "unmatched_delivery_event" });
+    }
     if (provider === "loopmessage" && payload.event && payload.event !== "message_inbound") {
       return NextResponse.json({ status: "ignored", event: payload.event });
     }
@@ -208,6 +222,10 @@ export async function POST(req: NextRequest) {
     }
     const senderHandle = normalizeImessageIdentity(payload.contact || payload.email || payload.from_email || payload.apple_id || payload.number || payload.from_number);
     if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
+    const loopMessageSenderId = provider === "loopmessage" ? (process.env.LOOPMESSAGE_SENDER_ID || "").trim() : "";
+    if (provider === "loopmessage" && !loopMessageSenderId) {
+      return NextResponse.json({ error: "LOOPMESSAGE_SENDER_ID must explicitly identify VELNOR's email sender." }, { status: 503 });
+    }
     const providerAccount = String(payload.organization_id || payload.sendblue_number || payload.to_number || "default");
     const webhookId = String(payload.message_handle || payload.webhook_id || payload.message_id || "");
     if (webhookId && !inboundWebhookCache.seen(inboundKey([provider, webhookId]))) return NextResponse.json({ status: "duplicate" });
@@ -266,12 +284,24 @@ export async function POST(req: NextRequest) {
                   loopMessageAuthKey &&
                   (payload.contact || payload.email || payload.from_email || payload.apple_id)
                 ) {
-                  deliveryResults.push(await sendLoopMessage({
+                  const recipient = getLoopMessageRecipient(payload);
+                  if (!recipient) throw new Error("LoopMessage inbound webhook did not provide a valid contact identity.");
+                  const sent = await sendLoopMessage({
                     authKey: loopMessageAuthKey,
-                    recipient: getLoopMessageRecipient(payload) || senderHandle,
+                    recipient,
                     text: outboundText,
-                    senderId: process.env.LOOPMESSAGE_SENDER_ID,
-                  }));
+                    senderId: loopMessageSenderId,
+                  });
+                  deliveryResults.push(sent);
+                  if (sent.ok && sent.messageId) {
+                    recordLoopMessageQueued({
+                      messageId: sent.messageId,
+                      tenantId: getNodeTenantRepositoryContext().tenantId,
+                      taskId: reply.interactionId || "",
+                      recipient,
+                      senderId: loopMessageSenderId,
+                    });
+                  }
                 }
         
                 return { reply, outboundText, deliveryResults };
