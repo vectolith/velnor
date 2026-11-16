@@ -42,3 +42,61 @@ export async function sendLoopMessage(params: {
     return { provider: "loopmessage", ok: false, detail: (err as Error).message };
   }
 }
+
+
+export interface LoopMessageSenderVerification {
+  ok: boolean;
+  senderId: string;
+  name?: string;
+  status?: string;
+  imessageLink?: string;
+  detail: string;
+}
+
+/** Verify the configured sender ID against LoopMessage's sender-details API. */
+export async function verifyLoopMessageSender(params: {
+  authKey: string;
+  senderId: string;
+  timeoutMs?: number;
+}): Promise<LoopMessageSenderVerification> {
+  const senderId = params.senderId.trim();
+  if (!params.authKey || !senderId) {
+    return { ok: false, senderId, detail: "LoopMessage API key and sender ID are required." };
+  }
+  try {
+    const response = await fetch(
+      "https://a.loopmessage.com/api/v1/sender/" + encodeURIComponent(senderId) + "/",
+      {
+        method: "GET",
+        headers: { Authorization: params.authKey, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(params.timeoutMs ?? 10000),
+      }
+    );
+    if (!response.ok) {
+      return { ok: false, senderId, detail: "LoopMessage sender lookup failed with HTTP " + response.status + "." };
+    }
+    const payload = await response.json().catch(() => null) as {
+      id?: string; name?: string; status?: string; imessage_link?: string;
+    } | null;
+    if (!payload || payload.id !== senderId) {
+      return { ok: false, senderId, detail: "LoopMessage did not return the configured sender ID." };
+    }
+    const status = typeof payload.status === "string" ? payload.status.toLowerCase() : "unknown";
+    return {
+      ok: status === "active",
+      senderId,
+      name: typeof payload.name === "string" ? payload.name : undefined,
+      status,
+      imessageLink: typeof payload.imessage_link === "string" ? payload.imessage_link : undefined,
+      detail: status === "active"
+        ? "The configured LoopMessage sender ID exists and is active. The sender-details API does not expose its Apple ID email address; recipient-side verification is still required."
+        : "The configured LoopMessage sender exists but is not active (" + status + ").",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      senderId,
+      detail: "LoopMessage sender lookup failed: " + (error instanceof Error ? error.message : String(error)),
+    };
+  }
+}
