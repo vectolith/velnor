@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getStore, saveStore, withVelnorUser } from "../src/lib/store";
-import { sendSendblueMessage } from "../src/lib/channels/sendblue";
+import { sendSendblueMessage, getSendblueMessageStatus } from "../src/lib/channels/sendblue";
 import { sendLoopMessage } from "../src/lib/channels/loopmessage";
 import { getGoogleAccessToken } from "../src/lib/auth/googleToken";
 import { getGoogleAccessTokenAsync } from "../src/lib/auth/googleTokenAsync";
@@ -155,6 +155,35 @@ test("Sendblue uses the documented send-message contract and sender line", async
     });
     assert.equal(result.ok, true);
     assert.match(result.detail || "", /sendblue-handle/);
+  });
+});
+
+test("Sendblue status lookup verifies the message handle and returns the iMessage delivery state", async () => {
+  await withFetchMock(async (input, init) => {
+    const url = new URL(String(input));
+    assert.equal(url.origin + url.pathname, "https://api.sendblue.co/api/status");
+    assert.equal(url.searchParams.get("handle"), "sendblue-status-handle");
+    assert.equal((init?.headers as Record<string, string>)["sb-api-key-id"], "key-id");
+    return new Response(JSON.stringify({
+      message_handle: "sendblue-status-handle",
+      number: "alex@icloud.com",
+      from_number: "+15557654321",
+      status: "DELIVERED",
+      service: "iMessage",
+      was_downgraded: false,
+    }), { status: 200 });
+  }, async () => {
+    const result = await getSendblueMessageStatus({
+      apiKeyId: "key-id",
+      apiSecretKey: "secret",
+      messageId: "sendblue-status-handle",
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.recipient, "alex@icloud.com");
+      assert.equal(result.sender, "+15557654321");
+      assert.equal(result.status, "delivered");
+    }
   });
 });
 
