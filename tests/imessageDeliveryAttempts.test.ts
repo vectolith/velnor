@@ -11,7 +11,7 @@ import {
   beginLoopMessageAttempt, getLatestLoopMessageAttempt, listLoopMessageAttempts,
   recoverStaleLoopMessageAttempts, LoopMessageAttemptInFlightError,
 } from "../src/lib/channels/imessageDeliveryAttempts";
-import { getLoopMessageDelivery } from "../src/lib/channels/imessageDeliveryStore";
+import { getLoopMessageDelivery, processLoopMessageCallbackPayload } from "../src/lib/channels/imessageDeliveryStore";
 import { sendTrackedLoopMessage } from "../src/lib/channels/trackedLoopMessageSend";
 import { closeSqliteDb, getSqliteDb } from "../src/lib/sqliteDb";
 
@@ -56,6 +56,30 @@ test("a pending attempt is committed before the provider request leaves the proc
     assert.equal(tracked.duplicateRisk, false);
     assert.equal(getLoopMessageDelivery(base.tenantId, base.taskId)?.status, "queued");
     assert.equal(getLatestLoopMessageAttempt(base.tenantId, base.taskId)?.attemptNo, 1);
+  } finally {
+    reset();
+    closeSqliteDb();
+  }
+});
+
+
+test("a callback that arrives before the send response is reconciled into the exact attempt", async () => {
+  try {
+    stubFetch(async () => {
+      // Simulate LoopMessage calling the webhook before the outbound request
+      // returns its message_id to the sender.
+      assert.equal(processLoopMessageCallbackPayload({
+        event: "message_delivered",
+        message_id: "loop-early-callback",
+        contact: base.recipient,
+      }), "unmatched");
+      return new Response(JSON.stringify({ success: true, message_id: "loop-early-callback" }), { status: 200 });
+    });
+    const tracked = await sendTrackedLoopMessage({ ...base, taskId: "task-early-callback" });
+    assert.equal(tracked.result.ok, true);
+    assert.equal(tracked.attempt.state, "delivered");
+    assert.equal(getLatestLoopMessageAttempt(base.tenantId, "task-early-callback")?.state, "delivered");
+    assert.equal(getLoopMessageDelivery(base.tenantId, "task-early-callback")?.status, "delivered");
   } finally {
     reset();
     closeSqliteDb();
