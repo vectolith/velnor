@@ -32,8 +32,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not read Discord interaction." }, { status: 400 });
   }
 
+  const discordPublicKey = process.env.DISCORD_PUBLIC_KEY || "";
+  if (!discordPublicKey) return NextResponse.json({ error: "Discord interactions are not configured." }, { status: 503 });
   const valid = verifyDiscordInteractionSignature({
-    publicKey: process.env.DISCORD_PUBLIC_KEY || "",
+    publicKey: discordPublicKey,
     signature: req.headers.get("x-signature-ed25519"),
     timestamp: req.headers.get("x-signature-timestamp"),
     rawBody,
@@ -47,6 +49,10 @@ export async function POST(req: NextRequest) {
   if (payload.type === 1) return NextResponse.json({ type: 1 });
   if (payload.type !== 2) return NextResponse.json({ error: "Unsupported Discord interaction type." }, { status: 400 });
 
+  const commandName = String(payload.data?.name || "").toLowerCase();
+  if (commandName !== "ask" && commandName !== "velnor") {
+    return NextResponse.json({ type: 4, data: { content: "Use /ask to send a request to VELNOR.", flags: 64 } });
+  }
   const interactionId = String(payload.id || "");
   const applicationId = String(payload.application_id || "");
   const token = String(payload.token || "");
