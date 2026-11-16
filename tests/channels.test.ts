@@ -3,6 +3,7 @@ import test from "node:test";
 import { sendSendblueMessage } from "../src/lib/channels/sendblue";
 import { sendLoopMessage } from "../src/lib/channels/loopmessage";
 import { buildSlackBlocks, postSlackMessage } from "../src/lib/channels/slack";
+import { sendTwilioSms } from "../src/lib/channels/twilio";
 import type { ChatMessage } from "../src/lib/types";
 
 function stubFetch(handler: (input: RequestInfo | URL, init?: RequestInit) => Response) {
@@ -110,4 +111,69 @@ test("block kit rendering escapes bold and attaches tool context", () => {
   const blocks = buildSlackBlocks(reply);
   assert.equal(blocks[0].text.text, "*done*");
   assert.ok(blocks.some((block) => block.type === "context"));
+});
+
+
+test("Twilio sends an authenticated SMS and requires a provider message SID", async () => {
+  let request: { url: string; headers: Headers; body: URLSearchParams } | null = null;
+  const restore = stubFetch((input, init) => {
+    request = {
+      url: String(input),
+      headers: new Headers(init?.headers),
+      body: new URLSearchParams(String(init?.body)),
+    };
+    return new Response(JSON.stringify({ sid: "SM123", status: "queued" }), {
+      status: 201,
+      headers: { "content-type": "application/json" },
+    });
+  });
+  try {
+    const result = await sendTwilioSms({
+      accountSid: "AC123",
+      authToken: "token",
+      from: "+15550001",
+      to: "+15550002",
+      body: "Reminder",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.provider, "twilio");
+    assert.equal(request!.url, "https://api.twilio.com/2010-04-01/Accounts/AC123/Messages.json");
+    assert.equal(request!.headers.get("authorization"), "Basic " + Buffer.from("AC123:token").toString("base64"));
+    assert.equal(request!.body.get("From"), "+15550001");
+    assert.equal(request!.body.get("To"), "+15550002");
+    assert.equal(request!.body.get("Body"), "Reminder");
+  } finally {
+    restore();
+  }
+});
+
+test("Twilio does not report acceptance without a message SID", async () => {
+  const restore = stubFetch(() => new Response(JSON.stringify({ status: "queued" }), {
+    status: 201,
+    headers: { "content-type": "application/json" },
+  }));
+  try {
+    const result = await sendTwilioSms({
+      accountSid: "AC123",
+      authToken: "token",
+      from: "+15550001",
+      to: "+15550002",
+      body: "Reminder",
+    });
+    assert.equal(result.ok, false);
+    assert.match(String(result.detail), /not return a message SID/);
+  } finally {
+    restore();
+  }
+});
+
+test("Twilio rejects empty and oversized SMS bodies", async () => {
+  const empty = await sendTwilioSms({
+    accountSid: "AC123", authToken: "token", from: "+15550001", to: "+15550002", body: "",
+  });
+  const oversized = await sendTwilioSms({
+    accountSid: "AC123", authToken: "token", from: "+15550001", to: "+15550002", body: "x".repeat(1601),
+  });
+  assert.equal(empty.ok, false);
+  assert.equal(oversized.ok, false);
 });
