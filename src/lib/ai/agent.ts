@@ -328,6 +328,7 @@ async function runBuiltInAgentOrchestrator(
     text: string;
     userHandle?: string;
     attachments?: Attachment[];
+    taskId: string;
   },
   bundle: ToolExecutionBundle,
   tenantContext: TenantRepositoryContext,
@@ -428,6 +429,7 @@ async function runBuiltInAgentOrchestrator(
   const urlMatch = raw.match(/https?:\/\/[^\s]+/i);
   if (urlMatch && (lower.includes("summar") || lower.includes("read") || lower.includes("tl;dr") || lower.includes("what is"))) {
     const url = urlMatch[0];
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const res = await executeToolCall("ingest_url_or_doc", { url }, params.channel, bundle);
     const doc = res.document;
     return `🔗 **Link Summary (${doc.name})**\n\n${doc.summary}\n\n_Indexed ${doc.chunkCount} chunks into vector memory so you can ask follow-up questions._`;
@@ -487,6 +489,7 @@ async function runBuiltInAgentOrchestrator(
       .replace(timeExpression, "")
       .trim() || raw;
 
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { reminder } = await executeToolCall(
       "create_reminder",
       { text: taskText, dueAt },
@@ -498,6 +501,7 @@ async function runBuiltInAgentOrchestrator(
   }
 
   if (lower.includes("my reminders") || lower.includes("list reminders") || lower.includes("show tasks")) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { reminders } = await executeToolCall("list_reminders", {}, params.channel, bundle);
     const active = reminders.filter((r: any) => !r.completed);
     if (active.length === 0) return "✅ You have no pending reminders right now!";
@@ -531,6 +535,7 @@ async function runBuiltInAgentOrchestrator(
       .replace(/^(send|draft) an email (to [^\s]+ )?(saying|about|that)?\s*/i, "")
       .trim() || "Hi! Following up on our thread—let me know what time works best for you.";
 
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { email } = await executeToolCall(
       "draft_or_send_email",
       { to, subject, body, sendImmediately },
@@ -545,6 +550,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("archive ") &&
     (lower.includes("email") || lower.includes("inbox") || lower.includes("messages"))
   ) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const res = await executeToolCall(
       "organize_email",
       { query: "report", action: "archive" },
@@ -561,6 +567,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("gmail") ||
     lower.includes("unread")
   ) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { emails } = await executeToolCall("list_emails", {}, params.channel, bundle);
     return (
       `📬 **Gmail Summary (${emails.length} messages in Inbox):**\n\n` +
@@ -586,6 +593,7 @@ async function runBuiltInAgentOrchestrator(
     const title = raw
       .replace(/^(schedule a|book a|add to calendar|create an event)\s*/i, "")
       .slice(0, 50) || "Strategy Sync";
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { event } = await executeToolCall(
       "create_calendar_event",
       {
@@ -608,6 +616,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("availability") ||
     lower.includes("free today")
   ) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { events } = await executeToolCall("list_calendar_events", {}, params.channel, bundle);
     return (
       `🗓️ **Your Google Calendar Schedule:**\n\n` +
@@ -635,6 +644,7 @@ async function runBuiltInAgentOrchestrator(
     const daysMatch = raw.match(/(\d+)\s*-?\s*day/i);
     const days = daysMatch ? Number(daysMatch[1]) : 3;
 
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { plan } = await executeToolCall(
       "plan_trip_or_local",
       { destination, days },
@@ -680,6 +690,7 @@ async function runBuiltInAgentOrchestrator(
     const cleanFact = raw
       .replace(/^(remember that|remember|save to memory:?)\s*/i, "")
       .trim() || raw;
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { memory } = await executeToolCall(
       "remember_user_fact",
       { fact: cleanFact },
@@ -695,6 +706,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("show memory") ||
     lower.includes("know about me")
   ) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { memories } = await executeToolCall(
       "recall_user_facts",
       {},
@@ -721,6 +733,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("vector") ||
     lower.includes("uploaded")
   ) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { matches } = await executeToolCall(
       "query_documents",
       { query: raw },
@@ -747,6 +760,7 @@ async function runBuiltInAgentOrchestrator(
     if (loraReply) return loraReply;
   }
 
+  await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
   const searchRes = await executeToolCall(
     "web_search",
     { query: raw },
