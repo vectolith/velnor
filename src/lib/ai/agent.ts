@@ -272,6 +272,7 @@ async function processUserMessageCore(params: {
     new Map(bundle.citations.map((c) => [c.url, c])).values()
   );
 
+  assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
   const velnorMsg: ChatMessage = {
     id: `msg-${crypto.randomUUID()}`,
     channel: params.channel,
