@@ -54,11 +54,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "This task has no iMessage recipient identity." }, { status: 409 });
       }
       const delivery = getLoopMessageDelivery(tenantId, taskId);
-      if (delivery?.status === "delivered") {
+      if (!delivery) {
+        return NextResponse.json({ error: "No tracked LoopMessage delivery attempt exists for this task; refusing an uncorrelated resend." }, { status: 409 });
+      }
+      if (delivery.status === "delivered") {
         return NextResponse.json({ error: "This result has already been delivered.", delivery }, { status: 409 });
       }
-      if (delivery && delivery.status !== "failed") {
-        return NextResponse.json({ error: "Delivery is not in a retryable state.", delivery }, { status: 409 });
+      if (delivery.status !== "failed") {
+        return NextResponse.json({
+          error: "Only a provider-confirmed failed delivery can be retried. Queued or unknown attempts must be reconciled first.",
+          delivery,
+        }, { status: 409 });
       }
       const record = await repository.load(tenantId);
       const messages = (record?.state as { messages?: Array<Record<string, unknown>> } | undefined)?.messages || [];
@@ -102,8 +108,15 @@ export async function POST(req: NextRequest) {
     if (action === "retry") {
       const task = getExecutionTask(tenantId, taskId);
       if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
-      if (task.status !== "failed") {
-        return NextResponse.json({ error: "Only failed tasks can be retried. Interrupted tasks require explicit recovery because completed tool side effects cannot yet be safely replayed.", task }, { status: 409 });
+      if (task.status !== "failed" && task.status !== "interrupted") {
+        return NextResponse.json({ error: "Only failed or interrupted tasks can be retried.", task }, { status: 409 });
+      }
+      if (input.confirmSideEffectReplay !== true) {
+        return NextResponse.json({
+          error: "Retry re-executes the original request and may repeat external tool side effects. Set confirmSideEffectReplay=true only after reviewing the original task.",
+          task,
+          requiresConfirmation: true,
+        }, { status: 409 });
       }
       const record = await repository.load(tenantId);
       const messages = (record?.state as { messages?: Array<Record<string, unknown>> } | undefined)?.messages || [];
