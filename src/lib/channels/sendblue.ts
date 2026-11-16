@@ -82,8 +82,8 @@ export async function sendSendblueMessage(params: {
       deliveryStatus: downgraded ? "failed" : "queued",
       sendCertainty: "accepted",
       detail: downgraded
-        ? "Sendblue downgraded this message to SMS; it is not counted as iMessage delivery."
-        : "Accepted by Sendblue queue; delivery remains unconfirmed until its status callback.",
+        ? "Sendblue downgraded this message to SMS; it is not counted as iMessage delivery. Message handle " + payload.message_handle + "."
+        : "Accepted by Sendblue queue; message handle " + payload.message_handle + "; delivery remains unconfirmed until its status callback.",
     };
   } catch (err) {
     return {
