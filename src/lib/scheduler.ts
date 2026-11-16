@@ -4,6 +4,7 @@ import { claimReminderDispatch, completeReminderDispatch } from "./sqliteDb";
 import { sendSendblueMessage } from "./channels/sendblue";
 import { sendLoopMessage } from "./channels/loopmessage";
 import { postSlackMessage } from "./channels/slack";
+import { sendTwilioSms } from "./channels/twilio";
 import { ChatMessage, ReminderItem } from "./types";
 
 export interface DispatchedReminderResult {
@@ -36,93 +37,124 @@ async function dispatchTenantReminderNotification(
 
   const results: DispatchedReminderResult[] = [];
   const workerId = randomUUID();
-  const claimedReminderIds: string[] = [];
+  const completedReminderIds: string[] = [];
   const tenantId = currentUserId();
 
   for (const rem of pending.slice(0, reminderId ? 1 : 3)) {
-    // The lease is persisted in SQLite, so overlapping cron invocations and
-    // separate app processes cannot dispatch the same reminder concurrently.
+    // A durable lease excludes overlapping cron workers and app processes.
     if (!claimReminderDispatch(tenantId, rem.id, workerId)) continue;
-    claimedReminderIds.push(rem.id);
-    const channelsUsed: string[] = ["in-app-feed"];
-    const alertText = `🔔 **Velnor Reminder:** ${rem.text} _(Scheduled for ${rem.dueAt})_`;
 
-    // 1. Append proactive message to the channel conversation
+    const channelsUsed: string[] = [];
+    const alertText = `🔔 **Velnor Reminder:** ${rem.text} _(Scheduled for ${rem.dueAt})_`;
+    const outboundConfigured = Boolean(rem.recipient) && (
+      (rem.channel === "imessage" && Boolean(
+        (state.config.sendblueApiKey && state.config.sendblueApiSecret) ||
+        state.config.loopMessageAuthKey
+      )) ||
+      (rem.channel === "slack" && Boolean(state.config.slackBotToken || process.env.SLACK_BOT_TOKEN)) ||
+      (rem.channel === "sms" && Boolean(
+        state.config.twilioAccountSid && state.config.twilioAuthToken && state.config.twilioFromNumber
+      ))
+    );
+    let deliveryAccepted = !rem.recipient || !outboundConfigured;
+
+    if (rem.channel === "imessage" && rem.recipient) {
+      deliveryAccepted = false;
+      if (state.config.sendblueApiKey && state.config.sendblueApiSecret) {
+        const result = await sendSendblueMessage({
+          apiKeyId: state.config.sendblueApiKey,
+          apiSecretKey: state.config.sendblueApiSecret,
+          number: rem.recipient,
+          fromNumber: state.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
+          content: `🔔 Reminder from Velnor: ${rem.text}`,
+        });
+        if (result.ok) {
+          deliveryAccepted = true;
+          channelsUsed.push("sendblue-imessage");
+        } else {
+          console.warn(`Sendblue reminder failed: ${result.detail}`);
+        }
+      }
+      if (state.config.loopMessageAuthKey) {
+        const result = await sendLoopMessage({
+          authKey: state.config.loopMessageAuthKey,
+          recipient: rem.recipient,
+          text: `🔔 Reminder from Velnor: ${rem.text}`,
+        });
+        if (result.ok) {
+          deliveryAccepted = true;
+          channelsUsed.push("loopmessage-imessage");
+        } else {
+          console.warn(`LoopMessage reminder failed: ${result.detail}`);
+        }
+      }
+    } else if (rem.channel === "slack" && rem.recipient) {
+      const slackToken = state.config.slackBotToken || process.env.SLACK_BOT_TOKEN;
+      deliveryAccepted = false;
+      if (slackToken) {
+        const result = await postSlackMessage({
+          botToken: slackToken,
+          channel: rem.recipient || resolveSlackChannel(state),
+          text: `🔔 *Reminder from Velnor:* ${rem.text} _(${rem.dueAt})_`,
+        });
+        if (result.ok) {
+          deliveryAccepted = true;
+          channelsUsed.push("slack-bot");
+        } else {
+          console.warn(`Slack reminder failed: ${result.detail}`);
+        }
+      }
+    } else if (rem.channel === "sms" && rem.recipient) {
+      deliveryAccepted = false;
+      const result = await sendTwilioSms({
+        accountSid: state.config.twilioAccountSid || "",
+        authToken: state.config.twilioAuthToken || "",
+        from: state.config.twilioFromNumber || "",
+        to: rem.recipient,
+        body: `Reminder from Velnor: ${rem.text}`,
+      });
+      if (result.ok) {
+        deliveryAccepted = true;
+        channelsUsed.push("twilio-sms");
+      } else {
+        console.warn(`Twilio SMS reminder failed: ${result.detail}`);
+      }
+    }
+
+    if (!deliveryAccepted) {
+      // Do not append a success-looking feed message or complete the reminder.
+      // Its lease expires, allowing the next scheduler run to retry it.
+      continue;
+    }
+
+    channelsUsed.push("in-app-feed");
     const msg: ChatMessage = {
-      id: `msg-rem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `msg-rem-${randomUUID()}`,
       channel: rem.channel,
       sender: "velnor",
       text: alertText,
       timestamp: new Date().toISOString(),
       providerUsed: "scheduler",
       modelUsed: "velnor-proactive-cron",
-      toolActions: [
-        {
-          tool: "proactive_reminder",
-          label: `Triggered scheduled reminder (${rem.dueAt})`,
-          status: "success",
-          details: rem.text,
-        },
-      ],
+      toolActions: [{
+        tool: "proactive_reminder",
+        label: `Delivered scheduled reminder (${rem.dueAt})`,
+        status: "success",
+        details: rem.text,
+      }],
     };
     state.messages.push(msg);
-
-    // 2. Outbound Sendblue iMessage dispatch if configured
-    if (
-      rem.channel === "imessage" &&
-      state.config.sendblueApiKey &&
-      state.config.sendblueApiSecret &&
-      rem.recipient
-    ) {
-      const sendblueResult = await sendSendblueMessage({
-        apiKeyId: state.config.sendblueApiKey,
-        apiSecretKey: state.config.sendblueApiSecret,
-        number: rem.recipient,
-        fromNumber: state.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
-        content: `🔔 Reminder from Velnor: ${rem.text}`,
-      });
-      if (sendblueResult.ok) channelsUsed.push("sendblue-imessage");
-      else console.warn(`Sendblue reminder failed: ${sendblueResult.detail}`);
-    }
-
-    // 3. Outbound LoopMessage iMessage dispatch if configured
-    if (
-      rem.channel === "imessage" &&
-      state.config.loopMessageAuthKey &&
-      rem.recipient
-    ) {
-      const loopResult = await sendLoopMessage({
-        authKey: state.config.loopMessageAuthKey,
-        recipient: rem.recipient,
-        text: `🔔 Reminder from Velnor: ${rem.text}`,
-      });
-      if (loopResult.ok) channelsUsed.push("loopmessage-imessage");
-      else console.warn(`LoopMessage reminder failed: ${loopResult.detail}`);
-    }
-
-    // 4. Outbound Slack notification if configured
-    const slackToken = state.config.slackBotToken || process.env.SLACK_BOT_TOKEN;
-    if (rem.channel === "slack" && slackToken) {
-      const slackResult = await postSlackMessage({
-        botToken: slackToken,
-        channel: rem.recipient || resolveSlackChannel(state),
-        text: `🔔 *Reminder from Velnor:* ${rem.text} _(${rem.dueAt})_`,
-      });
-      if (slackResult.ok) channelsUsed.push("slack-bot");
-      else console.warn(`Slack reminder failed: ${slackResult.detail}`);
-    }
-
     rem.completed = true;
+    completedReminderIds.push(rem.id);
     results.push({ reminder: rem, deliveredVia: channelsUsed });
   }
 
-  // Persist the in-app notification and completed flag before making the
-  // durable claim terminal. If persistence fails, the lease expires and the
-  // reminder can be retried instead of being lost.
-  if (claimedReminderIds.length > 0) {
+  // Persist only accepted deliveries. Failed external sends remain incomplete;
+  // their leases expire and the scheduler can retry them.
+  if (completedReminderIds.length > 0) {
     saveStore(state);
-    for (const claimedId of claimedReminderIds) {
-      completeReminderDispatch(tenantId, claimedId, workerId);
+    for (const completedId of completedReminderIds) {
+      completeReminderDispatch(tenantId, completedId, workerId);
     }
   }
   return results;
