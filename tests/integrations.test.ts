@@ -141,6 +141,7 @@ test("Sendblue uses the documented send-message contract and sender line", async
     assert.equal(body.number, "+15551234567");
     assert.equal(body.from_number, "+15557654321");
     assert.equal(body.content, "Hello");
+    assert.equal(body.status_callback, "https://velnor.example/api/webhooks/imessage");
     assert.equal((init?.headers as Record<string, string>)["sb-api-key-id"], "key-id");
     return new Response(JSON.stringify({ status: "QUEUED", message_handle: "sendblue-handle" }), { status: 200 });
   }, async () => {
@@ -150,6 +151,7 @@ test("Sendblue uses the documented send-message contract and sender line", async
       number: "+15551234567",
       fromNumber: "+15557654321",
       content: "Hello",
+      statusCallback: "https://velnor.example/api/webhooks/imessage",
     });
     assert.equal(result.ok, true);
     assert.match(result.detail || "", /sendblue-handle/);
