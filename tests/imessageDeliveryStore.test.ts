@@ -7,8 +7,8 @@ import path from "node:path";
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-imessage-delivery-"));
 process.env.VELNOR_DATA_DIR = dataDir;
 
-import { applyLoopMessageDeliveryEvent, getLoopMessageDelivery, recordLoopMessageQueued } from "../src/lib/channels/imessageDeliveryStore";
-import { closeSqliteDb } from "../src/lib/sqliteDb";
+import { applyLoopMessageDeliveryEvent, getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, recordLoopMessageQueued } from "../src/lib/channels/imessageDeliveryStore";
+import { closeSqliteDb, getSqliteDb } from "../src/lib/sqliteDb";
 
 test("LoopMessage callbacks require matching message, recipient, and sender and are idempotent", () => {
   try {
@@ -78,6 +78,28 @@ test("callback received before outbound record is durably reconciled when messag
       senderId: "velnor-email-sender", status: "delivered",
     }), "duplicate");
     assert.equal(getLoopMessageDelivery("tenant-race", "task-race")?.status, "delivered");
+  } finally {
+    closeSqliteDb();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("stale queued deliveries become ambiguous before an explicit retry", () => {
+  try {
+    recordLoopMessageQueued({
+      messageId: "loop-stale-1", tenantId: "tenant-stale", taskId: "task-stale",
+      recipient: "+2348012345678", senderId: "velnor-email-sender",
+    });
+    assert.equal(markLoopMessageDeliveryUnknownIfStale("tenant-stale", "task-stale", 60_000), false);
+    getSqliteDb()!.prepare("UPDATE imessage_deliveries SET updated_at = ? WHERE message_id = ?")
+      .run(new Date(Date.now() - 60 * 60_000).toISOString(), "loop-stale-1");
+    assert.equal(markLoopMessageDeliveryUnknownIfStale("tenant-stale", "task-stale", 15 * 60_000), true);
+    assert.equal(getLoopMessageDelivery("tenant-stale", "task-stale")?.status, "unknown");
+    assert.equal(applyLoopMessageDeliveryEvent({
+      messageId: "loop-stale-1", recipient: "+2348012345678",
+      senderId: "velnor-email-sender", status: "delivered",
+    }), "applied");
+    assert.equal(getLoopMessageDelivery("tenant-stale", "task-stale")?.status, "delivered");
   } finally {
     closeSqliteDb();
     fs.rmSync(dataDir, { recursive: true, force: true });
