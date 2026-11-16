@@ -226,15 +226,18 @@ export async function processUserMessage(params: {
     });
   }
 
-  if (!replyText) {
-    if (providerFailures.length > 0 && chain.length > 0) {
-      bundle.toolActions.push({
-        tool: "provider_error",
-        label: "All configured providers failed",
-        status: "error" as any,
-        details: providerFailures.join(" | ").slice(0, 300),
-      });
-    }
+  if (!replyText && providerFailures.length > 0 && chain.length > 0) {
+    bundle.toolActions.push({
+      tool: "provider_error",
+      label: "Selected provider failed; no substitute was used",
+      status: "error" as any,
+      details: providerFailures.join(" | ").slice(0, 300),
+    });
+    replyText =
+      "The configured AI provider/model could not complete this request. No alternate provider or model was substituted. Check the selected provider configuration and retry.";
+  } else if (!replyText) {
+    // The built-in capability router is used only when no external provider
+    // was selected/configured, never as a silent replacement after failure.
     replyText = await runBuiltInAgentOrchestrator(params, bundle, tenantContext);
   }
 
