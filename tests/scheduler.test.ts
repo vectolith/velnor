@@ -83,3 +83,56 @@ test("overlapping scheduler runs claim a due reminder only once", async () => {
     // Windows file handle release guard
   }
 });
+
+
+test("failed SMS reminders remain pending and retry after the claim is released", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-scheduler-sms-"));
+  process.env.VELNOR_DATA_DIR = dir;
+  const { withVelnorUser, getStore, saveStore, resetStoreCache } = await import("../src/lib/store");
+  const { createReminderAsync } = await import("../src/lib/tools/workspaceService");
+  const { dispatchReminderNotification } = await import("../src/lib/scheduler");
+  const originalFetch = globalThis.fetch;
+  let attempts = 0;
+  globalThis.fetch = (async () => {
+    attempts++;
+    if (attempts === 1) return new Response("provider unavailable", { status: 503 });
+    return new Response(JSON.stringify({ sid: "SM-retry-accepted", status: "queued" }), {
+      status: 201,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    await withVelnorUser("scheduler-sms-tenant", async () => {
+      await createReminderAsync({
+        text: "retry this SMS reminder",
+        dueAt: new Date(Date.now() - 1000).toISOString(),
+        channel: "sms",
+        recipient: "+15550002",
+      });
+      const state = getStore();
+      state.config.twilioAccountSid = "AC123";
+      state.config.twilioAuthToken = "token";
+      state.config.twilioFromNumber = "+15550001";
+      saveStore(state);
+    });
+
+    const failed = await dispatchReminderNotification();
+    assert.equal(failed.some((item) => item.reminder.text === "retry this SMS reminder"), false);
+    const pending = await withVelnorUser("scheduler-sms-tenant", () => getStore());
+    assert.equal(pending.reminders.find((item) => item.text === "retry this SMS reminder")?.completed, false);
+    assert.equal(pending.messages.some((message) => message.text.includes("retry this SMS reminder")), false);
+
+    const retried = await dispatchReminderNotification();
+    const delivered = retried.find((item) => item.reminder.text === "retry this SMS reminder");
+    assert.ok(delivered);
+    assert.ok(delivered.deliveredVia.includes("twilio-sms"));
+    const completed = await withVelnorUser("scheduler-sms-tenant", () => getStore());
+    assert.equal(completed.reminders.find((item) => item.text === "retry this SMS reminder")?.completed, true);
+    assert.equal(attempts, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    resetStoreCache();
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+  }
+});
