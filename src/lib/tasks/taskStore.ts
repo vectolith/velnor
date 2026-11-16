@@ -17,12 +17,13 @@ export interface ExecutionTask {
   startedAt: string | null;
   updatedAt: string;
   completedAt: string | null;
+  retryOf: string | null;
 }
 
 interface TaskRow {
   id: string; tenant_id: string; channel: ChannelType; user_handle: string | null;
   status: ExecutionTaskStatus; error: string | null; created_at: string;
-  started_at: string | null; updated_at: string; completed_at: string | null;
+  started_at: string | null; updated_at: string; completed_at: string | null; retry_of: string | null;
 }
 
 function database() {
@@ -40,7 +41,7 @@ function fromRow(row: TaskRow): ExecutionTask {
     id: row.id, tenantId: row.tenant_id, channel: row.channel,
     userHandle: row.user_handle, status: row.status, error: row.error,
     createdAt: row.created_at, startedAt: row.started_at,
-    updatedAt: row.updated_at, completedAt: row.completed_at,
+    updatedAt: row.updated_at, completedAt: row.completed_at, retryOf: row.retry_of ?? null,
   };
 }
 
@@ -49,7 +50,7 @@ export class ExecutionTaskCancelledError extends Error {
 }
 
 export function createExecutionTask(input: {
-  tenantId: string; channel: ChannelType; userHandle?: string;
+  tenantId: string; channel: ChannelType; userHandle?: string; retryOfTaskId?: string;
 }): ExecutionTask {
   validateTenant(input.tenantId);
   const db = database();
@@ -57,9 +58,9 @@ export function createExecutionTask(input: {
   const id = "task_" + randomUUID();
   db.prepare(`
     INSERT INTO execution_tasks
-      (id, tenant_id, channel, user_handle, status, error, created_at, started_at, updated_at, completed_at, lease_until)
-    VALUES (?, ?, ?, ?, 'queued', NULL, ?, NULL, ?, NULL, NULL)
-  `).run(id, input.tenantId, input.channel, input.userHandle || null, now, now);
+      (id, tenant_id, channel, user_handle, status, error, created_at, started_at, updated_at, completed_at, lease_until, retry_of)
+    VALUES (?, ?, ?, ?, 'queued', NULL, ?, NULL, ?, NULL, NULL, ?)
+  `).run(id, input.tenantId, input.channel, input.userHandle || null, now, now, input.retryOfTaskId || null);
   const row = db.prepare("SELECT * FROM execution_tasks WHERE id = ? AND tenant_id = ?")
     .get(id, input.tenantId) as TaskRow | undefined;
   if (!row) throw new Error("Execution task was not persisted.");
@@ -117,6 +118,14 @@ export function getExecutionTask(tenantId: string, taskId: string): ExecutionTas
   validateTenant(tenantId);
   const row = database().prepare("SELECT * FROM execution_tasks WHERE id = ? AND tenant_id = ?")
     .get(taskId, tenantId) as TaskRow | undefined;
+  return row ? fromRow(row) : null;
+}
+
+/** Return the single retry child, if this task has already been retried. */
+export function getExecutionTaskRetry(tenantId: string, taskId: string): ExecutionTask | null {
+  validateTenant(tenantId);
+  const row = database().prepare("SELECT * FROM execution_tasks WHERE tenant_id = ? AND retry_of = ? LIMIT 1")
+    .get(tenantId, taskId) as TaskRow | undefined;
   return row ? fromRow(row) : null;
 }
 
