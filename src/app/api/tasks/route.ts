@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "The task has no completed result to deliver." }, { status: 409 });
       }
       const tracked = await sendTrackedSendblueMessage({
-        apiKeyId, apiSecretKey, recipient: task.userHandle, content: String(resultMessage.text), senderId,
+        apiKeyId, apiSecretKey, recipient: task.userHandle, content: String(resultMessage.text),
         fromNumber: senderId, statusCallback,
         tenantId, taskId, allowAmbiguousRetry: true,
       });
@@ -241,7 +241,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ error: "The retried task did not produce a durable task identity; result delivery was not attempted." }, { status: 502 });
         }
         const tracked = await sendTrackedSendblueMessage({
-          apiKeyId, apiSecretKey, recipient: task.userHandle, content: reply.text, senderId,
+          apiKeyId, apiSecretKey, recipient: task.userHandle, content: reply.text,
           fromNumber: senderId, statusCallback,
           tenantId, taskId: reply.interactionId,
         });
