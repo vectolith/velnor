@@ -7,11 +7,11 @@ export async function sendLoopMessage(params: {
   recipient: string;
   text: string;
   /** Optional LoopMessage sender ID; configure this to pin VELNOR to its email sender. */
-  senderId?: string;
+  senderId: string;
   timeoutMs?: number;
 }): Promise<SendResult> {
-  if (!params.authKey || !params.recipient) {
-    return { provider: "loopmessage", ok: false, detail: "LoopMessage is not configured" };
+  if (!params.authKey || !params.recipient || !params.senderId?.trim()) {
+    return { provider: "loopmessage", ok: false, detail: "LoopMessage requires an API key, recipient, and explicit sender ID." };
   }
   try {
     const response = await fetch(LOOPMESSAGE_ENDPOINT, {
@@ -34,7 +34,8 @@ export async function sendLoopMessage(params: {
     if (payload.success === false) {
       return { provider: "loopmessage", ok: false, status: response.status, detail: payload.message || "LoopMessage rejected the message." };
     }
-    return { provider: "loopmessage", ok: true, status: response.status, detail: "Accepted by LoopMessage queue; delivery is pending" + (payload.message_id ? " (" + payload.message_id + ")" : "") + "." };
+    if (!payload.message_id) return { provider: "loopmessage", ok: false, status: response.status, detail: "LoopMessage accepted the HTTP request but returned no message_id; delivery cannot be tracked." };
+    return { provider: "loopmessage", ok: true, status: response.status, messageId: payload.message_id, deliveryStatus: "queued", detail: "Accepted by LoopMessage queue; not yet delivered." };
   } catch (err) {
     return { provider: "loopmessage", ok: false, detail: (err as Error).message };
   }
