@@ -161,7 +161,7 @@ export function updateLoopMessageProviderStatus(input: {
   const result = db().prepare(`
     UPDATE imessage_deliveries SET status = ?, error_code = ?, updated_at = ?
     WHERE message_id = ? AND tenant_id = ? AND task_id = ? AND recipient = ? AND sender_id = ?
-      AND status != 'delivered'
+      AND status IN ('queued', 'processing', 'unknown')
   `).run(
     input.status, input.errorCode ?? null, new Date().toISOString(),
     input.messageId, input.tenantId, input.taskId, input.recipient, input.senderId,
