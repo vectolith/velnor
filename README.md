@@ -4,6 +4,15 @@
 
 Velnor currently operates through messaging channels and service APIs, including Apple iMessage, SMS, Siri Shortcuts, and Slack. The current repository does not yet provide a general public web-chat frontend; product direction and implemented delivery surfaces are documented separately.
 
+## Platform direction
+
+VELNOR is being developed as an independent, operating-system-neutral AI platform. Web, mobile, desktop, and messaging experiences are clients of shared platform services; the future VELNOR OS will use those same contracts as a first-party client and permissioned local-capability host. The operating system itself is not part of the current build.
+
+- [Platform architecture and future OS compatibility](docs/PLATFORM-ARCHITECTURE.md)
+- [How to use VELNOR and the target product experience](docs/USING-VELNOR.md)
+
+These documents distinguish current implementation from target capabilities. Architecture documentation is not a claim that an unshipped interface, API, or OS feature is already available.
+
 ## Product and intelligence objective
 
 Velnor is for **everyone**, including developers, engineers, students, educators, business owners, professionals, creators, and everyday users. Its intelligence roadmap is deliberately broad:
