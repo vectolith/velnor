@@ -6,13 +6,13 @@
 
 Build VELNOR as an independent, general-purpose AI platform. Operating-system development and  compatibility are out of scope.
 
-VELNOR is not a model wrapper and must not be coupled to one model family, inference provider, cloud vendor, client application, or operating system. Models by vectolith is the preferred first-party model family, but the platform must be able to register and route to other explicitly approved model backends.
+VELNOR is not a model wrapper and must not be coupled to one model family, inference provider, cloud vendor, or client application. Models by vectolith is the preferred first-party model family, but the platform must be able to register and route to other explicitly approved model backends.
 
 ## Architectural invariants
 
 1. **Platform first:** business logic, identity, orchestration, memory, tools, and policy live behind stable platform contracts. The web dashboard and mobile app are companion control-centre clients; messaging and other approved channels are interaction/invocation surfaces.
 2. **Model neutrality:** the orchestration layer uses a provider/model adapter contract. No client calls a model provider directly, and no model is allowed to grant itself capabilities.
-3. **Platform independence:** core services must not be coupled to a particular client, hosting provider, or model provider. No operating-system architecture, compatibility layer, kernel integration, or OS roadmap is part of VELNOR.
+3. **Platform independence:** core services must not be coupled to a particular client, hosting provider, or model provider. Operating-system architecture, compatibility layers, kernel integration, and OS planning are outside VELNOR's scope.
 4. **Security outside the model:** authentication, tenant isolation, authorization, approvals, quotas, and audit decisions are enforced by trusted services. Model-generated text or tool arguments are untrusted input.
 5. **Portable identity and data:** stable user, tenant, conversation, task, artifact, and capability identifiers are independent of a device or channel. Users must be able to export their data through documented formats.
 6. **Versioned contracts:** public APIs and internal service contracts are versioned. Breaking changes require an explicit migration path.
@@ -55,7 +55,7 @@ Clients render the experience and translate platform contracts into their native
 - Mobile applications: native chat, voice, notifications, camera, and file handoff.
 - Desktop application: chat plus approved local-file and application workflows.
 - Messaging adapters: iMessage/SMS, Slack, and future channels.
-- Future VELNOR OS shell: system-wide assistant, launcher, settings, notifications, and native capability broker.
+- Messaging and other supported invocation channels: channel-specific interaction and notifications.
 
 Clients must not own model routing, provider credentials, tenant authorization, tool policy, or canonical conversation state. A client may cache presentation data but the platform remains authoritative.
 
@@ -146,18 +146,12 @@ A resource ID must not encode personal information. All tenant-owned resources a
 
 The existing repository has API routes, an agent loop, provider adapters, tenant-scoped persistence, authentication, messaging webhooks, and a Cloudflare identity gateway. These are foundations to evolve, not proof that the complete public `/api/v1` contract or general web-chat product already exists.
 
-## Future VELNOR OS compatibility
+## Client and deployment boundaries
 
-The  must be a first-party client and capability host, not a prerequisite for the platform. Preserve that option through these rules:
-
-- No platform service imports OS UI frameworks or assumes a particular filesystem layout.
-- A device agent communicates with the platform through authenticated, versioned APIs.
-- Local execution is a separate runtime with device-bound credentials, explicit user consent, capability allowlists, and auditable actions.
-- The OS permission broker mediates all privileged local capabilities. The model never receives ambient OS privileges.
-- Device-local models may be registered as local execution targets, with explicit availability and privacy metadata; remote and local execution follow the same task contract.
-- The OS can continue basic shell functions when offline, while platform-dependent AI tasks queue or fail transparently.
-- User data and settings sync through platform contracts, with local encrypted caches and clear conflict rules.
-- OS updates, app installation, drivers, kernel services, and system administration remain outside the AI model's authority.
+- The platform is independent of any particular operating system or client runtime.
+- Web and mobile companions are control-centre interfaces for integrations, activity monitoring, approvals, administration, permissions, security, and system controls.
+- Messaging and other supported channels provide interaction and task invocation; they are not the companion dashboard.
+- No operating-system architecture, shell, kernel, device broker, or OS roadmap is part of VELNOR.
 
 ## Delivery sequence
 
@@ -169,15 +163,15 @@ These are workstreams, not approval gates. Work can proceed concurrently when de
 4. **User workspace:** conversations, projects, files, artifacts, memory controls, integrations, and approvals.
 5. **Reliable execution:** streaming, asynchronous tasks, cancellation, event delivery, retries, idempotency, observability, and audit.
 6. **Native clients:** mobile and desktop clients consume the same contracts and may add device capabilities through permissioned adapters.
-7. **VELNOR OS readiness:** implement a device agent and OS permission broker only when OS development is explicitly started.
+7. **Companion control surfaces:** implement the web dashboard and mobile companion against the same versioned platform contracts.
 
 ## Non-goals for the current phase
 
-- Do not build a kernel, desktop shell, package manager, driver stack, or operating system now.
+- Do not add chat interfaces to the web dashboard or mobile companion.
 - Do not couple the platform to a selected foundation model before comparative evaluation is complete.
 - Do not make a paid inference provider or cloud service a hidden mandatory dependency.
 - Do not expose provider credentials or long-lived platform secrets to clients.
-- Do not grant a model unrestricted access to a user's device, files, accounts, or operating system.
+- Do not grant a model unrestricted access to a user's files, accounts, or connected services.
 - Do not split the modular monolith into microservices merely for architectural appearance.
 
 ## Definition of done for the platform foundation
@@ -187,5 +181,5 @@ These are workstreams, not approval gates. Work can proceed concurrently when de
 - Model discovery reports exact identity, capabilities, deployment health, and eligibility separately.
 - Long-running tasks have stable IDs, observable states, and safe cancellation semantics.
 - Every tool action is schema-validated, permission-checked, and auditable.
-- Data export and deletion do not depend on a specific client or operating system.
-- A  client can be added without changing the public conversation/task contract or moving business logic into the OS shell.
+- Data export and deletion do not depend on a specific client.
+- A new client can be added without changing the public task contract or moving business logic into the client.
