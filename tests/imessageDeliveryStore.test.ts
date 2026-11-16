@@ -146,3 +146,24 @@ test("documented LoopMessage callback JSON is parsed, persisted early, and recon
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test("malformed delivery callbacks are rejected instead of falsely reported as persisted", () => {
+  try {
+    assert.equal(processLoopMessageCallbackPayload({
+      event: "message_delivered",
+      message_id: "loop-missing-contact",
+    }), "invalid");
+    assert.equal(processLoopMessageCallbackPayload({
+      event: "message_failed",
+      contact: "+15551234567",
+    }), "invalid");
+    assert.equal(processLoopMessageCallbackPayload({
+      event: "message_delivered",
+      message_id: "loop-valid-early",
+      contact: "alex@icloud.com",
+    }), "unmatched");
+  } finally {
+    closeSqliteDb();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
