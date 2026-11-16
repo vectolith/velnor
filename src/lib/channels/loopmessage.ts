@@ -8,6 +8,7 @@ export async function sendLoopMessage(params: {
   text: string;
   /** Required LoopMessage sender-name ID; prevents provider-default sender selection. */
   senderId: string;
+  passthrough?: string;
   timeoutMs?: number;
 }): Promise<SendResult> {
   if (!params.authKey || !params.recipient || !params.senderId?.trim()) {
@@ -24,6 +25,7 @@ export async function sendLoopMessage(params: {
         contact: params.recipient,
         text: params.text,
         sender: params.senderId.trim(),
+        passthrough: params.passthrough,
       }),
       signal: AbortSignal.timeout(params.timeoutMs ?? 12000),
     });
