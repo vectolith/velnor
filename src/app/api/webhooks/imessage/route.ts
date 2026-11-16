@@ -15,7 +15,7 @@ import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepos
 import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
 import { getLoopMessageRecipient, isLoopMessagePayload, normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
-import { applyLoopMessageDeliveryEvent, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
+import { applyLoopMessageDeliveryEvent, createLoopMessageDeliveryAttempt, recordLoopMessageQueued, recordLoopMessageSendFailure } from "@/lib/channels/imessageDeliveryStore";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 const MAX_INPUT_CHARS = 8000;
@@ -286,6 +286,14 @@ export async function POST(req: NextRequest) {
                 ) {
                   const recipient = getLoopMessageRecipient(payload);
                   if (!recipient) throw new Error("LoopMessage inbound webhook did not provide a valid contact identity.");
+                  const tenantId = getNodeTenantRepositoryContext().tenantId;
+                  const taskId = reply.interactionId || "";
+                  if (!taskId) throw new Error("iMessage result has no execution task ID; refusing untracked delivery.");
+                  // Persist the attempt before contacting LoopMessage. A fast delivery
+                  // callback can now be retained and reconciled when message_id returns.
+                  const deliveryId = createLoopMessageDeliveryAttempt({
+                    tenantId, taskId, recipient, senderId: loopMessageSenderId,
+                  });
                   const sent = await sendLoopMessage({
                     authKey: loopMessageAuthKey,
                     recipient,
@@ -295,11 +303,20 @@ export async function POST(req: NextRequest) {
                   deliveryResults.push(sent);
                   if (sent.ok && sent.messageId) {
                     recordLoopMessageQueued({
-                      messageId: sent.messageId,
-                      tenantId: getNodeTenantRepositoryContext().tenantId,
-                      taskId: reply.interactionId || "",
+                      deliveryId,
+                      providerMessageId: sent.messageId,
+                      tenantId,
+                      taskId,
                       recipient,
                       senderId: loopMessageSenderId,
+                    });
+                  } else {
+                    // A 4xx is a definitive rejection. Network/5xx failures are
+                    // ambiguous and must not be resent until reconciled.
+                    recordLoopMessageSendFailure({
+                      deliveryId,
+                      status: sent.status && sent.status >= 400 && sent.status < 500 ? "failed" : "unknown",
+                      errorCode: sent.status,
                     });
                   }
                 }
