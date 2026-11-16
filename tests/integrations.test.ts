@@ -166,9 +166,11 @@ test("LoopMessage uses its documented host, Authorization header, and contact fi
     assert.equal("Loop-Secret-Key" in (init?.headers as Record<string, string>), false);
     return new Response(JSON.stringify({ success: true, message_id: "loop-message-123" }), { status: 200 });
   }, async () => {
-    const result = await sendLoopMessage({ authKey: "loop-api-key", recipient: "+15551234567", text: "Hello" });
+    const result = await sendLoopMessage({ authKey: "loop-api-key", recipient: "+15551234567", text: "Hello", senderId: "velnor-email-sender" });
     assert.equal(result.ok, true);
-    assert.match(result.detail || "", /loop-message-123/);
+    assert.equal(result.messageId, "loop-message-123");
+    assert.equal(result.deliveryStatus, "queued");
+    assert.match(result.detail || "", /not yet delivered/);
   });
 });
 
