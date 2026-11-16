@@ -49,6 +49,7 @@ function pruneRateBuckets(now: number): void {
 // Endpoints that spend API credits, read user state, or write configuration.
 const PROTECTED: Array<{ path: string; methods: string[] }> = [
   { path: "/api/chat", methods: ["GET", "POST"] },
+  { path: "/api/tasks", methods: ["GET", "POST"] },
   { path: "/api/siri", methods: ["POST"] },
   { path: "/api/settings", methods: ["POST"] },
   { path: "/api/lora-pilot", methods: ["GET", "POST"] },
@@ -95,6 +96,7 @@ export function middleware(req: NextRequest) {
     const requiresGatewaySecret =
       pathname === "/api/webhooks/imessage" ||
       pathname === "/api/webhooks/slack" ||
+      pathname === "/api/webhooks/discord" ||
       pathname.startsWith("/api/cron/") ||
       pathname === "/api/auth/google/callback";
 
