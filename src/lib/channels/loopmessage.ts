@@ -6,6 +6,8 @@ export async function sendLoopMessage(params: {
   authKey: string;
   recipient: string;
   text: string;
+  /** Optional LoopMessage sender ID; configure this to pin VELNOR to its email sender. */
+  senderId?: string;
   timeoutMs?: number;
 }): Promise<SendResult> {
   if (!params.authKey || !params.recipient) {
@@ -18,7 +20,11 @@ export async function sendLoopMessage(params: {
         Authorization: params.authKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ contact: params.recipient, text: params.text }),
+      body: JSON.stringify({
+        contact: params.recipient,
+        text: params.text,
+        ...(params.senderId ? { sender: params.senderId } : {}),
+      }),
       signal: AbortSignal.timeout(params.timeoutMs ?? 12000),
     });
     if (!response.ok) {
