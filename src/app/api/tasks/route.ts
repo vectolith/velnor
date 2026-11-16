@@ -72,6 +72,12 @@ export async function POST(req: NextRequest) {
       if (!authKey || !senderId) {
         return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
       }
+      if (senderId !== delivery.senderId) {
+        return NextResponse.json({
+          error: "The configured LoopMessage sender ID differs from the sender used for the original attempt; retry blocked to preserve sender identity.",
+          delivery,
+        }, { status: 409 });
+      }
       if (delivery && (delivery.status === "queued" || delivery.status === "processing" || delivery.status === "unknown")) {
         const providerStatus = await getLoopMessageStatus({ authKey, messageId: delivery.messageId });
         if (!providerStatus.ok) {
@@ -181,6 +187,6 @@ export async function POST(req: NextRequest) {
       }
       return NextResponse.json({ taskId: reply.interactionId, reply });
     }
-    return NextResponse.json({ error: "Action must be cancel or retry." }, { status: 400 });
+    return NextResponse.json({ error: "Action must be cancel, retry, or retry_delivery." }, { status: 400 });
   });
 }
