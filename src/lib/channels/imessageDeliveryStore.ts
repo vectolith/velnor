@@ -76,16 +76,16 @@ function applyPendingEvents(database: ReturnType<typeof db>, providerMessageId: 
       UPDATE imessage_deliveries
       SET provider_message_id = COALESCE(provider_message_id, ?),
           status = ?, error_code = ?, updated_at = ?
-      WHERE (provider_message_id = ? OR message_id = ?)
+      WHERE (provider_message_id = ? OR (message_id = ? AND (provider_message_id IS NULL OR provider_message_id = ?)))
         AND recipient = ? AND sender_id = ?
         AND status IN ('processing', 'queued', 'unknown')
     `).run(providerMessageId, event.status, event.error_code, new Date().toISOString(),
-      providerMessageId, event.delivery_id || deliveryId || "", event.recipient, event.sender_id) as { changes?: number };
+      providerMessageId, event.delivery_id || deliveryId || "", providerMessageId, event.recipient, event.sender_id) as { changes?: number };
     const matching = database.prepare(`
       SELECT 1 FROM imessage_deliveries
-      WHERE (provider_message_id = ? OR message_id = ?)
+      WHERE (provider_message_id = ? OR (message_id = ? AND (provider_message_id IS NULL OR provider_message_id = ?)))
         AND recipient = ? AND sender_id = ?
-    `).get(providerMessageId, event.delivery_id || deliveryId || "", event.recipient, event.sender_id);
+    `).get(providerMessageId, event.delivery_id || deliveryId || "", providerMessageId, event.recipient, event.sender_id);
     if (matching || Number(changed.changes) === 1) {
       database.prepare("UPDATE imessage_delivery_events SET applied_at = ? WHERE event_fingerprint = ?")
         .run(new Date().toISOString(), event.event_fingerprint);
@@ -179,7 +179,12 @@ export function applyLoopMessageDeliveryEvent(input: {
           SELECT message_id FROM imessage_deliveries
           WHERE provider_message_id = ? AND recipient = ? AND sender_id = ?
         `).get(normalized.messageId, normalized.recipient, normalized.senderId);
-    if (match) {
+    const correlationMatches = Boolean(match) && (
+      !normalized.deliveryId ||
+      !(match as { provider_message_id?: string | null }).provider_message_id ||
+      (match as { provider_message_id?: string | null }).provider_message_id === normalized.messageId
+    );
+    if (correlationMatches) {
       if (normalized.deliveryId) {
         database.prepare(`
           UPDATE imessage_deliveries SET provider_message_id = COALESCE(provider_message_id, ?)
