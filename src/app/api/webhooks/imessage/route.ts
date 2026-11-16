@@ -266,6 +266,7 @@ export async function POST(req: NextRequest) {
                     authKey: scoped.config.loopMessageAuthKey,
                     recipient: getLoopMessageRecipient(payload) || senderHandle,
                     text: outboundText,
+                    senderId: process.env.LOOPMESSAGE_SENDER_ID,
                   }));
                 }
         
