@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
       if (!original || typeof original.text !== "string") {
         return NextResponse.json({ error: "Original request is no longer available for retry.", task }, { status: 410 });
       }
-      let reply;
+      let reply: Awaited<ReturnType<typeof processUserMessage>>;
       try {
         reply = await processUserMessage({
           channel: task.channel,
