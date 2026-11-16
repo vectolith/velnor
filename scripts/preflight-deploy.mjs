@@ -27,6 +27,7 @@ const RECOMMENDED = [
   ["SENDBLUE_WEBHOOK_SECRET", "required for Sendblue JSON webhooks in production"],
   ["LOOPMESSAGE_WEBHOOK_SECRET", "must match the Authorization header configured on the LoopMessage webhook"],
   ["LOOPMESSAGE_AUTH_KEY", "required for outbound LoopMessage messages"],
+  ["LOOPMESSAGE_SENDER_ID", "recommended to pin replies to VELNOR's email-only iMessage sender instead of automatic sender selection"],
 ];
 
 const problems = [];
