@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
 import { getLoopMessageStatus, sendLoopMessage } from "@/lib/channels/loopmessage";
-import { getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, recordLoopMessageQueued, updateLoopMessageProviderStatus } from "@/lib/channels/imessageDeliveryStore";
+import { createLoopMessageDeliveryAttempt, finishLoopMessageDeliveryAttempt, getLatestLoopMessageDeliveryAttempt, getLoopMessageDelivery, markLoopMessageAttemptsUnknownIfStale, markLoopMessageDeliveryUnknownIfStale, recordLoopMessageQueued, updateLoopMessageProviderStatus } from "@/lib/channels/imessageDeliveryStore";
 import type { Attachment } from "@/lib/types";
 import { normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
 import { authorizeChatTenant } from "@/lib/security/tenant";
@@ -57,9 +57,14 @@ export async function POST(req: NextRequest) {
       // A missing callback does not mean failure. After the grace period,
       // reconcile the provider's authoritative status before permitting retry.
       markLoopMessageDeliveryUnknownIfStale(tenantId, taskId);
+      markLoopMessageAttemptsUnknownIfStale(tenantId, taskId);
       let delivery = getLoopMessageDelivery(tenantId, taskId);
-      if (!delivery) {
-        return NextResponse.json({ error: "No durable delivery attempt exists for this task; automatic retry is blocked to avoid duplicate sends." }, { status: 409 });
+      const previousAttempt = getLatestLoopMessageDeliveryAttempt(tenantId, taskId);
+      if (!delivery && previousAttempt?.status !== "failed") {
+        return NextResponse.json({
+          error: "No definitively failed delivery attempt is available. An in-flight, accepted, or ambiguous send is blocked to prevent duplicates.",
+          attempt: previousAttempt,
+        }, { status: 409 });
       }
       if (delivery.status === "delivered") {
         return NextResponse.json({ error: "This result has already been delivered.", delivery }, { status: 409 });
@@ -109,14 +114,31 @@ export async function POST(req: NextRequest) {
       if (!resultMessage || typeof resultMessage.text !== "string") {
         return NextResponse.json({ error: "The task has no completed result to deliver." }, { status: 409 });
       }
+      const attempt = createLoopMessageDeliveryAttempt({
+        tenantId, taskId, recipient: task.userHandle, senderId,
+      });
       const sent = await sendLoopMessage({
         authKey, recipient: task.userHandle, text: String(resultMessage.text), senderId,
       });
       if (!sent.ok || !sent.messageId) {
-        return NextResponse.json({ error: "LoopMessage did not accept the delivery.", detail: sent.detail }, { status: 502 });
+        const definiteRejection = sent.status !== undefined &&
+          sent.status >= 400 && sent.status < 500 && sent.status !== 408 && sent.status !== 429;
+        finishLoopMessageDeliveryAttempt({
+          attemptId: attempt.attemptId, tenantId, taskId,
+          status: definiteRejection ? "failed" : "unknown",
+          errorCode: sent.status, errorText: sent.detail,
+        });
+        return NextResponse.json({
+          error: "LoopMessage did not confirm acceptance. The attempt has been durably recorded.",
+          detail: sent.detail, attemptStatus: definiteRejection ? "failed" : "unknown",
+        }, { status: 502 });
       }
       recordLoopMessageQueued({
         messageId: sent.messageId, tenantId, taskId, recipient: task.userHandle, senderId,
+      });
+      finishLoopMessageDeliveryAttempt({
+        attemptId: attempt.attemptId, tenantId, taskId,
+        status: "accepted", providerMessageId: sent.messageId,
       });
       return NextResponse.json({
         taskId, recipient: task.userHandle, senderId,
@@ -170,15 +192,33 @@ export async function POST(req: NextRequest) {
         if (!authKey || !senderId) {
           return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
         }
+        const deliveryAttempt = createLoopMessageDeliveryAttempt({
+          tenantId, taskId: reply.interactionId || "", recipient: task.userHandle, senderId,
+        });
         const sent = await sendLoopMessage({
           authKey, recipient: task.userHandle, text: reply.text, senderId,
         });
         if (!sent.ok || !sent.messageId) {
-          return NextResponse.json({ error: "The retried task completed, but LoopMessage did not accept result delivery.", detail: sent.detail, taskId: reply.interactionId }, { status: 502 });
+          const definiteRejection = sent.status !== undefined &&
+            sent.status >= 400 && sent.status < 500 && sent.status !== 408 && sent.status !== 429;
+          finishLoopMessageDeliveryAttempt({
+            attemptId: deliveryAttempt.attemptId, tenantId, taskId: reply.interactionId || "",
+            status: definiteRejection ? "failed" : "unknown",
+            errorCode: sent.status, errorText: sent.detail,
+          });
+          return NextResponse.json({
+            error: "The retried task completed, but LoopMessage did not confirm acceptance.",
+            detail: sent.detail, taskId: reply.interactionId,
+            deliveryAttemptStatus: definiteRejection ? "failed" : "unknown",
+          }, { status: 502 });
         }
         recordLoopMessageQueued({
           messageId: sent.messageId, tenantId, taskId: reply.interactionId || "",
           recipient: task.userHandle, senderId,
+        });
+        finishLoopMessageDeliveryAttempt({
+          attemptId: deliveryAttempt.attemptId, tenantId, taskId: reply.interactionId || "",
+          status: "accepted", providerMessageId: sent.messageId,
         });
         return NextResponse.json({
           taskId: reply.interactionId, reply, recipient: task.userHandle, senderId,
