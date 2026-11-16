@@ -64,7 +64,7 @@ Dataset quality, provenance, licensing, privacy, deduplication, contamination ch
 - **Apple iMessage & SMS Webhook**: `POST /api/webhooks/imessage`
   - **Twilio SMS/MMS**: Accepts `application/x-www-form-urlencoded` (`From`, `Body`, `NumMedia`, `MediaUrl0`) and returns valid TwiML XML.
   - **Sendblue**: Accepts JSON (`number`, `content`, `media_url`) and dispatches replies via `https://api.sendblue.co/api/send-message`.
-  - **LoopMessage**: Accepts JSON (`recipient`, `text`) and dispatches replies via `https://server.loopmessage.com/api/v1/message/send/`.
+  - **LoopMessage**: Accepts phone-number or Apple ID email identities and dispatches replies via `https://server.loopmessage.com/api/v1/message/send/`. See docs/IMESSAGE-EMAIL-IDENTITIES.md.
 - **Discord Interactions**: `POST /api/webhooks/discord` — Ed25519 signature verification, timestamp freshness checks, /ask command handling, private deferred responses. See docs/DISCORD-INTEGRATION.md.
 - **Task History & Control**: `GET /api/tasks` lists tenant-scoped execution history; `POST /api/tasks` accepts cancel or retry actions. See docs/EXECUTION-TASKS.md.
 - **Slack Bot Webhook**: `POST /api/webhooks/slack`
