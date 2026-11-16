@@ -63,13 +63,13 @@ test("loopmessage sends Apple ID email recipients through the configured email s
   try {
     const result = await sendLoopMessage({
       authKey: "api-key",
-      recipient: "Alex@iCloud.com",
+      recipient: "alex@icloud.com",
       text: "Here is your result",
       senderId: "email-sender-id",
     });
     assert.equal(result.ok, true);
     assert.deepEqual(body, {
-      contact: "Alex@iCloud.com",
+      contact: "alex@icloud.com",
       text: "Here is your result",
       sender: "email-sender-id",
     });
