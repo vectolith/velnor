@@ -71,6 +71,7 @@ async function dispatchTenantReminderNotification(
           authKey: state.config.loopMessageAuthKey,
           recipient: rem.recipient,
           text: `🔔 Reminder from Velnor: ${rem.text}`,
+          senderId: process.env.LOOPMESSAGE_SENDER_ID || "",
         });
         if (result.ok) {
           deliveryAccepted = true;
