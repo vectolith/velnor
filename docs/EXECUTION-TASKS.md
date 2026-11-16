@@ -17,7 +17,22 @@ All endpoints require the same short-lived tenant bearer token used by /api/chat
 - GET /api/tasks — list the latest 50 tasks for the authenticated tenant.
 - POST /api/tasks with action=cancel and taskId — request cancellation.
 - POST /api/tasks with action=retry and taskId — explicitly re-run the original request for a failed or interrupted task, if its inbound conversation message is still retained. A retry creates a new task record and preserves the original channel and recipient handle.
-- POST /api/tasks with action=retry_delivery and taskId — retry only the stored iMessage result delivery. Every provider request has a durable outbound-attempt record created before the request. Definite provider rejections are eligible for explicit retry; in-flight, timed-out, transport-failed, and otherwise ambiguous attempts are blocked to avoid duplicate sends. For known provider message IDs, the API checks authoritative provider status before retrying, blocks already-delivered results, and requires the configured sender and recipient to match the original identity.
+- POST /api/tasks with action=retry_delivery and taskId — retry only the stored iMessage result delivery. The API checks the provider's status for queued/processing/unknown attempts before sending again, blocks already-delivered results, and requires the currently configured sender ID to match the original attempt. Each response reports the durable attempt (attemptId, attemptNumber, state) and a duplicateRisk flag.
+
+## Durable outbound attempt ledger
+
+Every LoopMessage send writes a row to imessage_delivery_attempts before the provider request is made, scoped to tenant, task, recipient and sender ID. It exists so a send that never returns a message ID is still recoverable and attributable.
+
+States: pending_send -> queued | failed | unconfirmed, then queued -> processing | delivered | failed | unknown from provider status/callbacks.
+
+- pending_send: committed before the request. If the worker dies, the row is recovered to unconfirmed after 15 minutes; it is never treated as delivered or as a definite failure.
+- unconfirmed: the request left the process but the outcome is unknown (timeout, 5xx, 2xx without message_id, or an abandoned pending attempt). A retry is allowed and reported with duplicateRisk=true because provider-side idempotency is not established.
+- failed: the provider explicitly refused the request (4xx, success:false, missing configuration). A retry is safe and reported with duplicateRisk=false.
+- queued / processing: the provider holds the message. retry_delivery blocks until provider status reconciliation resolves it.
+
+A task that finished without any outbound attempt has nothing provably sent, so retry_delivery is permitted as a first, safe attempt instead of being blocked. Only one send may be in flight per task; a second concurrent attempt is rejected.
+
+Delivery records (imessage_deliveries) remain the provider-facing truth for callbacks; the attempt ledger records intent, attempt number, and the identity used, and is backfilled from existing delivery records on migration.
 
 Task IDs are tenant-scoped. Looking up, cancelling, or retrying another tenant's task is not permitted.
 
@@ -27,4 +42,6 @@ Task IDs are tenant-scoped. Looking up, cancelling, or retrying another tenant's
 - Task history is limited to 50 records per API response; storage retention and administrative purge remain future work.
 - Cancellation is cooperative. It does not roll back an external side effect already accepted by a provider.
 - Explicit task retry is opt-in because tools such as email sending or calendar creation may have external side effects.
-- Delivery retry never treats HTTP acceptance as delivery. Each send attempt is written before network I/O. A worker crash leaves a stale `sending` attempt that is converted to `unknown`, not silently retried. Only a definite provider rejection or a confirmed provider `failed` status can authorize an explicit retry. A timeout, connection reset, HTTP 5xx, or accepted response without a message ID remains ambiguous and is blocked because provider-side idempotency is not assumed. Delivery states are monotonic: stale processing/unknown status cannot overwrite terminal delivered/failed outcomes.
+- Delivery retry never treats HTTP acceptance as delivery. If a provider message ID exists, its status is reconciled before retry; if an attempt is unconfirmed without an ID, an explicit retry is allowed only with duplicateRisk=true because provider-side idempotency is not assumed. A changed sender identity always blocks retry.
+- Reminder notifications use the same attempt ledger with task IDs of the form reminder_<reminderId>.
+- GET /api/tasks returns deliveryAttempts for each iMessage task so recovery evidence (attempt number, state, message ID, duplicate risk) is inspectable per task.
