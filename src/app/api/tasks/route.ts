@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
+import type { Attachment } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
 import { withVelnorTenantScope } from "@/lib/store";
 import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
         channel: task.channel,
         text: original.text,
         userHandle: task.userHandle || undefined,
+        attachments: Array.isArray(original.attachments) ? original.attachments as Attachment[] : undefined,
       });
       return NextResponse.json({ taskId: reply.interactionId, reply });
     }
