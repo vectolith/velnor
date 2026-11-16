@@ -63,8 +63,8 @@ Dataset quality, provenance, licensing, privacy, deduplication, contamination ch
 - **Root Status**: `GET /` — Returns headless service status and active webhook URLs.
 - **Apple iMessage & SMS Webhook**: `POST /api/webhooks/imessage`
   - **Twilio SMS/MMS**: Accepts `application/x-www-form-urlencoded` (`From`, `Body`, `NumMedia`, `MediaUrl0`) and returns valid TwiML XML.
-  - **Sendblue**: Accepts JSON (`number`, `content`, `media_url`) and dispatches replies via `https://api.sendblue.co/api/send-message`.
-  - **LoopMessage**: Accepts phone-number or Apple ID email identities and dispatches replies via `https://server.loopmessage.com/api/v1/message/send/`. See docs/IMESSAGE-EMAIL-IDENTITIES.md.
+  - **Sendblue**: Handles phone-number iMessage and replies to Apple Account email-originated threads. Outbound sends are tracked until authenticated delivery callbacks confirm `service=iMessage` and `status=DELIVERED`; SMS fallback is not counted as iMessage success. See `docs/MESSAGING-PROVIDER-OPTIONS.md`.
+  - **LoopMessage**: Legacy callback/history compatibility only; no new outbound messages are sent through LoopMessage.
 - **Discord Interactions**: `POST /api/webhooks/discord` — Ed25519 signature verification, timestamp freshness checks, /ask command handling, private deferred responses. See docs/DISCORD-INTEGRATION.md.
 - **Task History & Control**: `GET /api/tasks` lists tenant-scoped execution history; `POST /api/tasks` accepts cancel, task retry, and guarded iMessage delivery retry actions. See docs/EXECUTION-TASKS.md.
 - **Slack Bot Webhook**: `POST /api/webhooks/slack`
