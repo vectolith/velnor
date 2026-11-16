@@ -46,17 +46,7 @@ async function dispatchTenantReminderNotification(
 
     const channelsUsed: string[] = [];
     const alertText = `🔔 **Velnor Reminder:** ${rem.text} _(Scheduled for ${rem.dueAt})_`;
-    const outboundConfigured = Boolean(rem.recipient) && (
-      (rem.channel === "imessage" && Boolean(
-        (state.config.sendblueApiKey && state.config.sendblueApiSecret) ||
-        state.config.loopMessageAuthKey
-      )) ||
-      (rem.channel === "slack" && Boolean(state.config.slackBotToken || process.env.SLACK_BOT_TOKEN)) ||
-      (rem.channel === "sms" && Boolean(
-        state.config.twilioAccountSid && state.config.twilioAuthToken && state.config.twilioFromNumber
-      ))
-    );
-    let deliveryAccepted = !rem.recipient || !outboundConfigured;
+    let deliveryAccepted = !rem.recipient;
 
     if (rem.channel === "imessage" && rem.recipient) {
       deliveryAccepted = false;
@@ -88,13 +78,14 @@ async function dispatchTenantReminderNotification(
           console.warn(`LoopMessage reminder failed: ${result.detail}`);
         }
       }
-    } else if (rem.channel === "slack" && rem.recipient) {
+    } else if (rem.channel === "slack") {
       const slackToken = state.config.slackBotToken || process.env.SLACK_BOT_TOKEN;
+      const slackChannel = rem.recipient || resolveSlackChannel(state);
       deliveryAccepted = false;
-      if (slackToken) {
+      if (slackToken && slackChannel) {
         const result = await postSlackMessage({
           botToken: slackToken,
-          channel: rem.recipient || resolveSlackChannel(state),
+          channel: slackChannel,
           text: `🔔 *Reminder from Velnor:* ${rem.text} _(${rem.dueAt})_`,
         });
         if (result.ok) {
