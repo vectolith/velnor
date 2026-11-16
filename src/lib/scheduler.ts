@@ -44,6 +44,7 @@ async function dispatchTenantReminderNotification(
     // A durable lease excludes overlapping cron workers and app processes.
     if (!claimReminderDispatch(tenantId, rem.id, workerId)) continue;
 
+    try {
     const channelsUsed: string[] = [];
     const alertText = `🔔 **Velnor Reminder:** ${rem.text} _(Scheduled for ${rem.dueAt})_`;
     let deliveryAccepted = !rem.recipient;
@@ -139,6 +140,15 @@ async function dispatchTenantReminderNotification(
     rem.completed = true;
     completedReminderIds.push(rem.id);
     results.push({ reminder: rem, deliveredVia: channelsUsed });
+    } catch (error) {
+      // Unexpected failures must not strand the durable claim until lease expiry.
+      try {
+        releaseReminderDispatch(tenantId, rem.id, workerId);
+      } catch (releaseError) {
+        console.error("Could not release failed reminder dispatch claim:", releaseError);
+      }
+      console.error("Reminder dispatch failed before completion:", error);
+    }
   }
 
   // Persist only accepted deliveries. Failed external sends remain incomplete;
