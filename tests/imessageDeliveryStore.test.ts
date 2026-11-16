@@ -25,6 +25,10 @@ test("LoopMessage delivery callbacks require matching message, recipient, and se
       senderId: "another-sender", status: "delivered",
     }), false);
     assert.equal(getLoopMessageDelivery("tenant-b", "task-a"), null);
+    assert.throws(() => recordLoopMessageQueued({
+      messageId: "loop-email-1", tenantId: "tenant-b", taskId: "task-b",
+      recipient: "alex@icloud.com", senderId: "velnor-email-sender",
+    }), /already bound to a different task or identity/);
     assert.equal(getLoopMessageDelivery("tenant-a", "task-a")?.status, "queued");
     assert.equal(applyLoopMessageDeliveryEvent({
       messageId: "loop-email-1", recipient: "alex@icloud.com",
@@ -35,6 +39,15 @@ test("LoopMessage delivery callbacks require matching message, recipient, and se
       messageId: "loop-email-1", recipient: "alex@icloud.com",
       senderId: "velnor-email-sender", status: "failed",
     }), false);
+    recordLoopMessageQueued({
+      messageId: "loop-phone-1", tenantId: "tenant-a", taskId: "task-phone",
+      recipient: "+2348012345678", senderId: "velnor-email-sender",
+    });
+    assert.equal(applyLoopMessageDeliveryEvent({
+      messageId: "loop-phone-1", recipient: "+2348012345678",
+      senderId: "velnor-email-sender", status: "delivered",
+    }), true);
+    assert.equal(getLoopMessageDelivery("tenant-a", "task-phone")?.recipient, "+2348012345678");
   } finally {
     closeSqliteDb();
     fs.rmSync(dataDir, { recursive: true, force: true });
