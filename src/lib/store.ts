@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { loadStateFromSqlite, resolveWritableDataDir, saveStateToSqlite } from "./sqliteDb";
+import { openProviderSecrets, sealProviderSecrets } from "./secretStorage";
 import {
   CalendarEventItem,
   ChatMessage,
@@ -197,6 +198,30 @@ const DEFAULT_STATE: VelnorState = {
   conversationCursors: {},
 };
 
+function emptyState(): VelnorState {
+  return {
+    ...structuredClone(DEFAULT_STATE),
+    messages: [],
+    reminders: [],
+    calendarEvents: [],
+    emails: [],
+    documents: [],
+    documentChunks: [],
+    memories: [],
+  };
+}
+
+function removeDemoFixtures(state: VelnorState): VelnorState {
+  state.messages = state.messages.filter((item) => !item.id.startsWith("welcome-"));
+  state.reminders = state.reminders.filter((item) => !["rem-1", "rem-2"].includes(item.id));
+  state.calendarEvents = state.calendarEvents.filter((item) => !["evt-1", "evt-2"].includes(item.id));
+  state.emails = state.emails.filter((item) => !["em-1", "em-2", "em-3"].includes(item.id));
+  state.documents = state.documents.filter((item) => item.id !== "doc-seed-1");
+  state.documentChunks = state.documentChunks.filter((item) => item.docId !== "doc-seed-1");
+  state.memories = state.memories.filter((item) => !["mem-1", "mem-2", "mem-3"].includes(item.id));
+  return state;
+}
+
 declare global {
   // eslint-disable-next-line no-var
   var __velnorMemoryState: VelnorState | undefined;
@@ -208,42 +233,61 @@ export function getStore(): VelnorState {
   }
   const sqliteLoaded = loadStateFromSqlite();
   if (sqliteLoaded) {
-    global.__velnorMemoryState = {
+    global.__velnorMemoryState = removeDemoFixtures({
       ...DEFAULT_STATE,
       ...sqliteLoaded,
-      config: { ...DEFAULT_STATE.config, ...(sqliteLoaded.config || {}) },
-    };
+      config: openProviderSecrets({ ...DEFAULT_STATE.config, ...(sqliteLoaded.config || {}) }),
+    });
+    saveStore(global.__velnorMemoryState);
     return global.__velnorMemoryState;
   }
   try {
     if (fs.existsSync(STORE_PATH)) {
       const raw = fs.readFileSync(STORE_PATH, "utf-8");
       const parsed = JSON.parse(raw) as VelnorState;
-      global.__velnorMemoryState = {
+      global.__velnorMemoryState = removeDemoFixtures({
         ...DEFAULT_STATE,
         ...parsed,
-        config: { ...DEFAULT_STATE.config, ...(parsed.config || {}) },
-      };
-      saveStateToSqlite(global.__velnorMemoryState);
+        config: openProviderSecrets({ ...DEFAULT_STATE.config, ...(parsed.config || {}) }),
+      });
+      saveStore(global.__velnorMemoryState);
       return global.__velnorMemoryState;
     }
   } catch (err) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(`Could not load persisted Velnor state from ${STORE_PATH}.`, { cause: err });
+    }
     console.warn("Could not read store from disk, using in-memory default:", err);
   }
-  global.__velnorMemoryState = structuredClone(DEFAULT_STATE);
+  global.__velnorMemoryState = emptyState();
   saveStore(global.__velnorMemoryState);
   return global.__velnorMemoryState;
 }
 
 export function saveStore(state: VelnorState): void {
   global.__velnorMemoryState = state;
-  saveStateToSqlite(state);
+  const persistedState = {
+    ...state,
+    config: sealProviderSecrets(state.config),
+  };
+  saveStateToSqlite(persistedState);
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    fs.writeFileSync(STORE_PATH, JSON.stringify(state, null, 2), "utf-8");
+    const temporaryPath = `${STORE_PATH}.tmp-${process.pid}`;
+    const descriptor = fs.openSync(temporaryPath, "w", 0o600);
+    try {
+      fs.writeFileSync(descriptor, JSON.stringify(persistedState, null, 2), "utf-8");
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    fs.renameSync(temporaryPath, STORE_PATH);
   } catch (err) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(`Could not persist Velnor state to ${STORE_PATH}.`, { cause: err });
+    }
     console.warn("Non-fatal: could not persist store to disk:", err);
   }
 }

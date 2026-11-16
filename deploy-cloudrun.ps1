@@ -1,18 +1,10 @@
-param(
-  [string]$ProjectId = $env:GOOGLE_CLOUD_PROJECT,
-  [string]$Region = "us-central1",
-  [string]$ServiceName = "velnor-assistant"
-)
+$ErrorActionPreference = "Stop"
 
-if (-not $ProjectId) {
-  Write-Host "Usage: .\deploy-cloudrun.ps1 -ProjectId <your-gcp-project-id> [-Region us-central1]" -ForegroundColor Yellow
-  exit 1
-}
-
-Write-Host "Deploying Velnor to Google Cloud Run ($ProjectId / $Region)..." -ForegroundColor Cyan
-gcloud run deploy $ServiceName `
-  --source . `
-  --project $ProjectId `
-  --region $Region `
-  --allow-unauthenticated `
-  --port 8080
+Write-Error @"
+Cloud Run deployment is disabled for this release. Velnor stores live state in
+single-writer SQLite/JSON files, while Cloud Run's default writable filesystem
+is ephemeral and does not provide the locking guarantees this store requires.
+The production Docker Compose deployment with its named persistent volume is
+defined in deploy/oci/docker-compose.yml.
+"@
+exit 1

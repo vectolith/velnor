@@ -41,3 +41,36 @@
 npm install
 npm run dev
 ```
+
+## Production deployment
+
+The supported single-instance deployment is the OCI Docker Compose stack in
+`deploy/oci/`. It keeps the application off the public interface, terminates TLS
+with Caddy, and stores state on a named Docker volume. The process intentionally
+refuses to start in production unless its API, admin, cron, credential-encryption,
+model-provider, webhook, and writable-data settings are present.
+
+Create `deploy/oci/.env` from `.env.example` and set `VELNOR_HOST`,
+`VELNOR_PUBLIC_URL`, `VELNOR_DATA_DIR`, at least one model API key, and the
+credentials for each enabled messaging provider. Generate independent random
+values for `VELNOR_SHARED_SECRET`, `VELNOR_ADMIN_TOKEN`, `VELNOR_SECRET_KEY`,
+and `CRON_SECRET`; do not reuse values or commit the deployment `.env`.
+`VELNOR_SECRET_KEY` encrypts provider and OAuth credentials with AES-256-GCM
+before they are written to the JSON recovery mirror or SQLite.
+
+Every private API request requires `x-velnor-secret` (or `Authorization:
+Bearer <VELNOR_SHARED_SECRET>`); cron routes instead require
+`Authorization: Bearer <CRON_SECRET>`. `POST /api/settings` additionally requires
+`x-velnor-admin-token`. Twilio and Slack requests must have valid, fresh
+provider signatures; Sendblue and LoopMessage JSON callbacks require their
+configured webhook secret. Simulator headers are disabled in production.
+
+```bash
+cd deploy/oci
+docker compose up -d --build
+```
+
+Keep the named `velnor-data` volume attached to a single application instance
+and back it up before upgrades. Cloud Run's default writable filesystem is
+ephemeral and is not a supported production deployment for this single-writer
+SQLite/JSON store.

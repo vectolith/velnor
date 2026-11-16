@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "preflight:deploy": "node scripts/preflight-deploy.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.3.0",

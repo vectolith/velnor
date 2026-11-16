@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
+import { readRequestBody, RequestBodyTooLargeError } from "@/lib/requestBody";
 import { getStore } from "@/lib/store";
 import { ChatMessage } from "@/lib/types";
 
@@ -15,6 +16,7 @@ function verifySlackSignature(
   const hmac = crypto.createHmac("sha256", signingSecret).update(baseString).digest("hex");
   const computed = `v0=${hmac}`;
   try {
+    if (Buffer.byteLength(computed) !== Buffer.byteLength(signature)) return false;
     return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signature));
   } catch {
     return false;
@@ -65,16 +67,38 @@ function buildSlackBlocks(reply: ChatMessage) {
 export async function POST(req: NextRequest) {
   const state = getStore();
   const contentType = req.headers.get("content-type") || "";
-  const rawBody = await req.text();
+  let rawBody: string;
+  try {
+    rawBody = await readRequestBody(req, 1024 * 1024);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof RequestBodyTooLargeError ? error.message : "Could not read request body." },
+      { status: error instanceof RequestBodyTooLargeError ? 413 : 400 }
+    );
+  }
 
   const signingSecret =
     state.config.slackSigningSecret || process.env.SLACK_SIGNING_SECRET || "";
-  const isLocalSimulator = req.headers.get("x-velnor-simulator") === "true";
+  const isLocalSimulator =
+    process.env.NODE_ENV !== "production" &&
+    req.headers.get("x-velnor-simulator") === "true";
+
+  if (!signingSecret && process.env.NODE_ENV === "production" && !isLocalSimulator) {
+    return NextResponse.json(
+      { error: "Slack webhook authentication is not configured." },
+      { status: 503 }
+    );
+  }
 
   if (signingSecret && !isLocalSimulator) {
     const ts = req.headers.get("x-slack-request-timestamp");
     const sig = req.headers.get("x-slack-signature");
-    if (!verifySlackSignature(rawBody, ts, sig, signingSecret)) {
+    const timestamp = ts ? Number(ts) : NaN;
+    if (
+      !Number.isSafeInteger(timestamp) ||
+      Math.abs(Date.now() / 1000 - timestamp) > 300 ||
+      !verifySlackSignature(rawBody, ts, sig, signingSecret)
+    ) {
       return NextResponse.json({ error: "Invalid Slack signature" }, { status: 401 });
     }
   }
@@ -152,8 +176,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("Slack webhook error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Slack webhook failed" },
-      { status: 500 }
+      { error: err instanceof SyntaxError ? "Malformed Slack request body." : "Slack webhook processing failed." },
+      { status: err instanceof SyntaxError ? 400 : 500 }
     );
   }
 }

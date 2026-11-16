@@ -24,16 +24,30 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run production preflight unit tests
+        run: npm test
+
       - name: TypeScript typecheck
-        run: npx tsc --noEmit
+        run: npm run typecheck
 
       - name: Build production Next.js standalone bundle
         run: npm run build
 
       - name: Run End-to-End Verification Suite against production server
+        env:
+          VELNOR_SHARED_SECRET: ci-velnor-shared-secret-00000000000000000000
+          VELNOR_SECRET_KEY: ci-velnor-encryption-key-00000000000000000000
+          VELNOR_ADMIN_TOKEN: ci-velnor-admin-token-000000000000000000000000
+          CRON_SECRET: ci-velnor-cron-secret-000000000000000000000000
+          VELNOR_PUBLIC_URL: https://ci.invalid
+          TWILIO_AUTH_TOKEN: ci-twilio-signing-token
+          SLACK_SIGNING_SECRET: ci-slack-signing-secret
+          VELNOR_DATA_DIR: ${{ runner.temp }}/velnor-data
         run: |
+          set -eu
           nohup npm run start > server.log 2>&1 &
           SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           for i in $(seq 1 20); do
             if curl -sf http://localhost:3000/api/health > /dev/null; then
               break
@@ -41,4 +55,3 @@ jobs:
             sleep 1
           done
           node scripts/verify-velnor.mjs
-          kill $SERVER_PID || true

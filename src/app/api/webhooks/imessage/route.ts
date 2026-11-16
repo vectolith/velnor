@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
+import { readRequestBody, RequestBodyTooLargeError } from "@/lib/requestBody";
 import { getStore } from "@/lib/store";
 import { Attachment } from "@/lib/types";
 
@@ -40,6 +41,13 @@ function verifyTwilioSignature(
   }
 }
 
+function matchesSecret(expected: string, provided: string): boolean {
+  const expectedBytes = Buffer.from(expected);
+  const providedBytes = Buffer.from(provided);
+  return expectedBytes.length === providedBytes.length &&
+    crypto.timingSafeEqual(expectedBytes, providedBytes);
+}
+
 /**
  * Unified SMS & Apple iMessage Webhook Endpoint
  * Supports:
@@ -50,14 +58,17 @@ function verifyTwilioSignature(
 export async function POST(req: NextRequest) {
   const contentType = req.headers.get("content-type") || "";
   const state = getStore();
-  const isLocalSimulator = req.headers.get("x-velnor-simulator") === "true";
+  const isLocalSimulator =
+    process.env.NODE_ENV !== "production" &&
+    req.headers.get("x-velnor-simulator") === "true";
 
   try {
     // =========================================================================
     // 1. TWILIO SMS / MMS WEBHOOK (application/x-www-form-urlencoded)
     // =========================================================================
     if (contentType.includes("application/x-www-form-urlencoded")) {
-      const formData = await req.formData();
+      const rawBody = await readRequestBody(req, 256 * 1024);
+      const formData = new URLSearchParams(rawBody);
       const paramsMap: Record<string, string> = {};
       formData.forEach((val, key) => {
         paramsMap[key] = String(val);
@@ -67,11 +78,27 @@ export async function POST(req: NextRequest) {
         state.config.twilioAuthToken || process.env.TWILIO_AUTH_TOKEN;
       const twilioSig = req.headers.get("x-twilio-signature");
 
-      if (twilioAuthToken && twilioSig && !isLocalSimulator) {
+      if (!twilioAuthToken && process.env.NODE_ENV === "production" && !isLocalSimulator) {
+        return NextResponse.json(
+          { error: "Twilio webhook authentication is not configured." },
+          { status: 503 }
+        );
+      }
+
+      if (twilioAuthToken && !isLocalSimulator) {
+        if (!twilioSig) {
+          return NextResponse.json(
+            { error: "Missing X-Twilio-Signature." },
+            { status: 401 }
+          );
+        }
+        const canonicalUrl = process.env.VELNOR_PUBLIC_URL
+          ? new URL(`${req.nextUrl.pathname}${req.nextUrl.search}`, process.env.VELNOR_PUBLIC_URL).toString()
+          : req.url;
         const valid = verifyTwilioSignature(
           twilioAuthToken,
           twilioSig,
-          req.url,
+          canonicalUrl,
           paramsMap
         );
         if (!valid) {
@@ -82,7 +109,13 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const from = String(formData.get("From") || "+15550192834").slice(0, 64);
+      const from = String(formData.get("From") || "").trim().slice(0, 64);
+      if (!from) {
+        return NextResponse.json(
+          { error: "Twilio webhook is missing the sender number." },
+          { status: 400 }
+        );
+      }
       const body = String(formData.get("Body") || "")
         .trim()
         .slice(0, MAX_INPUT_CHARS);
@@ -126,14 +159,42 @@ export async function POST(req: NextRequest) {
     // =========================================================================
     // 2. SENDBLUE / LOOPMESSAGE iMESSAGE JSON WEBHOOK
     // =========================================================================
-    const payload = await req.json();
-    const senderHandle = String(
-      payload.number ||
-        payload.from_number ||
-        payload.recipient ||
-        payload.sender ||
-        "+1 (555) 019-2834"
-    ).slice(0, 64);
+    const rawBody = await readRequestBody(req, 1024 * 1024);
+    const payload: Record<string, unknown> = JSON.parse(rawBody);
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return NextResponse.json({ error: "Webhook payload must be a JSON object." }, { status: 400 });
+    }
+    const isLoopMessage = Boolean(payload.recipient);
+    if (process.env.NODE_ENV === "production" && !isLocalSimulator) {
+      const webhookSecret = isLoopMessage
+        ? process.env.LOOPMESSAGE_WEBHOOK_SECRET || ""
+        : process.env.SENDBLUE_WEBHOOK_SECRET || "";
+      const providedSecret = req.headers.get("x-velnor-webhook-secret") ||
+        req.headers.get("sb-signing-secret") ||
+        req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+        "";
+      if (!webhookSecret) {
+        return NextResponse.json(
+          { error: `${isLoopMessage ? "LoopMessage" : "Sendblue"} webhook authentication is not configured.` },
+          { status: 503 }
+        );
+      }
+      if (!matchesSecret(webhookSecret, providedSecret)) {
+        return NextResponse.json(
+          { error: "Invalid webhook credential." },
+          { status: 401 }
+        );
+      }
+    }
+
+    const sender = payload.number || payload.from_number || payload.recipient || payload.sender;
+    if (typeof sender !== "string" || !sender.trim()) {
+      return NextResponse.json(
+        { error: "Webhook payload is missing the sender identity." },
+        { status: 400 }
+      );
+    }
+    const senderHandle = sender.trim().slice(0, 64);
     const messageText = String(
       payload.content || payload.text || payload.body || payload.message || ""
     )
@@ -216,10 +277,13 @@ export async function POST(req: NextRequest) {
     console.error("iMessage/SMS webhook error:", err);
     return NextResponse.json(
       {
-        error:
-          err instanceof Error ? err.message : "Webhook processing failed",
+        error: err instanceof RequestBodyTooLargeError
+          ? err.message
+          : err instanceof SyntaxError
+            ? "Malformed webhook request body."
+            : "Webhook processing failed.",
       },
-      { status: 500 }
+      { status: err instanceof RequestBodyTooLargeError ? 413 : err instanceof SyntaxError ? 400 : 500 }
     );
   }
 }

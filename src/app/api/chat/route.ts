@@ -5,6 +5,7 @@ import { getEffectiveKeys, getStore, saveStore } from "@/lib/store";
 import { ingestDocumentOrUrl } from "@/lib/tools/documentStore";
 import { addMemoryFact, deleteMemoryFact } from "@/lib/tools/memoryStore";
 import { transcribeAudioWithProvider } from "@/lib/tools/multimodal";
+import { readRequestBody, RequestBodyTooLargeError } from "@/lib/requestBody";
 import {
   createCalendarEvent,
   createReminder,
@@ -12,6 +13,29 @@ import {
   toggleReminder,
 } from "@/lib/tools/workspaceService";
 import { Attachment, ChannelType } from "@/lib/types";
+
+function isMemoryCategory(value: unknown): value is "preference" | "contact" | "travel" | "work" {
+  return value === "preference" || value === "contact" || value === "travel" || value === "work";
+}
+
+function isEmailAction(value: unknown): value is "archive" | "mark_read" | "label" {
+  return value === "archive" || value === "mark_read" || value === "label";
+}
+
+function isChannelType(value: unknown): value is ChannelType {
+  return value === "imessage" || value === "slack" || value === "sms";
+}
+
+function isAttachment(value: unknown): value is Attachment {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const attachment = value as Record<string, unknown>;
+  return (
+    typeof attachment.id === "string" &&
+    typeof attachment.name === "string" &&
+    typeof attachment.mimeType === "string" &&
+    (attachment.type === "image" || attachment.type === "document" || attachment.type === "audio")
+  );
+}
 
 export async function GET() {
   const state = getStore();
@@ -48,7 +72,20 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const rawBody = await readRequestBody(req, 5 * 1024 * 1024);
+    let body: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(rawBody);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return NextResponse.json({ error: "Request body must be a JSON object." }, { status: 400 });
+      }
+      body = parsed as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return NextResponse.json({ error: "Malformed JSON request body." }, { status: 400 });
+      }
+      throw error;
+    }
     const action = body.action || "message";
 
     if (action === "toggle_reminder") {
@@ -57,9 +94,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "add_memory") {
+      if (body.category !== undefined && !isMemoryCategory(body.category)) {
+        return NextResponse.json({ error: "Invalid memory category." }, { status: 400 });
+      }
       const mem = addMemoryFact({
         fact: String(body.fact || ""),
-        category: body.category,
+        category: body.category as "preference" | "contact" | "travel" | "work" | undefined,
       });
       return NextResponse.json({ memory: mem, memories: getStore().memories });
     }
@@ -70,10 +110,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "organize_email") {
+      if (body.emailAction !== undefined && !isEmailAction(body.emailAction)) {
+        return NextResponse.json({ error: "Invalid email action." }, { status: 400 });
+      }
       organizeEmail({
         emailId: body.emailId ? String(body.emailId) : undefined,
         query: body.query ? String(body.query) : undefined,
-        action: body.emailAction || "archive",
+        action: body.emailAction as "archive" | "mark_read" | "label" | undefined || "archive",
         label: body.label ? String(body.label) : undefined,
       });
       return NextResponse.json({
@@ -96,10 +139,13 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "create_reminder") {
+      if (body.channel !== undefined && !isChannelType(body.channel)) {
+        return NextResponse.json({ error: "Invalid channel." }, { status: 400 });
+      }
       const rem = createReminder({
         text: String(body.text || ""),
         dueAt: String(body.dueAt || "Today at 5:00 PM"),
-        channel: (body.channel as ChannelType) || "imessage",
+        channel: (body.channel as ChannelType | undefined) || "imessage",
       });
       return NextResponse.json({ reminder: rem, reminders: getStore().reminders });
     }
@@ -137,6 +183,9 @@ export async function POST(req: NextRequest) {
 
     if (action === "clear_chat") {
       const state = getStore();
+      if (body.channel !== undefined && !isChannelType(body.channel)) {
+        return NextResponse.json({ error: "Invalid channel." }, { status: 400 });
+      }
       const targetChannel = body.channel as ChannelType | undefined;
       if (targetChannel) {
         state.messages = state.messages.filter((m) => m.channel !== targetChannel);
@@ -148,14 +197,25 @@ export async function POST(req: NextRequest) {
     }
 
     // Default: Process conversational message
-    const channel: ChannelType = body.channel || "imessage";
+    if (body.channel !== undefined && !isChannelType(body.channel)) {
+      return NextResponse.json({ error: "Invalid channel." }, { status: 400 });
+    }
+    if (body.attachments !== undefined && (
+      !Array.isArray(body.attachments) || !body.attachments.every(isAttachment)
+    )) {
+      return NextResponse.json({ error: "Invalid attachments." }, { status: 400 });
+    }
+    if (body.userHandle !== undefined && typeof body.userHandle !== "string") {
+      return NextResponse.json({ error: "Invalid user handle." }, { status: 400 });
+    }
+    const channel: ChannelType = (body.channel as ChannelType | undefined) || "imessage";
     const text = String(body.text || "");
-    const attachments: Attachment[] | undefined = body.attachments;
+    const attachments = body.attachments as Attachment[] | undefined;
 
     const reply = await processUserMessage({
       channel,
       text,
-      userHandle: body.userHandle,
+      userHandle: body.userHandle as string | undefined,
       attachments,
     });
 
@@ -172,8 +232,8 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error("Error in /api/chat:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Unexpected error" },
-      { status: 500 }
+      { error: err instanceof RequestBodyTooLargeError ? err.message : "The request could not be processed." },
+      { status: err instanceof RequestBodyTooLargeError ? 413 : 500 }
     );
   }
 }

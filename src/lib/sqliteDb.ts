@@ -4,7 +4,7 @@ import path from "path";
 import type { VelnorState } from "./store";
 
 export function resolveWritableDataDir(): string {
-  const localDir = path.join(process.cwd(), ".data");
+  const localDir = process.env.VELNOR_DATA_DIR?.trim() || path.join(process.cwd(), ".data");
   try {
     if (!fs.existsSync(localDir)) {
       fs.mkdirSync(localDir, { recursive: true });
@@ -13,16 +13,20 @@ export function resolveWritableDataDir(): string {
     fs.writeFileSync(testFile, "ok");
     fs.unlinkSync(testFile);
     return localDir;
-  } catch {
+  } catch (error) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(`Production data directory is not writable: ${localDir}`, { cause: error });
+    }
+
     const tmpDir = path.join(os.tmpdir(), "velnor-data");
     try {
       if (!fs.existsSync(tmpDir)) {
         fs.mkdirSync(tmpDir, { recursive: true });
       }
-    } catch {
-      // Ignore
+      return tmpDir;
+    } catch (fallbackError) {
+      throw new Error("No writable Velnor data directory is available.", { cause: fallbackError });
     }
-    return tmpDir;
   }
 }
 
