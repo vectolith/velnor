@@ -202,6 +202,7 @@ export async function POST(req: NextRequest) {
         messageId,
         recipient: recipient || "",
         senderId,
+        deliveryId: typeof payload.passthrough === "string" ? payload.passthrough : undefined,
         status: payload.event === "message_delivered" ? "delivered" : "failed",
         errorCode: Number.isInteger(payload.error_code) ? payload.error_code : undefined,
       });
@@ -299,6 +300,7 @@ export async function POST(req: NextRequest) {
                     recipient,
                     text: outboundText,
                     senderId: loopMessageSenderId,
+                    passthrough: deliveryId,
                   });
                   deliveryResults.push(sent);
                   if (sent.ok && sent.messageId) {
