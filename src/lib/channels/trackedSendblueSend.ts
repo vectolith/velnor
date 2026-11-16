@@ -137,7 +137,7 @@ export async function sendTrackedSendblueMessage(input: {
     return {
       result,
       attempt,
-      duplicateRisk: previousWasAmbiguous || result.deliveryStatus === "failed",
+      duplicateRisk: previousWasAmbiguous || result.deliveryStatus === "failed" || Boolean(attempt.errorDetail?.includes("downgraded to SMS")),
       trackingDegraded,
     };
   }
