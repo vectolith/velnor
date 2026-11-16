@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getSqliteDb } from "../sqliteDb";
 import { normalizeImessageIdentity } from "./imessageIdentity";
 
@@ -7,6 +8,82 @@ export interface LoopMessageDelivery {
   status: LoopMessageDeliveryStatus; errorCode: number | null; createdAt: string; updatedAt: string;
 }
 export type DeliveryEventResult = "applied" | "duplicate" | "unmatched";
+
+export type LoopMessageAttemptStatus = "sending" | "accepted" | "failed" | "unknown";
+export interface LoopMessageDeliveryAttempt {
+  attemptId: string; tenantId: string; taskId: string; recipient: string; senderId: string;
+  status: LoopMessageAttemptStatus; providerMessageId: string | null; errorCode: number | null;
+  errorText: string | null; createdAt: string; updatedAt: string;
+}
+
+function mapAttempt(row: {
+  attempt_id:string;tenant_id:string;task_id:string;recipient:string;sender_id:string;
+  status:LoopMessageAttemptStatus;provider_message_id:string|null;error_code:number|null;
+  error_text:string|null;created_at:string;updated_at:string;
+}): LoopMessageDeliveryAttempt {
+  return {
+    attemptId:row.attempt_id,tenantId:row.tenant_id,taskId:row.task_id,recipient:row.recipient,
+    senderId:row.sender_id,status:row.status,providerMessageId:row.provider_message_id,
+    errorCode:row.error_code,errorText:row.error_text,createdAt:row.created_at,updatedAt:row.updated_at,
+  };
+}
+
+/** Create a durable attempt before making the external provider request. */
+export function createLoopMessageDeliveryAttempt(input: {
+  tenantId:string;taskId:string;recipient:string;senderId:string;
+}): LoopMessageDeliveryAttempt {
+  if (!input.tenantId || !input.taskId || !input.recipient || !input.senderId) {
+    throw new Error("LoopMessage delivery attempt is missing a required identity.");
+  }
+  const now = new Date().toISOString();
+  const attemptId = randomUUID();
+  db().prepare(`
+    INSERT INTO imessage_delivery_attempts
+      (attempt_id,tenant_id,task_id,recipient,sender_id,status,provider_message_id,error_code,error_text,created_at,updated_at)
+    VALUES (?,?,?,?,?,'sending',NULL,NULL,NULL,?,?)
+  `).run(attemptId,input.tenantId,input.taskId,input.recipient,input.senderId,now,now);
+  const row = db().prepare("SELECT * FROM imessage_delivery_attempts WHERE attempt_id = ?").get(attemptId) as Parameters<typeof mapAttempt>[0] | undefined;
+  if (!row) throw new Error("LoopMessage delivery attempt could not be persisted.");
+  return mapAttempt(row);
+}
+
+/** Finalize only an in-flight attempt; late workers cannot rewrite a newer state. */
+export function finishLoopMessageDeliveryAttempt(input: {
+  attemptId:string;tenantId:string;taskId:string;status:Exclude<LoopMessageAttemptStatus,"sending">;
+  providerMessageId?:string;errorCode?:number;errorText?:string;
+}): boolean {
+  const result = db().prepare(`
+    UPDATE imessage_delivery_attempts
+    SET status=?,provider_message_id=?,error_code=?,error_text=?,updated_at=?
+    WHERE attempt_id=? AND tenant_id=? AND task_id=? AND status='sending'
+  `).run(input.status,input.providerMessageId ?? null,input.errorCode ?? null,
+    input.errorText?.slice(0,500) ?? null,new Date().toISOString(),
+    input.attemptId,input.tenantId,input.taskId) as {changes?:number};
+  return Number(result.changes) === 1;
+}
+
+/** Stale in-flight sends are ambiguous, never assumed failed or safe to resend. */
+export function markLoopMessageAttemptsUnknownIfStale(
+  tenantId:string,taskId:string,staleAfterMs=15*60_000,
+): boolean {
+  if (!tenantId || !taskId || !Number.isSafeInteger(staleAfterMs) || staleAfterMs < 0) return false;
+  const cutoff=new Date(Date.now()-staleAfterMs).toISOString();
+  const result=db().prepare(`
+    UPDATE imessage_delivery_attempts SET status='unknown',updated_at=?
+    WHERE tenant_id=? AND task_id=? AND status='sending' AND updated_at<=?
+  `).run(new Date().toISOString(),tenantId,taskId,cutoff) as {changes?:number};
+  return Number(result.changes)>0;
+}
+
+export function getLatestLoopMessageDeliveryAttempt(
+  tenantId:string,taskId:string,
+): LoopMessageDeliveryAttempt|null {
+  const row=db().prepare(`
+    SELECT * FROM imessage_delivery_attempts
+    WHERE tenant_id=? AND task_id=? ORDER BY created_at DESC,attempt_id DESC LIMIT 1
+  `).get(tenantId,taskId) as Parameters<typeof mapAttempt>[0]|undefined;
+  return row ? mapAttempt(row) : null;
+}
 
 function db() {
   const database = getSqliteDb();
@@ -153,7 +230,7 @@ export function updateLoopMessageProviderStatus(input: {
   const result = db().prepare(`
     UPDATE imessage_deliveries SET status = ?, error_code = ?, updated_at = ?
     WHERE message_id = ? AND tenant_id = ? AND task_id = ? AND recipient = ? AND sender_id = ?
-      AND status != 'delivered'
+      AND status IN ('queued', 'processing', 'unknown')
   `).run(
     input.status, input.errorCode ?? null, new Date().toISOString(),
     input.messageId, input.tenantId, input.taskId, input.recipient, input.senderId,
