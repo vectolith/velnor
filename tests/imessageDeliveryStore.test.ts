@@ -7,8 +7,41 @@ import path from "node:path";
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-imessage-delivery-"));
 process.env.VELNOR_DATA_DIR = dataDir;
 
-import { applyLoopMessageDeliveryEvent, getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, processLoopMessageCallbackPayload, recordLoopMessageQueued } from "../src/lib/channels/imessageDeliveryStore";
+import { applyLoopMessageDeliveryEvent, createLoopMessageDeliveryAttempt, finishLoopMessageDeliveryAttempt, getLatestLoopMessageDeliveryAttempt, getLoopMessageDelivery, markLoopMessageAttemptsUnknownIfStale, markLoopMessageDeliveryUnknownIfStale, processLoopMessageCallbackPayload, recordLoopMessageQueued, updateLoopMessageProviderStatus } from "../src/lib/channels/imessageDeliveryStore";
 import { closeSqliteDb, getSqliteDb } from "../src/lib/sqliteDb";
+
+test("outbound attempts are durable before send and distinguish definite failure from ambiguity", () => {
+  try {
+    const attempt = createLoopMessageDeliveryAttempt({
+      tenantId: "tenant-attempt", taskId: "task-attempt",
+      recipient: "alex@icloud.com", senderId: "email-sender",
+    });
+    assert.equal(getLatestLoopMessageDeliveryAttempt("tenant-attempt", "task-attempt")?.status, "sending");
+    assert.equal(finishLoopMessageDeliveryAttempt({
+      attemptId: attempt.attemptId, tenantId: "tenant-attempt", taskId: "task-attempt",
+      status: "failed", errorCode: 400, errorText: "provider rejected request",
+    }), true);
+    const failed = getLatestLoopMessageDeliveryAttempt("tenant-attempt", "task-attempt");
+    assert.equal(failed?.status, "failed");
+    assert.equal(failed?.errorCode, 400);
+    assert.equal(finishLoopMessageDeliveryAttempt({
+      attemptId: attempt.attemptId, tenantId: "tenant-attempt", taskId: "task-attempt",
+      status: "accepted", providerMessageId: "late-message",
+    }), false);
+
+    const ambiguous = createLoopMessageDeliveryAttempt({
+      tenantId: "tenant-attempt", taskId: "task-ambiguous",
+      recipient: "+2348012345678", senderId: "email-sender",
+    });
+    getSqliteDb()!.prepare("UPDATE imessage_delivery_attempts SET updated_at = ? WHERE attempt_id = ?")
+      .run(new Date(Date.now() - 60 * 60_000).toISOString(), ambiguous.attemptId);
+    assert.equal(markLoopMessageAttemptsUnknownIfStale("tenant-attempt", "task-ambiguous", 15 * 60_000), true);
+    assert.equal(getLatestLoopMessageDeliveryAttempt("tenant-attempt", "task-ambiguous")?.status, "unknown");
+  } finally {
+    closeSqliteDb();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
 
 test("LoopMessage callbacks require matching message, recipient, and sender and are idempotent", () => {
   try {
@@ -95,6 +128,14 @@ test("stale queued deliveries become ambiguous before an explicit retry", () => 
       .run(new Date(Date.now() - 60 * 60_000).toISOString(), "loop-stale-1");
     assert.equal(markLoopMessageDeliveryUnknownIfStale("tenant-stale", "task-stale", 15 * 60_000), true);
     assert.equal(getLoopMessageDelivery("tenant-stale", "task-stale")?.status, "unknown");
+    assert.equal(updateLoopMessageProviderStatus({
+      messageId: "loop-stale-1", tenantId: "tenant-stale", taskId: "task-stale",
+      recipient: "+2348012345678", senderId: "velnor-email-sender", status: "failed",
+    }), true);
+    assert.equal(updateLoopMessageProviderStatus({
+      messageId: "loop-stale-1", tenantId: "tenant-stale", taskId: "task-stale",
+      recipient: "+2348012345678", senderId: "velnor-email-sender", status: "processing",
+    }), false, "stale processing status must not overwrite terminal failure");
     assert.equal(applyLoopMessageDeliveryEvent({
       messageId: "loop-stale-1", recipient: "+2348012345678",
       senderId: "velnor-email-sender", status: "delivered",
