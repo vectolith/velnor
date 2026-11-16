@@ -42,14 +42,19 @@ function persistCallback(input: {
 
 function reconcilePending(messageId: string, recipient: string, senderId: string): void {
   const events = db().prepare(`
-    SELECT event_status, error_code FROM imessage_delivery_events
-    WHERE message_id = ? AND recipient = ? AND sender_id = ? ORDER BY received_at ASC
-  `).all(messageId, recipient, senderId) as Array<{event_status:"delivered"|"failed";error_code:number|null}>;
+    SELECT event_status, error_code, sender_id FROM imessage_delivery_events
+    WHERE message_id = ? AND recipient = ? AND sender_id IN (?, '')
+    ORDER BY received_at ASC
+  `).all(messageId, recipient, senderId) as Array<{event_status:"delivered"|"failed";error_code:number|null;sender_id:string}>;
   for (const event of events) {
-    applyMatchedEvent({ messageId, recipient, senderId, status: event.event_status, errorCode: event.error_code ?? undefined });
+    // Documented callbacks may omit sender; exact message ID + recipient are then correlated to the stored sender ID.
+    if (!event.sender_id || event.sender_id === senderId) {
+      applyMatchedEvent({ messageId, recipient, senderId, status: event.event_status, errorCode: event.error_code ?? undefined });
+    }
   }
   db().prepare(`
-    DELETE FROM imessage_delivery_events WHERE message_id = ? AND recipient = ? AND sender_id = ?
+    DELETE FROM imessage_delivery_events
+    WHERE message_id = ? AND recipient = ? AND sender_id IN (?, '')
   `).run(messageId, recipient, senderId);
 }
 
@@ -122,14 +127,22 @@ export function processLoopMessageCallbackPayload(payload: Record<string, unknow
   const recipient = normalizeImessageIdentity(payload.contact);
   const senderId = typeof payload.sender === "string" ? payload.sender.trim() : "";
   const messageId = typeof payload.message_id === "string" ? payload.message_id.trim() : "";
-  if (!recipient || !senderId || !messageId) return "unmatched";
-  return applyLoopMessageDeliveryEvent({
-    messageId,
-    recipient,
-    senderId,
-    status: payload.event === "message_delivered" ? "delivered" : "failed",
+  if (!recipient || !messageId) return "unmatched";
+  const event = {
+    messageId, recipient, senderId,
+    status: payload.event === "message_delivered" ? "delivered" as const : "failed" as const,
     errorCode: Number.isInteger(payload.error_code) ? Number(payload.error_code) : undefined,
-  });
+  };
+  if (senderId) return applyLoopMessageDeliveryEvent(event);
+
+  // LoopMessage's documented delivered/failed examples omit sender.
+  // Retain an uncorrelated callback until the outbound message ID is recorded.
+  const stored = db().prepare(`
+    SELECT sender_id FROM imessage_deliveries WHERE message_id = ? AND recipient = ?
+  `).get(messageId, recipient) as {sender_id:string}|undefined;
+  if (stored?.sender_id) return applyLoopMessageDeliveryEvent({ ...event, senderId: stored.sender_id });
+  const inserted = persistCallback(event);
+  return inserted ? "unmatched" : "duplicate";
 }
 
 /** Apply an authenticated status lookup to the exact tenant-scoped outbound record. */
