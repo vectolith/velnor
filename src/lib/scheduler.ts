@@ -52,7 +52,7 @@ async function dispatchTenantReminderNotification(
       deliveryAccepted = false;
       const fromNumber = state.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER || "";
       const statusCallback = process.env.VELNOR_PUBLIC_URL
-        ? process.env.VELNOR_PUBLIC_URL.replace(/\\/+$/, "") + "/api/webhooks/imessage"
+        ? process.env.VELNOR_PUBLIC_URL.replace(/\/+$/, "") + "/api/webhooks/imessage"
         : "";
       if (state.config.sendblueApiKey && state.config.sendblueApiSecret && fromNumber) {
         const tracked = await sendTrackedSendblueMessage({
