@@ -7,7 +7,7 @@ import path from "node:path";
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-imessage-delivery-"));
 process.env.VELNOR_DATA_DIR = dataDir;
 
-import { applyLoopMessageDeliveryEvent, getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, processLoopMessageCallbackPayload, recordLoopMessageQueued } from "../src/lib/channels/imessageDeliveryStore";
+import { applyLoopMessageDeliveryEvent, getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, processLoopMessageCallbackPayload, recordLoopMessageQueued, updateLoopMessageProviderStatus } from "../src/lib/channels/imessageDeliveryStore";
 import { closeSqliteDb, getSqliteDb } from "../src/lib/sqliteDb";
 
 test("LoopMessage callbacks require matching message, recipient, and sender and are idempotent", () => {
@@ -95,6 +95,14 @@ test("stale queued deliveries become ambiguous before an explicit retry", () => 
       .run(new Date(Date.now() - 60 * 60_000).toISOString(), "loop-stale-1");
     assert.equal(markLoopMessageDeliveryUnknownIfStale("tenant-stale", "task-stale", 15 * 60_000), true);
     assert.equal(getLoopMessageDelivery("tenant-stale", "task-stale")?.status, "unknown");
+    assert.equal(updateLoopMessageProviderStatus({
+      messageId: "loop-stale-1", tenantId: "tenant-stale", taskId: "task-stale",
+      recipient: "+2348012345678", senderId: "velnor-email-sender", status: "failed",
+    }), true);
+    assert.equal(updateLoopMessageProviderStatus({
+      messageId: "loop-stale-1", tenantId: "tenant-stale", taskId: "task-stale",
+      recipient: "+2348012345678", senderId: "velnor-email-sender", status: "processing",
+    }), false, "stale processing status must not overwrite terminal failure");
     assert.equal(applyLoopMessageDeliveryEvent({
       messageId: "loop-stale-1", recipient: "+2348012345678",
       senderId: "velnor-email-sender", status: "delivered",
