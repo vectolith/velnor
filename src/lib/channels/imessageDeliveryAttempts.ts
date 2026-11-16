@@ -153,16 +153,17 @@ export function syncLoopMessageAttemptFromProviderStatus(input: {
   tenantId: string; taskId: string; messageId: string;
   status: "processing" | "failed" | "delivered" | "unknown";
   errorCode?: number | null;
+  errorDetail?: string;
 }): boolean {
   if (!input.tenantId || !input.taskId || !input.messageId) return false;
   // A stale processing/unknown response must never rewrite a terminal state.
   const result = db().prepare(`
     UPDATE imessage_delivery_attempts
-    SET state = ?, error_code = COALESCE(?, error_code), updated_at = ?
+    SET state = ?, error_code = COALESCE(?, error_code), error_detail = COALESCE(?, error_detail), updated_at = ?
     WHERE tenant_id = ? AND task_id = ? AND message_id = ?
       AND state IN ('queued', 'processing', 'unknown', 'unconfirmed')
   `).run(
-    input.status, input.errorCode ?? null, new Date().toISOString(),
+    input.status, input.errorCode ?? null, input.errorDetail ? String(input.errorDetail).slice(0, 500) : null, new Date().toISOString(),
     input.tenantId, input.taskId, input.messageId,
   ) as { changes?: number };
   return Number(result.changes) === 1;
