@@ -106,6 +106,18 @@ export function getSqliteDb() {
           updated_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS imessage_deliveries_tenant_task ON imessage_deliveries(tenant_id, task_id);
+        CREATE TABLE IF NOT EXISTS imessage_delivery_events (
+          event_fingerprint TEXT PRIMARY KEY,
+          provider_message_id TEXT NOT NULL,
+          recipient TEXT NOT NULL,
+          sender_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('delivered', 'failed')),
+          error_code INTEGER,
+          created_at TEXT NOT NULL,
+          applied_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS imessage_delivery_events_pending
+          ON imessage_delivery_events(provider_message_id, applied_at);
 
         CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
           tenant_id TEXT NOT NULL,
