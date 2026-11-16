@@ -358,6 +358,37 @@ test("Sendblue SMS downgrade is never recorded as iMessage delivery", async () =
   }
 });
 
+test("an early Sendblue SMS-downgrade callback is reconciled with its duplicate-risk detail", async () => {
+  try {
+    stubFetch(async () => {
+      assert.equal(processSendblueDeliveryCallbackPayload({
+        is_outbound: true,
+        message_handle: "sb-early-sms-fallback",
+        number: sendblueBase.recipient,
+        from_number: sendblueBase.fromNumber,
+        status: "SENT",
+        service: "SMS",
+        was_downgraded: true,
+      }), "unmatched");
+      return new Response(JSON.stringify({
+        message_handle: "sb-early-sms-fallback",
+        status: "QUEUED",
+      }), { status: 200 });
+    });
+    const tracked = await sendTrackedSendblueMessage({
+      ...sendblueBase,
+      taskId: "task-sendblue-early-sms-fallback",
+    });
+    assert.equal(tracked.attempt.state, "failed");
+    assert.match(String(tracked.attempt.errorDetail), /downgraded to SMS/);
+    assert.equal(tracked.duplicateRisk, true);
+    assert.equal(getLoopMessageDelivery(sendblueBase.tenantId, "task-sendblue-early-sms-fallback")?.status, "failed");
+  } finally {
+    reset();
+    closeSqliteDb();
+  }
+});
+
 test("Sendblue SENT status without explicit iMessage delivery remains unconfirmed", async () => {
   try {
     stubFetch(async () => new Response(JSON.stringify({
