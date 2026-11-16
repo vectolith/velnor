@@ -26,6 +26,16 @@ test("execution tasks persist lifecycle, cancellation and tenant-scoped history"
     assert.equal(listExecutionTasks("tenant_a").length, 1);
     assert.equal(listExecutionTasks("tenant_b").length, 0);
     assert.equal(requestExecutionTaskCancellation("tenant_a", task.id), false);
+
+    const emailTask = createExecutionTask({
+      tenantId: "tenant_a", channel: "imessage", userHandle: "alex@icloud.com",
+    });
+    const phoneTask = createExecutionTask({
+      tenantId: "tenant_a", channel: "imessage", userHandle: "+2348012345678",
+    });
+    assert.equal(getExecutionTask("tenant_a", emailTask.id)?.userHandle, "alex@icloud.com");
+    assert.equal(getExecutionTask("tenant_a", phoneTask.id)?.userHandle, "+2348012345678");
+    assert.equal(getExecutionTask("tenant_b", emailTask.id), null);
   } finally {
     closeSqliteDb();
     if (previous === undefined) delete process.env.VELNOR_DATA_DIR;
