@@ -11,7 +11,10 @@ export async function sendLoopMessage(params: {
   timeoutMs?: number;
 }): Promise<SendResult> {
   if (!params.authKey || !params.recipient || !params.senderId?.trim()) {
-    return { provider: "loopmessage", ok: false, detail: "LoopMessage requires an API key, recipient, and explicit sender ID." };
+    return {
+      provider: "loopmessage", ok: false, sendCertainty: "rejected",
+      detail: "LoopMessage requires an API key, recipient, and explicit sender ID.",
+    };
   }
   try {
     const response = await fetch(LOOPMESSAGE_ENDPOINT, {
@@ -28,16 +31,39 @@ export async function sendLoopMessage(params: {
       signal: AbortSignal.timeout(params.timeoutMs ?? 12000),
     });
     if (!response.ok) {
-      return { provider: "loopmessage", ok: false, status: response.status, detail: await readFailure(response) };
+      // 4xx is an explicit refusal; 5xx/429 may have been processed before the error.
+      const rejected = response.status >= 400 && response.status < 500 && response.status !== 429;
+      return {
+        provider: "loopmessage", ok: false, status: response.status,
+        sendCertainty: rejected ? "rejected" : "ambiguous",
+        detail: await readFailure(response),
+      };
     }
     const payload = await response.json().catch(() => ({})) as { success?: boolean; message?: string; message_id?: string };
     if (payload.success === false) {
-      return { provider: "loopmessage", ok: false, status: response.status, detail: payload.message || "LoopMessage rejected the message." };
+      return {
+        provider: "loopmessage", ok: false, status: response.status, sendCertainty: "rejected",
+        detail: payload.message || "LoopMessage rejected the message.",
+      };
     }
-    if (!payload.message_id) return { provider: "loopmessage", ok: false, status: response.status, detail: "LoopMessage accepted the HTTP request but returned no message_id; delivery cannot be tracked." };
-    return { provider: "loopmessage", ok: true, status: response.status, messageId: payload.message_id, deliveryStatus: "queued", detail: "Accepted by LoopMessage queue; not yet delivered." };
+    if (!payload.message_id) {
+      return {
+        provider: "loopmessage", ok: false, status: response.status, sendCertainty: "ambiguous",
+        detail: "LoopMessage accepted the HTTP request but returned no message_id; delivery cannot be tracked.",
+      };
+    }
+    return {
+      provider: "loopmessage", ok: true, status: response.status, messageId: payload.message_id,
+      deliveryStatus: "queued", sendCertainty: "accepted",
+      detail: "Accepted by LoopMessage queue; not yet delivered.",
+    };
   } catch (err) {
-    return { provider: "loopmessage", ok: false, detail: (err as Error).message };
+    // A timeout or reset can happen after the provider accepted the request,
+    // so a thrown transport error is never proof that nothing was sent.
+    return {
+      provider: "loopmessage", ok: false, sendCertainty: "ambiguous",
+      detail: (err as Error).message,
+    };
   }
 }
 

@@ -121,6 +121,26 @@ export function getSqliteDb() {
         CREATE INDEX IF NOT EXISTS imessage_delivery_events_received
           ON imessage_delivery_events(received_at);
 
+        -- Durable outbound attempt ledger. A row is written BEFORE the provider
+        -- request so a send that fails without returning a message ID is still
+        -- recoverable instead of leaving the task silently undelivered.
+        CREATE TABLE IF NOT EXISTS imessage_delivery_attempts (
+          attempt_id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          recipient TEXT NOT NULL,
+          sender_id TEXT NOT NULL,
+          attempt_no INTEGER NOT NULL,
+          state TEXT NOT NULL CHECK (state IN ('pending_send', 'queued', 'processing', 'delivered', 'failed', 'unknown', 'unconfirmed')),
+          message_id TEXT UNIQUE,
+          error_code INTEGER,
+          error_detail TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS imessage_delivery_attempts_tenant_task
+          ON imessage_delivery_attempts(tenant_id, task_id);
+
         CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
           tenant_id TEXT NOT NULL,
           reminder_id TEXT NOT NULL,
@@ -136,6 +156,21 @@ export function getSqliteDb() {
         db.exec("ALTER TABLE execution_tasks ADD COLUMN retry_of TEXT;");
       }
       db.exec("CREATE UNIQUE INDEX IF NOT EXISTS execution_tasks_one_retry_child ON execution_tasks(retry_of) WHERE retry_of IS NOT NULL;");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS imessage_delivery_attempts_number ON imessage_delivery_attempts(tenant_id, task_id, attempt_no);");
+      // Only one send may be in flight per task; retries are explicit and serialized.
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS imessage_delivery_attempts_in_flight ON imessage_delivery_attempts(tenant_id, task_id) WHERE state = 'pending_send';");
+      // Backfill the attempt ledger from pre-existing delivery records so tasks
+      // created before this migration keep a recoverable history.
+      db.exec(`
+        INSERT INTO imessage_delivery_attempts
+          (attempt_id, tenant_id, task_id, recipient, sender_id, attempt_no, state, message_id, error_code, error_detail, created_at, updated_at)
+        SELECT 'attempt_legacy_' || d.message_id, d.tenant_id, d.task_id, d.recipient, d.sender_id,
+          (SELECT COUNT(*) FROM imessage_deliveries d2
+            WHERE d2.tenant_id = d.tenant_id AND d2.task_id = d.task_id AND d2.created_at <= d.created_at),
+          d.status, d.message_id, d.error_code, NULL, d.created_at, d.updated_at
+        FROM imessage_deliveries d
+        WHERE NOT EXISTS (SELECT 1 FROM imessage_delivery_attempts a WHERE a.message_id = d.message_id);
+      `);
 
       const legacyVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vector_chunks'").get();
       const quarantinedVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'legacy_vector_chunks_quarantined'").get();

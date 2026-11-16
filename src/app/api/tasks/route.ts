@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
-import { getLoopMessageStatus, sendLoopMessage } from "@/lib/channels/loopmessage";
-import { getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, recordLoopMessageQueued, updateLoopMessageProviderStatus } from "@/lib/channels/imessageDeliveryStore";
+import { getLoopMessageStatus } from "@/lib/channels/loopmessage";
+import { getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, updateLoopMessageProviderStatus } from "@/lib/channels/imessageDeliveryStore";
+import {
+  getLatestLoopMessageAttempt, listLoopMessageAttempts, recoverStaleLoopMessageAttempts,
+  syncLoopMessageAttemptFromProviderStatus, type LoopMessageDeliveryAttempt,
+} from "@/lib/channels/imessageDeliveryAttempts";
+import { sendTrackedLoopMessage } from "@/lib/channels/trackedLoopMessageSend";
 import type { Attachment } from "@/lib/types";
 import { normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
 import { authorizeChatTenant } from "@/lib/security/tenant";
@@ -13,6 +18,23 @@ import {
 
 export const runtime = "nodejs";
 
+/** Public, non-secret view of a durable outbound attempt. */
+function describeAttempt(attempt: LoopMessageDeliveryAttempt | null) {
+  if (!attempt) return null;
+  return {
+    attemptId: attempt.attemptId,
+    attemptNumber: attempt.attemptNo,
+    state: attempt.state,
+    messageId: attempt.messageId,
+    recipient: attempt.recipient,
+    senderId: attempt.senderId,
+    errorCode: attempt.errorCode,
+    errorDetail: attempt.errorDetail,
+    createdAt: attempt.createdAt,
+    updatedAt: attempt.updatedAt,
+  };
+}
+
 export async function GET(req: NextRequest) {
   const tenant = authorizeChatTenant(req.headers.get("authorization"));
   if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401 });
@@ -21,6 +43,7 @@ export async function GET(req: NextRequest) {
     const tasks = listExecutionTasks(tenantId, 50).map((task) => ({
       ...task,
       delivery: task.channel === "imessage" ? getLoopMessageDelivery(tenantId, task.id) : null,
+      deliveryAttempts: task.channel === "imessage" ? listLoopMessageAttempts(tenantId, task.id) : [],
     }));
     return NextResponse.json({ tasks });
   });
@@ -57,12 +80,16 @@ export async function POST(req: NextRequest) {
       // A missing callback does not mean failure. After the grace period,
       // reconcile the provider's authoritative status before permitting retry.
       markLoopMessageDeliveryUnknownIfStale(tenantId, taskId);
+      // A send that died mid-request leaves a pending attempt; it is ambiguous,
+      // never delivered and never silently failed.
+      recoverStaleLoopMessageAttempts(tenantId, taskId);
       let delivery = getLoopMessageDelivery(tenantId, taskId);
-      if (!delivery) {
-        return NextResponse.json({ error: "No durable delivery attempt exists for this task; automatic retry is blocked to avoid duplicate sends." }, { status: 409 });
+      let attempt = getLatestLoopMessageAttempt(tenantId, taskId);
+      if (delivery?.status === "delivered" || attempt?.state === "delivered") {
+        return NextResponse.json({ error: "This result has already been delivered.", delivery, attempt: describeAttempt(attempt) }, { status: 409 });
       }
-      if (delivery.status === "delivered") {
-        return NextResponse.json({ error: "This result has already been delivered.", delivery }, { status: 409 });
+      if (attempt?.state === "pending_send") {
+        return NextResponse.json({ error: "A LoopMessage send is still in flight for this task; retry blocked.", delivery, attempt: describeAttempt(attempt) }, { status: 409 });
       }
       const record = await repository.load(tenantId);
       const config = (record?.state as { config?: Record<string, unknown> } | undefined)?.config || {};
@@ -72,36 +99,47 @@ export async function POST(req: NextRequest) {
       if (!authKey || !senderId) {
         return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
       }
-      if (senderId !== delivery.senderId) {
+      // Preserve the original sender identity across retries and recovery.
+      const originalSenderId = attempt?.senderId || delivery?.senderId || "";
+      if (originalSenderId && originalSenderId !== senderId) {
         return NextResponse.json({
           error: "The configured LoopMessage sender ID differs from the sender used for the original attempt; retry blocked to preserve sender identity.",
-          delivery,
+          delivery, attempt: describeAttempt(attempt),
         }, { status: 409 });
       }
-      if (delivery && (delivery.status === "queued" || delivery.status === "processing" || delivery.status === "unknown")) {
-        const providerStatus = await getLoopMessageStatus({ authKey, messageId: delivery.messageId });
+      const trackedMessageId = attempt?.messageId || delivery?.messageId || "";
+      if (trackedMessageId && (!delivery || delivery.status === "queued" || delivery.status === "processing" || delivery.status === "unknown")) {
+        const providerStatus = await getLoopMessageStatus({ authKey, messageId: trackedMessageId });
         if (!providerStatus.ok) {
           return NextResponse.json({
             error: "Could not reconcile LoopMessage delivery status; no retry was sent.",
             detail: providerStatus.detail,
           }, { status: 502 });
         }
-        if (normalizeImessageIdentity(providerStatus.contact) !== delivery.recipient) {
+        const knownRecipient = attempt?.recipient || delivery?.recipient || "";
+        if (normalizeImessageIdentity(providerStatus.contact) !== knownRecipient) {
           return NextResponse.json({ error: "LoopMessage status identity does not match the stored recipient; retry blocked." }, { status: 409 });
         }
         updateLoopMessageProviderStatus({
-          messageId: delivery.messageId, tenantId, taskId,
-          recipient: delivery.recipient, senderId: delivery.senderId,
+          messageId: trackedMessageId, tenantId, taskId,
+          recipient: knownRecipient, senderId: originalSenderId || senderId,
           status: providerStatus.status, errorCode: providerStatus.errorCode,
         });
+        syncLoopMessageAttemptFromProviderStatus({
+          tenantId, taskId, status: providerStatus.status, errorCode: providerStatus.errorCode,
+        });
         delivery = getLoopMessageDelivery(tenantId, taskId);
+        attempt = getLatestLoopMessageAttempt(tenantId, taskId);
       }
-      if (delivery?.status === "delivered") {
-        return NextResponse.json({ error: "This result has already been delivered.", delivery }, { status: 409 });
+      if (delivery?.status === "delivered" || attempt?.state === "delivered") {
+        return NextResponse.json({ error: "This result has already been delivered.", delivery, attempt: describeAttempt(attempt) }, { status: 409 });
       }
-      if (delivery && delivery.status !== "failed" && delivery.status !== "unknown") {
-        return NextResponse.json({ error: "Delivery is not in a retryable state.", delivery }, { status: 409 });
+      if (attempt?.state === "queued" || attempt?.state === "processing") {
+        return NextResponse.json({ error: "Delivery is not in a retryable state.", delivery, attempt: describeAttempt(attempt) }, { status: 409 });
       }
+      // Retryable: an explicit provider rejection, an ambiguous attempt, or a task
+      // that finished without any outbound attempt at all (never sent).
+      const duplicateRisk = attempt?.state === "unconfirmed" || attempt?.state === "unknown" || delivery?.status === "unknown";
       const messages = (record?.state as { messages?: Array<Record<string, unknown>> } | undefined)?.messages || [];
       const resultMessage = messages.find((message) =>
         message.sender === "velnor" && message.interactionId === taskId && typeof message.text === "string"
@@ -109,19 +147,29 @@ export async function POST(req: NextRequest) {
       if (!resultMessage || typeof resultMessage.text !== "string") {
         return NextResponse.json({ error: "The task has no completed result to deliver." }, { status: 409 });
       }
-      const sent = await sendLoopMessage({
+      const tracked = await sendTrackedLoopMessage({
         authKey, recipient: task.userHandle, text: String(resultMessage.text), senderId,
+        tenantId, taskId,
       });
-      if (!sent.ok || !sent.messageId) {
-        return NextResponse.json({ error: "LoopMessage did not accept the delivery.", detail: sent.detail }, { status: 502 });
+      if (!tracked.result.ok || !tracked.result.messageId) {
+        return NextResponse.json({
+          error: "LoopMessage did not confirm this delivery attempt. The attempt is durably recorded and stays retryable.",
+          detail: tracked.result.detail,
+          attempt: describeAttempt(tracked.attempt),
+          duplicateRisk: tracked.duplicateRisk,
+        }, { status: 502 });
       }
-      recordLoopMessageQueued({
-        messageId: sent.messageId, tenantId, taskId, recipient: task.userHandle, senderId,
-      });
       return NextResponse.json({
         taskId, recipient: task.userHandle, senderId,
-        deliveryStatus: "queued", messageId: sent.messageId,
-        note: "Queued by LoopMessage; wait for message_delivered before treating this as delivered. A retry after an ambiguous timeout can duplicate a message because provider-side idempotency is not established.",
+        deliveryStatus: "queued", messageId: tracked.result.messageId,
+        attempt: describeAttempt(tracked.attempt),
+        attemptNumber: tracked.attempt.attemptNo,
+        duplicateRisk: duplicateRisk || tracked.duplicateRisk,
+        trackingDegraded: tracked.trackingDegraded,
+        note: "Queued by LoopMessage; wait for message_delivered before treating this as delivered. " +
+          (duplicateRisk
+            ? "An earlier attempt had an unknown outcome, so this retry may be a duplicate because provider-side idempotency is not established."
+            : "An earlier attempt was explicitly rejected or never sent."),
       });
     }
     if (action === "retry") {
@@ -170,19 +218,28 @@ export async function POST(req: NextRequest) {
         if (!authKey || !senderId) {
           return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
         }
-        const sent = await sendLoopMessage({
-          authKey, recipient: task.userHandle, text: reply.text, senderId,
-        });
-        if (!sent.ok || !sent.messageId) {
-          return NextResponse.json({ error: "The retried task completed, but LoopMessage did not accept result delivery.", detail: sent.detail, taskId: reply.interactionId }, { status: 502 });
+        if (!reply.interactionId) {
+          return NextResponse.json({ error: "The retried task did not produce a durable task identity; result delivery was not attempted." }, { status: 502 });
         }
-        recordLoopMessageQueued({
-          messageId: sent.messageId, tenantId, taskId: reply.interactionId || "",
-          recipient: task.userHandle, senderId,
+        const tracked = await sendTrackedLoopMessage({
+          authKey, recipient: task.userHandle, text: reply.text, senderId,
+          tenantId, taskId: reply.interactionId,
         });
+        if (!tracked.result.ok || !tracked.result.messageId) {
+          return NextResponse.json({
+            error: "The retried task completed, but LoopMessage did not confirm result delivery. The attempt is durably recorded and retryable.",
+            detail: tracked.result.detail,
+            taskId: reply.interactionId,
+            attempt: describeAttempt(tracked.attempt),
+            duplicateRisk: tracked.duplicateRisk,
+          }, { status: 502 });
+        }
         return NextResponse.json({
           taskId: reply.interactionId, reply, recipient: task.userHandle, senderId,
-          deliveryStatus: "queued", messageId: sent.messageId,
+          deliveryStatus: "queued", messageId: tracked.result.messageId,
+          attempt: describeAttempt(tracked.attempt),
+          attemptNumber: tracked.attempt.attemptNo,
+          trackingDegraded: tracked.trackingDegraded,
         });
       }
       return NextResponse.json({ taskId: reply.interactionId, reply });
