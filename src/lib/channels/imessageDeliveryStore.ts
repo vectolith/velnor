@@ -6,7 +6,7 @@ export interface LoopMessageDelivery {
   messageId: string; tenantId: string; taskId: string; recipient: string; senderId: string;
   status: LoopMessageDeliveryStatus; errorCode: number | null; createdAt: string; updatedAt: string;
 }
-export type DeliveryEventResult = "applied" | "duplicate" | "unmatched";
+export type DeliveryEventResult = "applied" | "duplicate" | "unmatched" | "invalid";
 
 function db() {
   const database = getSqliteDb();
@@ -135,7 +135,9 @@ export function processLoopMessageCallbackPayload(payload: Record<string, unknow
   const recipient = normalizeImessageIdentity(payload.contact);
   const senderId = typeof payload.sender === "string" ? payload.sender.trim() : "";
   const messageId = typeof payload.message_id === "string" ? payload.message_id.trim() : "";
-  if (!recipient || !messageId) return "unmatched";
+  // Malformed provider events are not persisted. Do not report them as pending
+  // correlation: that status is reserved for callbacks durably stored in the inbox.
+  if (!recipient || !messageId) return "invalid";
   const event = {
     messageId, recipient, senderId,
     status: payload.event === "message_delivered" ? "delivered" as const : "failed" as const,
