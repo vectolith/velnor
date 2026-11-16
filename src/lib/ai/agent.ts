@@ -122,11 +122,8 @@ export async function processUserMessage(params: {
     ? VELNOR_SYSTEM_PROMPT + "\n\nKnown User Preferences & Memory Facts:\n" + memoryLines
     : VELNOR_SYSTEM_PROMPT;
 
-  // =========================================================================
-  // Unified provider chain + one tool loop for every model.
-  // Providers are tried in order; a failure (bad key, timeout, 5xx) moves on
-  // instead of silently degrading to a regex handler.
-  // =========================================================================
+  // Provider/model identity is preserved by default. Cross-provider failover
+  // changes the executing model and is therefore an explicit deployment opt-in.
   const chain = buildProviderChain({
     preferred: state.config.activeProvider,
     keys: { gemini: geminiApiKey, openai: openaiApiKey, anthropic: anthropicApiKey },
@@ -135,6 +132,7 @@ export async function processUserMessage(params: {
       openai: state.config.openaiModel,
       anthropic: state.config.anthropicModel,
     },
+    allowFallback: process.env.VELNOR_ALLOW_PROVIDER_FALLBACK === "1",
   });
 
   const imageParts = (params.attachments || [])
@@ -207,7 +205,7 @@ export async function processUserMessage(params: {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       providerFailures.push(slot.id + ": " + message);
-      console.warn("[velnor] provider " + slot.id + " failed, trying next:", message);
+      console.warn("[velnor] selected provider " + slot.id + " failed:", message);
     }
   }
 
