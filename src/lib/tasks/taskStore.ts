@@ -54,6 +54,11 @@ export function createExecutionTask(input: {
 }): ExecutionTask {
   validateTenant(input.tenantId);
   const db = database();
+  if (input.retryOfTaskId) {
+    const parent = db.prepare("SELECT id FROM execution_tasks WHERE id = ? AND tenant_id = ?")
+      .get(input.retryOfTaskId, input.tenantId);
+    if (!parent) throw new Error("Retry parent task was not found in this tenant.");
+  }
   const now = new Date().toISOString();
   const id = "task_" + randomUUID();
   db.prepare(`
