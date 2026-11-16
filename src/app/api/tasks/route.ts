@@ -118,6 +118,9 @@ export async function POST(req: NextRequest) {
           requiresConfirmation: true,
         }, { status: 409 });
       }
+      if (task.channel === "imessage" && !task.userHandle) {
+        return NextResponse.json({ error: "The original iMessage recipient identity is missing; refusing to retry to a guessed address." }, { status: 409 });
+      }
       const record = await repository.load(tenantId);
       const messages = (record?.state as { messages?: Array<Record<string, unknown>> } | undefined)?.messages || [];
       const original = messages.find((message) =>
