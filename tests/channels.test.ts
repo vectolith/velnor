@@ -51,6 +51,33 @@ test("sendblue refuses to run without credentials", async () => {
   assert.match(String(result.detail), /not configured/);
 });
 
+test("loopmessage sends Apple ID email recipients through the configured email sender ID", async () => {
+  let body: any = null;
+  const restore = stubFetch((_input, init) => {
+    body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ message_id: "msg-1" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  });
+  try {
+    const result = await sendLoopMessage({
+      authKey: "api-key",
+      recipient: "Alex@iCloud.com",
+      text: "Here is your result",
+      senderId: "email-sender-id",
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(body, {
+      contact: "Alex@iCloud.com",
+      text: "Here is your result",
+      sender: "email-sender-id",
+    });
+  } finally {
+    restore();
+  }
+});
+
 test("loopmessage reports transport failures", async () => {
   const restore = stubFetch(() => {
     throw new Error("ECONNRESET");
