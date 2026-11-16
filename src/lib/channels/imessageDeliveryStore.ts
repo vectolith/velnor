@@ -117,7 +117,7 @@ export function recordLoopMessageQueued(input: {
       throw new Error("LoopMessage delivery attempt is already bound to another provider message ID.");
     }
     database.prepare(`
-      UPDATE imessage_deliveries SET provider_message_id = ?, status = 'queued', updated_at = ?
+      UPDATE imessage_deliveries SET provider_message_id = ?, status = CASE WHEN status = 'processing' THEN 'queued' ELSE status END, updated_at = ?
       WHERE message_id = ? AND provider_message_id IS NULL
     `).run(input.providerMessageId, new Date().toISOString(), input.deliveryId);
     applyPendingEvents(database, input.providerMessageId, input.deliveryId);
