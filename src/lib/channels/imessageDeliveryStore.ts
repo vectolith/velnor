@@ -155,6 +155,44 @@ export function processLoopMessageCallbackPayload(payload: Record<string, unknow
   return inserted ? "unmatched" : "duplicate";
 }
 
+/**
+ * Apply Sendblue's outbound status callback. A message is only marked delivered
+ * as iMessage when Sendblue explicitly reports service=iMessage and DELIVERED.
+ * SMS downgrade/SENT outcomes are recorded as failed for the iMessage channel.
+ */
+export function processSendblueDeliveryCallbackPayload(
+  payload: Record<string, unknown>,
+): DeliveryEventResult | null {
+  if (payload.is_outbound !== true) return null;
+  const status = typeof payload.status === "string" ? payload.status.toUpperCase() : "";
+  const service = typeof payload.service === "string" ? payload.service.toLowerCase() : "";
+  const downgraded = payload.was_downgraded === true || service === "sms";
+  let eventStatus: "delivered" | "failed" | null = null;
+
+  if (status === "ERROR" || status === "DECLINED") {
+    eventStatus = "failed";
+  } else if (downgraded && (status === "SENT" || status === "DELIVERED")) {
+    eventStatus = "failed";
+  } else if (status === "DELIVERED" && service === "imessage" && !downgraded) {
+    eventStatus = "delivered";
+  }
+  // QUEUED/PENDING/ACCEPTED/SENT are not proof of iMessage delivery.
+  if (!eventStatus) return null;
+
+  const messageId = typeof payload.message_handle === "string" ? payload.message_handle.trim() : "";
+  const recipient = normalizeImessageIdentity(payload.number || payload.to_number);
+  const senderId = normalizeImessageIdentity(payload.from_number || payload.sendblue_number);
+  if (!messageId || !recipient || !senderId) return "invalid";
+
+  return applyLoopMessageDeliveryEvent({
+    messageId,
+    recipient,
+    senderId,
+    status: eventStatus,
+    errorCode: Number.isInteger(payload.error_code) ? Number(payload.error_code) : undefined,
+  });
+}
+
 /** Apply an authenticated status lookup to the exact tenant-scoped outbound record. */
 export function updateLoopMessageProviderStatus(input: {
   messageId: string; tenantId: string; taskId: string; recipient: string; senderId: string;
