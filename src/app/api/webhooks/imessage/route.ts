@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
         if (outcome === "unmatched") {
           // A callback may beat persistence of the send response. The event is
           // durably queued and reconciled when the provider message ID is saved.
-          return NextResponse.json({ status: "callback_persisted_pending_correlation" }, { status: 202 });
+          return NextResponse.json({ status: "callback_persisted_pending_correlation" });
         }
         return NextResponse.json({
           status: outcome === "applied" ? payload.event : "duplicate_callback",
