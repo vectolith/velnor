@@ -17,7 +17,11 @@ export async function GET(req: NextRequest) {
   if (!tenant.ok) return NextResponse.json({ error: tenant.error }, { status: tenant.status ?? 401 });
   return withVelnorTenantScope(tenant.userId, async () => {
     const { tenantId } = getNodeTenantRepositoryContext();
-    return NextResponse.json({ tasks: listExecutionTasks(tenantId, 50) });
+    const tasks = listExecutionTasks(tenantId, 50).map((task) => ({
+      ...task,
+      delivery: task.channel === "imessage" ? getLoopMessageDelivery(tenantId, task.id) : null,
+    }));
+    return NextResponse.json({ tasks });
   });
 }
 
