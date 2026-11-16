@@ -338,8 +338,20 @@ test("Sendblue SMS downgrade is never recorded as iMessage delivery", async () =
       service: "SMS",
       was_downgraded: true,
     }), "applied");
-    assert.equal(getLatestLoopMessageAttempt(sendblueBase.tenantId, "task-sendblue-sms-fallback")?.state, "failed");
+    const failedAttempt = getLatestLoopMessageAttempt(sendblueBase.tenantId, "task-sendblue-sms-fallback");
+    assert.equal(failedAttempt?.state, "failed");
+    assert.match(String(failedAttempt?.errorDetail), /downgraded to SMS/);
     assert.notEqual(getLoopMessageDelivery(sendblueBase.tenantId, "task-sendblue-sms-fallback")?.status, "delivered");
+    let retryRequests = 0;
+    stubFetch(async () => {
+      retryRequests += 1;
+      return new Response(JSON.stringify({ message_handle: "should-not-send" }), { status: 200 });
+    });
+    await assert.rejects(
+      () => sendTrackedSendblueMessage({ ...sendblueBase, taskId: "task-sendblue-sms-fallback" }),
+      /explicit retry is required/,
+    );
+    assert.equal(retryRequests, 0, "SMS fallback must not trigger an automatic duplicate iMessage send");
   } finally {
     reset();
     closeSqliteDb();
