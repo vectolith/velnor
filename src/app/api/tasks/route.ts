@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
 import { sendLoopMessage } from "@/lib/channels/loopmessage";
-import { getLoopMessageDelivery, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
+import { createLoopMessageDeliveryAttempt, getLoopMessageDelivery, recordLoopMessageQueued, recordLoopMessageSendFailure } from "@/lib/channels/imessageDeliveryStore";
 import type { Attachment } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
 import { withVelnorTenantScope } from "@/lib/store";
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       if (delivery?.status === "delivered") {
         return NextResponse.json({ error: "This result has already been delivered.", delivery }, { status: 409 });
       }
-      if (delivery && delivery.status !== "failed" && delivery.status !== "unknown") {
+      if (delivery && delivery.status !== "failed") {
         return NextResponse.json({ error: "Delivery is not in a retryable state.", delivery }, { status: 409 });
       }
       const record = await repository.load(tenantId);
@@ -75,14 +75,23 @@ export async function POST(req: NextRequest) {
       if (!authKey || !senderId) {
         return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
       }
+      const deliveryId = createLoopMessageDeliveryAttempt({
+        tenantId, taskId, recipient: task.userHandle, senderId,
+      });
       const sent = await sendLoopMessage({
         authKey, recipient: task.userHandle, text: String(resultMessage.text), senderId,
       });
       if (!sent.ok || !sent.messageId) {
-        return NextResponse.json({ error: "LoopMessage did not accept the delivery.", detail: sent.detail }, { status: 502 });
+        recordLoopMessageSendFailure({
+          deliveryId,
+          status: sent.status && sent.status >= 400 && sent.status < 500 ? "failed" : "unknown",
+          errorCode: sent.status,
+        });
+        return NextResponse.json({ error: "LoopMessage did not confirm acceptance.", detail: sent.detail }, { status: 502 });
       }
       recordLoopMessageQueued({
-        messageId: sent.messageId, tenantId, taskId, recipient: task.userHandle, senderId,
+        deliveryId, providerMessageId: sent.messageId, tenantId, taskId,
+        recipient: task.userHandle, senderId,
       });
       return NextResponse.json({
         taskId, recipient: task.userHandle, senderId,
@@ -93,8 +102,8 @@ export async function POST(req: NextRequest) {
     if (action === "retry") {
       const task = getExecutionTask(tenantId, taskId);
       if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
-      if (task.status !== "failed" && task.status !== "interrupted") {
-        return NextResponse.json({ error: "Only failed or interrupted tasks can be retried.", task }, { status: 409 });
+      if (task.status !== "failed") {
+        return NextResponse.json({ error: "Only failed tasks can be retried. Interrupted tasks require explicit recovery because completed tool side effects cannot yet be safely replayed.", task }, { status: 409 });
       }
       const record = await repository.load(tenantId);
       const messages = (record?.state as { messages?: Array<Record<string, unknown>> } | undefined)?.messages || [];
@@ -120,14 +129,24 @@ export async function POST(req: NextRequest) {
         if (!authKey || !senderId) {
           return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
         }
+        const retryTaskId = reply.interactionId || "";
+        if (!retryTaskId) throw new Error("Retried iMessage result has no execution task ID.");
+        const deliveryId = createLoopMessageDeliveryAttempt({
+          tenantId, taskId: retryTaskId, recipient: task.userHandle, senderId,
+        });
         const sent = await sendLoopMessage({
           authKey, recipient: task.userHandle, text: reply.text, senderId,
         });
         if (!sent.ok || !sent.messageId) {
-          return NextResponse.json({ error: "The retried task completed, but LoopMessage did not accept result delivery.", detail: sent.detail, taskId: reply.interactionId }, { status: 502 });
+          recordLoopMessageSendFailure({
+            deliveryId,
+            status: sent.status && sent.status >= 400 && sent.status < 500 ? "failed" : "unknown",
+            errorCode: sent.status,
+          });
+          return NextResponse.json({ error: "The retried task completed, but LoopMessage acceptance is unconfirmed.", detail: sent.detail, taskId: retryTaskId }, { status: 502 });
         }
         recordLoopMessageQueued({
-          messageId: sent.messageId, tenantId, taskId: reply.interactionId || "",
+          deliveryId, providerMessageId: sent.messageId, tenantId, taskId: retryTaskId,
           recipient: task.userHandle, senderId,
         });
         return NextResponse.json({
@@ -137,6 +156,6 @@ export async function POST(req: NextRequest) {
       }
       return NextResponse.json({ taskId: reply.interactionId, reply });
     }
-    return NextResponse.json({ error: "Action must be cancel or retry." }, { status: 400 });
+    return NextResponse.json({ error: "Action must be cancel, retry, or retry_delivery." }, { status: 400 });
   });
 }
