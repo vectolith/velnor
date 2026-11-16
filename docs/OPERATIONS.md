@@ -51,8 +51,8 @@ Provider credentials entered through `POST /api/settings` are sealed with AES-25
   value across purposes. Generate `VELNOR_SECRET_KEY` with at least 32 random
   bytes and keep it backed up separately from the data volume.
 - Provider credentials are integration-specific: set `SLACK_BOT_TOKEN` and
-  `SLACK_SIGNING_SECRET`, Twilio credentials, and the Sendblue or LoopMessage
-  secrets only for the providers being enabled. Missing provider credentials
+  `SLACK_SIGNING_SECRET`, Twilio credentials, and Sendblue
+  secrets only when Sendblue is enabled. Missing provider credentials
   must leave that integration disabled or fail closed; never substitute a
   placeholder secret.
 
@@ -62,7 +62,7 @@ Provider credentials entered through `POST /api/settings` are sealed with AES-25
 | --- | --- |
 | `POST /api/webhooks/imessage` (Twilio form) | gateway-injected `x-velnor-secret` + `X-Twilio-Signature`, fail closed |
 | `POST /api/webhooks/imessage` (Sendblue JSON) | gateway-injected `x-velnor-secret` + `sb-signing-secret` or configured webhook secret |
-| `POST /api/webhooks/imessage` (LoopMessage JSON) | gateway-injected `x-velnor-secret` + configured `Authorization` webhook header (`LOOPMESSAGE_WEBHOOK_SECRET`) |
+| `POST /api/webhooks/imessage` (Sendblue outbound status callback) | gateway-injected `x-velnor-secret` + `sb-signing-secret` matching `SENDBLUE_WEBHOOK_SECRET` |
 | `POST /api/webhooks/slack` | gateway-injected `x-velnor-secret` + v0 signature + 300s freshness |
 | `POST /api/webhooks/discord` | gateway-injected `x-velnor-secret` + Discord Ed25519 signature + 300s freshness |
 | `GET/POST /api/tasks` | signed tenant bearer token + shared deployment-secret perimeter |
