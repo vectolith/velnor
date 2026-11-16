@@ -1,54 +1,61 @@
 # Using VELNOR
 
-**Status:** Product experience specification. Existing messaging and API capabilities are implemented to varying degrees; the general web workspace described below is a target experience and must not be presented as shipped until implemented and tested.
+**Status:** Product experience specification. Existing messaging and API capabilities are implemented to varying degrees. The companion dashboard and mobile app described here are target experiences and must not be presented as shipped until implemented and tested.
 
 ## What VELNOR is
 
-VELNOR is a general-purpose AI platform for everyday users, students, professionals, creators, and developers. A person should be able to use it without knowing which model is running or how the backend is built.
+VELNOR is an independent, general-purpose AI platform for everyday users, students, professionals, creators, and developers. Its intelligence and execution services are accessed through supported interaction channels and managed through companion control-centre interfaces.
 
-The platform should support two complementary usage paths:
+The web dashboard and mobile app are **not chat interfaces**. They exist to connect and manage services, inspect platform activity, monitor execution, and administer the platform.
 
-1. **Everyday use:** open a VELNOR client, start a conversation, ask for help, attach context, and receive a useful answer or completed task.
-2. **Developer use:** authenticate an application, discover capabilities, submit conversations or tasks through the API, and receive structured results.
+## Product surfaces
 
-Messaging channels remain useful access points, but they are clients of the platform—not the platform itself.
+### Web dashboard
 
-## Primary user journey
+The web dashboard is the primary administrative and operational control centre. It should provide:
 
-1. **Create an account and sign in.** Authentication is handled by a trusted identity provider. VELNOR creates or resolves a tenant only from verified identity.
-2. **Start a conversation.** Users can ask a question, describe a goal, or request a deliverable in natural language.
-3. **Add context.** Users can attach files, share links, connect approved integrations, or refer to an existing project.
-4. **VELNOR plans the work.** Core Prime identifies the desired outcome, asks only necessary clarifying questions, and determines whether tools or specialist capabilities are needed.
-5. **Approve sensitive actions.** VELNOR explains the action, target, and consequence before requesting permission. Read-only actions may follow previously granted scopes; external writes, purchases, messages, deletion, and device-level operations require explicit policy authorization.
-6. **Track execution.** Short answers return directly. Longer work appears as a task with progress, pending approvals, partial results, and cancellation where safe.
-7. **Review the result.** Users receive the answer or artifact, relevant sources/evidence, and an honest account of anything that failed or remains incomplete.
-8. **Continue or export.** Conversations and project context remain available across authorized clients. Users can manage memory, connected accounts, sessions, and data export.
+- **Overview:** platform health, service status, model availability, active work, and operational alerts.
+- **Integrations:** connect, configure, inspect, test, and revoke external services and accounts.
+- **Activity:** inspect task lifecycle, model activity, tool invocations, execution history, failures, retries, and outcomes.
+- **Approvals:** review pending permission requests and authorize or reject consequential actions.
+- **Models:** inspect registered models, exact identities/revisions, capabilities, evaluation status, deployment status, and availability.
+- **Administration:** manage users, tenants, roles, permissions, policies, quotas, and platform settings.
+- **Security and audit:** inspect sessions, access events, security-relevant audit records, and credential/connection status without exposing secrets.
+- **Diagnostics:** inspect health, latency, resource usage, queue status, and integration errors.
 
-## Main workspace
+The dashboard must not contain a conventional chat composer, chat-first home screen, or conversational workspace.
 
-The general-purpose web client should have five clear areas:
+### Mobile companion
 
-- **Chat:** the default place to ask questions and work with VELNOR.
-- **Projects:** persistent workspaces that group conversations, files, instructions, and deliverables around a goal.
-- **Files and artifacts:** uploaded source material and generated outputs, with preview, download, provenance, and access controls.
-- **Integrations:** connected services, granted scopes, connection status, and revocation.
-- **Settings and privacy:** account/session management, memory controls, data export/deletion, device sessions, and usage information.
+The mobile app provides the same core control-centre capabilities in a native, mobile-appropriate form:
 
-Do not force every user to configure models, providers, or agents before getting value. Advanced model and developer controls can be available without cluttering the default experience.
+- integration and account connection management;
+- activity and execution monitoring;
+- approval notifications and permission controls;
+- model and service status;
+- administration and security controls appropriate to mobile;
+- operational alerts and notification preferences.
 
-## How users should interact with VELNOR
+It is a companion to the platform, not a chat client.
 
-Users can express outcomes, not internal implementation steps. Examples:
+### Interaction and invocation channels
 
-- "Explain this topic and quiz me on it."
-- "Compare these options and recommend one."
-- "Research this subject and cite reliable sources."
-- "Help me plan this project."
-- "Review this document and identify what needs attention."
-- "Build and test this feature in my repository."
-- "Summarize my connected calendar and help me prepare for tomorrow."
+Users interact with VELNOR through explicitly supported communication and invocation channels, such as existing messaging adapters and approved APIs. These channels are separate from the dashboard and mobile companion. A channel may support conversational interaction without making chat the purpose of the companion applications.
 
-VELNOR should identify when a request is informational, creative, analytical, or action-oriented. It should ask a clarifying question only when a missing detail materially changes the result or an action cannot safely proceed.
+### Developer access
+
+A versioned public API and SDK may provide programmatic access when implemented, documented, secured, and tested. Do not describe planned API/SDK releases as shipped.
+
+## Core platform workflow
+
+1. A user invokes VELNOR through a supported channel or authorized API.
+2. Identity and tenant context are resolved by trusted platform services.
+3. Core Prime interprets the request, determines the desired outcome, and plans the work.
+4. The orchestration layer selects only eligible models, tools, and integrations.
+5. The runtime validates permissions and obtains approval where required.
+6. Work executes as a durable task with a server-authoritative lifecycle.
+7. VELNOR verifies the outcome and records relevant evidence, events, and audit data.
+8. The invoking channel receives the result; the dashboard and mobile companion expose operational status and history.
 
 ## Task lifecycle
 
@@ -66,41 +73,27 @@ Long-running work should use a consistent lifecycle:
 | failed | Task could not complete; cause and recovery options are reported |
 | cancelled | Task stopped; completed side effects are disclosed |
 
-Task state transitions must be server-authoritative. Clients display events and poll/reconnect as needed; they do not invent progress or mark a task complete themselves.
+Task state transitions must be server-authoritative. Companion clients display events and status; they do not invent progress or mark a task complete themselves.
 
 ## Model and capability controls
 
-The default experience should choose an eligible model automatically. Advanced users and developers may inspect model capabilities and optionally pin a specific model when the platform supports it.
+The platform should distinguish registered, evaluated, approved, deployed, healthy, available, and selected model states. Exact model identity includes the repository, family, variant, parameter size, architecture, immutable revision, tokenizer, quantization, and serving artifact where applicable.
 
-If a user explicitly selects or pins a model, VELNOR must not silently route to a different model. If that exact model is unavailable, return a clear unavailable/blocked result and offer alternatives as separate, user-approved choices.
+If a model is explicitly pinned, VELNOR must not silently route to another model or artifact. If the exact model is unavailable, report a clear unavailable/blocked result. Alternatives must be separately identified and explicitly approved.
 
-Model selection must not be confused with access permissions. A model that supports a capability cannot use it unless the authenticated user, tenant, integration, and runtime policy authorize it.
+Model selection never grants access permissions. Only trusted runtime policy can authorize tools and external actions.
 
 ## Trust, privacy, and control
 
-- Keep each user's conversations, files, memories, integrations, and artifacts tenant-isolated.
+- Keep each user's data, integrations, tasks, and artifacts tenant-isolated.
 - Explain which integrations are connected and what permissions they grant.
-- Ask before external side effects such as sending, publishing, purchasing, deleting, or changing account/device settings.
-- Provide a way to inspect and revoke sessions and integration access.
-- Do not train on private user content by default; any future contribution programme must be separately disclosed, opt-in, and revocable where legally and technically applicable.
+- Ask before external side effects such as sending, publishing, purchasing, deleting, or changing account settings.
+- Provide ways to inspect and revoke sessions and integration access.
 - Keep secrets out of browser/mobile clients and logs.
-- Show when VELNOR is uncertain, when sources are stale, and when an operation has not been verified.
-
-## Access surfaces
-
-| Surface | Role |
-|---|---|
-| Web workspace | Primary general-purpose user experience |
-| Mobile app | Native interaction, voice, camera, notifications, and file handoff |
-| Desktop app | Persistent workspace and user-approved local workflows |
-| iMessage/SMS/Slack | Lightweight conversational entry points and notifications |
-| Public API/SDK | Programmatic access for developers and products |
-| Future VELNOR OS | First-party system shell and permissioned local capability host |
-
-All surfaces must use the same identity, conversation, task, capability, and authorization contracts. A channel-specific feature may be exposed only where the channel supports it, without changing canonical task semantics.
+- Separate user-visible activity history from security audit records.
+- Report attempted, completed, failed, and unverified operations accurately.
+- Provide documented data export, retention, and deletion controls.
 
 ## Current implementation versus target
 
-The repository currently contains a headless Next.js service, messaging webhooks, Siri endpoints, a shared provider agent loop, tenant-scoped state, authentication middleware, and a Cloudflare Access identity gateway. It does not yet provide the complete general-purpose web workspace, a public developer portal, a published stable OpenAPI/SDK release, or a VELNOR OS.
-
-Keep this distinction visible in documentation, product copy, and release notes. Do not imply that a planned surface is available merely because its architecture is described.
+The repository currently contains a headless Next.js service, messaging webhooks, Siri endpoints, a shared provider agent loop, tenant-scoped state, authentication middleware, and a Cloudflare Access identity gateway. It does not yet provide the complete companion web dashboard or mobile app. Treat the surfaces and capabilities in this specification as targets until implementation and tests demonstrate otherwise.
