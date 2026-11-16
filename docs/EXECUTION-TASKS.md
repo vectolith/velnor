@@ -12,7 +12,7 @@ If a worker disappears and its 15-minute lease expires, task history marks the t
 
 ## API
 
-All endpoints require the same short-lived tenant bearer token used by /api/chat.
+All endpoints require the same short-lived tenant bearer token used by /api/chat. In production, requests must also pass through the identity gateway and include its x-velnor-secret perimeter header.
 
 - GET /api/tasks — list the latest 50 tasks for the authenticated tenant.
 - POST /api/tasks with action=cancel and taskId — request cancellation.
