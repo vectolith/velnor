@@ -14,6 +14,7 @@ import { resolveUserId, withVelnorTenantScope } from "@/lib/store";
 import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
 import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
+import { getLoopMessageRecipient, isLoopMessagePayload, normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 const MAX_INPUT_CHARS = 8000;
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
 
       // Each provider must prove possession of its own webhook secret. A
       // LoopMessage secret must never authenticate a Sendblue callback (or vice versa).
-      const isLoopMessage = Boolean(jsonPayload.contact || jsonPayload.email || jsonPayload.from_email || jsonPayload.apple_id) || jsonPayload.event === "message_inbound";
+      const isLoopMessage = isLoopMessagePayload(jsonPayload);
       const expectedSecret = isLoopMessage
         ? process.env.LOOPMESSAGE_WEBHOOK_SECRET
         : process.env.SENDBLUE_WEBHOOK_SECRET;
@@ -191,7 +192,7 @@ export async function POST(req: NextRequest) {
     // 2. SENDBLUE / LOOPMESSAGE iMESSAGE JSON WEBHOOK
     // =========================================================================
     const payload: any = jsonPayload;
-    const provider = payload.contact ? "loopmessage" : "sendblue";
+    const provider = isLoopMessagePayload(payload) ? "loopmessage" : "sendblue";
     if (provider === "loopmessage" && payload.event && payload.event !== "message_inbound") {
       return NextResponse.json({ status: "ignored", event: payload.event });
     }
@@ -205,8 +206,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: "ignored", event: eventType || "outbound_or_non_message" });
       }
     }
-    const rawSenderHandle = String(payload.contact || payload.email || payload.from_email || payload.apple_id || payload.number || payload.from_number || "").trim();
-    const senderHandle = rawSenderHandle.includes("@") ? rawSenderHandle.toLowerCase().slice(0, 254) : rawSenderHandle.slice(0, 64);
+    const senderHandle = normalizeImessageIdentity(payload.contact || payload.email || payload.from_email || payload.apple_id || payload.number || payload.from_number);
     if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
     const providerAccount = String(payload.organization_id || payload.sendblue_number || payload.to_number || "default");
     const webhookId = String(payload.message_handle || payload.webhook_id || payload.message_id || "");
@@ -264,7 +264,7 @@ export async function POST(req: NextRequest) {
                 ) {
                   deliveryResults.push(await sendLoopMessage({
                     authKey: scoped.config.loopMessageAuthKey,
-                    recipient: payload.contact || payload.email || payload.from_email || payload.apple_id,
+                    recipient: getLoopMessageRecipient(payload) || senderHandle,
                     text: outboundText,
                   }));
                 }
