@@ -447,6 +447,7 @@ async function runBuiltInAgentOrchestrator(
     const prompt = raw
       .replace(/^(\/imagine|generate an image of|create an image of|generate a picture of|make an image of|draw)\s*/i, "")
       .trim() || raw;
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     await executeToolCall("generate_image", { prompt }, params.channel, bundle);
     return `🎨 Here's the visual I created for **"${prompt}"**:`;
   }
