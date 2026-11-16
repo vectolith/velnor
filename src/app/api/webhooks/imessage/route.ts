@@ -198,14 +198,21 @@ export async function POST(req: NextRequest) {
       const recipient = normalizeImessageIdentity(payload.contact);
       const senderId = typeof payload.sender === "string" ? payload.sender : "";
       const messageId = typeof payload.message_id === "string" ? payload.message_id : "";
-      const applied = applyLoopMessageDeliveryEvent({
+      const outcome = applyLoopMessageDeliveryEvent({
         messageId,
         recipient: recipient || "",
         senderId,
         status: payload.event === "message_delivered" ? "delivered" : "failed",
         errorCode: Number.isInteger(payload.error_code) ? payload.error_code : undefined,
       });
-      return NextResponse.json({ status: applied ? payload.event : "unmatched_delivery_event" });
+      if (outcome === "unmatched") {
+        // A callback may beat persistence of the send response. The event is
+        // durably queued and reconciled when the provider message ID is saved.
+        return NextResponse.json({ status: "callback_persisted_pending_correlation" }, { status: 202 });
+      }
+      return NextResponse.json({
+        status: outcome === "applied" ? payload.event : "duplicate_callback",
+      });
     }
     if (provider === "loopmessage" && payload.event && payload.event !== "message_inbound") {
       return NextResponse.json({ status: "ignored", event: payload.event });
