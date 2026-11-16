@@ -131,6 +131,12 @@ export function getSqliteDb() {
           PRIMARY KEY (tenant_id, reminder_id)
         );
       `);
+      const taskColumns = db.prepare("PRAGMA table_info(execution_tasks)").all() as Array<{name:string}>;
+      if (!taskColumns.some((column) => column.name === "retry_of")) {
+        db.exec("ALTER TABLE execution_tasks ADD COLUMN retry_of TEXT;");
+      }
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS execution_tasks_one_retry_child ON execution_tasks(retry_of) WHERE retry_of IS NOT NULL;");
+
       const legacyVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vector_chunks'").get();
       const quarantinedVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'legacy_vector_chunks_quarantined'").get();
       if (legacyVector && !quarantinedVector) {
