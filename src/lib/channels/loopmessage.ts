@@ -40,3 +40,56 @@ export async function sendLoopMessage(params: {
     return { provider: "loopmessage", ok: false, detail: (err as Error).message };
   }
 }
+
+
+export type LoopMessageProviderStatus = "processing" | "failed" | "delivered" | "unknown";
+
+export type LoopMessageStatusResult =
+  | { ok: true; messageId: string; contact: string; status: LoopMessageProviderStatus; errorCode?: number }
+  | { ok: false; detail: string; status?: number };
+
+/** Query LoopMessage's documented status endpoint for an accepted outbound message. */
+export async function getLoopMessageStatus(params: {
+  authKey: string;
+  messageId: string;
+  timeoutMs?: number;
+}): Promise<LoopMessageStatusResult> {
+  if (!params.authKey || !params.messageId) {
+    return { ok: false, detail: "LoopMessage status lookup requires an API key and message ID." };
+  }
+  try {
+    const response = await fetch(
+      `https://a.loopmessage.com/api/v1/message/status/${encodeURIComponent(params.messageId)}/`,
+      {
+        method: "GET",
+        headers: { Authorization: params.authKey, "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(params.timeoutMs ?? 12000),
+      },
+    );
+    const payload = await response.json().catch(() => ({})) as {
+      message_id?: unknown; contact?: unknown; status?: unknown; error_code?: unknown; message?: unknown;
+    };
+    if (!response.ok) {
+      return {
+        ok: false, status: response.status,
+        detail: typeof payload.message === "string" ? payload.message : `LoopMessage status lookup failed with HTTP ${response.status}.`,
+      };
+    }
+    const validStatuses = ["processing", "failed", "delivered", "unknown"];
+    if (payload.message_id !== params.messageId ||
+        typeof payload.contact !== "string" ||
+        typeof payload.status !== "string" ||
+        !validStatuses.includes(payload.status)) {
+      return { ok: false, status: response.status, detail: "LoopMessage returned an incomplete or mismatched message status record." };
+    }
+    return {
+      ok: true,
+      messageId: payload.message_id,
+      contact: payload.contact,
+      status: payload.status as LoopMessageProviderStatus,
+      errorCode: Number.isInteger(payload.error_code) ? Number(payload.error_code) : undefined,
+    };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : "LoopMessage status lookup failed." };
+  }
+}
