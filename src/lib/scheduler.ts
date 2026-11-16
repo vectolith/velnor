@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getStore, saveStore, resolveSlackChannel, listUserIds, withVelnorUser, currentUserId } from "./store";
-import { claimReminderDispatch, completeReminderDispatch } from "./sqliteDb";
+import { claimReminderDispatch, completeReminderDispatch, releaseReminderDispatch } from "./sqliteDb";
 import { sendSendblueMessage } from "./channels/sendblue";
 import { sendLoopMessage } from "./channels/loopmessage";
 import { postSlackMessage } from "./channels/slack";
@@ -114,7 +114,8 @@ async function dispatchTenantReminderNotification(
 
     if (!deliveryAccepted) {
       // Do not append a success-looking feed message or complete the reminder.
-      // Its lease expires, allowing the next scheduler run to retry it.
+      // Release this worker's lease immediately so the next scheduler run can retry.
+      releaseReminderDispatch(tenantId, rem.id, workerId);
       continue;
     }
 
