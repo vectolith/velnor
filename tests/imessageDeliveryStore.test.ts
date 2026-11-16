@@ -112,7 +112,6 @@ test("documented LoopMessage callback JSON is parsed, persisted early, and recon
       event: "message_delivered",
       message_id: "loop-documented-email-1",
       contact: "Alex@iCloud.com",
-      sender: "velnor-email-sender",
     };
     assert.equal(processLoopMessageCallbackPayload(deliveredPayload), "unmatched");
     recordLoopMessageQueued({
@@ -130,7 +129,6 @@ test("documented LoopMessage callback JSON is parsed, persisted early, and recon
       event: "message_failed",
       message_id: "loop-documented-phone-1",
       contact: "+2348012345678",
-      sender: "velnor-email-sender",
       error_code: 42,
     }), "applied");
     assert.equal(getLoopMessageDelivery("tenant-contract", "task-phone-contract")?.status, "failed");
