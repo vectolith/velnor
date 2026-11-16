@@ -24,10 +24,10 @@ const RECOMMENDED = [
   ["TWILIO_AUTH_TOKEN", "without it the Twilio webhook returns 503"],
   ["SLACK_SIGNING_SECRET", "without it the Slack webhook returns 503"],
   ["SLACK_BOT_TOKEN", "the bot cannot post into the channel without it"],
+  ["SENDBLUE_API_KEY", "required for outbound Sendblue iMessage sends"],
+  ["SENDBLUE_API_SECRET", "required for outbound Sendblue iMessage sends"],
+  ["SENDBLUE_FROM_NUMBER", "required for the Sendblue shared-line sender identity"],
   ["SENDBLUE_WEBHOOK_SECRET", "required for Sendblue JSON webhooks in production"],
-  ["LOOPMESSAGE_WEBHOOK_SECRET", "must match the Authorization header configured on the LoopMessage webhook"],
-  ["LOOPMESSAGE_AUTH_KEY", "required for outbound LoopMessage messages"],
-  ["LOOPMESSAGE_SENDER_ID", "required to pin replies to VELNOR's configured email-only iMessage sender"],
 ];
 
 const problems = [];
@@ -50,10 +50,6 @@ for (const [name, why] of REQUIRED) {
       problems.push("VELNOR_PUBLIC_URL must be a valid absolute HTTPS origin");
     }
   }
-}
-
-if ((process.env.LOOPMESSAGE_AUTH_KEY || process.env.LOOPMESSAGE_WEBHOOK_SECRET || "").trim() && !(process.env.LOOPMESSAGE_SENDER_ID || "").trim()) {
-  problems.push("LOOPMESSAGE_SENDER_ID is required when LoopMessage is enabled; VELNOR must never rely on provider sender defaults");
 }
 
 for (const [name, why] of RECOMMENDED) {
