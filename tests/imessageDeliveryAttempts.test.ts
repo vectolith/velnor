@@ -11,8 +11,9 @@ import {
   beginLoopMessageAttempt, getLatestLoopMessageAttempt, listLoopMessageAttempts,
   recoverStaleLoopMessageAttempts, syncLoopMessageAttemptFromProviderStatus, LoopMessageAttemptInFlightError,
 } from "../src/lib/channels/imessageDeliveryAttempts";
-import { getLoopMessageDelivery, processLoopMessageCallbackPayload } from "../src/lib/channels/imessageDeliveryStore";
+import { getLoopMessageDelivery, processLoopMessageCallbackPayload, processSendblueDeliveryCallbackPayload } from "../src/lib/channels/imessageDeliveryStore";
 import { sendTrackedLoopMessage } from "../src/lib/channels/trackedLoopMessageSend";
+import { sendTrackedSendblueMessage } from "../src/lib/channels/trackedSendblueSend";
 import { closeSqliteDb, getSqliteDb } from "../src/lib/sqliteDb";
 
 const originalFetch = globalThis.fetch;
@@ -250,6 +251,118 @@ test("a provider failure callback marks the attempt failed and replay is idempot
     assert.equal(getLatestLoopMessageAttempt(base.tenantId, taskId)?.state, "failed");
     assert.equal(processLoopMessageCallbackPayload(callback), "duplicate");
     assert.equal(getLatestLoopMessageAttempt(base.tenantId, taskId)?.state, "failed");
+  } finally {
+    reset();
+    closeSqliteDb();
+  }
+});
+
+
+const sendblueBase = {
+  tenantId: "tenant-sendblue",
+  taskId: "task-sendblue-email",
+  recipient: "alex@icloud.com",
+  fromNumber: "+15550001111",
+  apiKeyId: "sendblue-key-id",
+  apiSecretKey: "sendblue-secret",
+  content: "Your VELNOR result",
+  statusCallback: "https://velnor.example/api/webhooks/imessage",
+};
+
+test("Sendblue email-thread replies are durably recorded with the exact sender and status callback", async () => {
+  try {
+    let requestBody: any = null;
+    stubFetch(async (url, init) => {
+      assert.equal(url, "https://api.sendblue.co/api/send-message");
+      requestBody = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({
+        message_handle: "sb-email-handle-1",
+        status: "QUEUED",
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    const tracked = await sendTrackedSendblueMessage(sendblueBase);
+    assert.equal(requestBody.number, "alex@icloud.com");
+    assert.equal(requestBody.from_number, "+15550001111");
+    assert.equal(requestBody.status_callback, sendblueBase.statusCallback);
+    assert.equal(tracked.result.provider, "sendblue");
+    assert.equal(tracked.result.ok, true);
+    assert.equal(tracked.attempt.state, "queued");
+    assert.equal(tracked.attempt.messageId, "sb-email-handle-1");
+    assert.equal(getLoopMessageDelivery(sendblueBase.tenantId, sendblueBase.taskId)?.status, "queued");
+  } finally {
+    reset();
+    closeSqliteDb();
+  }
+});
+
+test("Sendblue iMessage DELIVERED callback updates the exact attempt and duplicate callbacks are idempotent", async () => {
+  try {
+    stubFetch(async () => new Response(JSON.stringify({
+      message_handle: "sb-delivered-1",
+      status: "QUEUED",
+    }), { status: 200 }));
+    const tracked = await sendTrackedSendblueMessage({ ...sendblueBase, taskId: "task-sendblue-delivered" });
+    assert.equal(tracked.attempt.state, "queued");
+    const callback = {
+      is_outbound: true,
+      message_handle: "sb-delivered-1",
+      number: sendblueBase.recipient,
+      from_number: sendblueBase.fromNumber,
+      status: "DELIVERED",
+      service: "iMessage",
+      was_downgraded: false,
+    };
+    assert.equal(processSendblueDeliveryCallbackPayload(callback), "applied");
+    assert.equal(getLatestLoopMessageAttempt(sendblueBase.tenantId, "task-sendblue-delivered")?.state, "delivered");
+    assert.equal(processSendblueDeliveryCallbackPayload(callback), "duplicate");
+  } finally {
+    reset();
+    closeSqliteDb();
+  }
+});
+
+test("Sendblue SMS downgrade is never recorded as iMessage delivery", async () => {
+  try {
+    stubFetch(async () => new Response(JSON.stringify({
+      message_handle: "sb-sms-downgrade-1",
+      status: "QUEUED",
+    }), { status: 200 }));
+    const tracked = await sendTrackedSendblueMessage({ ...sendblueBase, taskId: "task-sendblue-sms-fallback" });
+    assert.equal(tracked.attempt.state, "queued");
+    assert.equal(processSendblueDeliveryCallbackPayload({
+      is_outbound: true,
+      message_handle: "sb-sms-downgrade-1",
+      number: sendblueBase.recipient,
+      from_number: sendblueBase.fromNumber,
+      status: "SENT",
+      service: "SMS",
+      was_downgraded: true,
+    }), "applied");
+    assert.equal(getLatestLoopMessageAttempt(sendblueBase.tenantId, "task-sendblue-sms-fallback")?.state, "failed");
+    assert.notEqual(getLoopMessageDelivery(sendblueBase.tenantId, "task-sendblue-sms-fallback")?.status, "delivered");
+  } finally {
+    reset();
+    closeSqliteDb();
+  }
+});
+
+test("Sendblue SENT status without explicit iMessage delivery remains unconfirmed", async () => {
+  try {
+    stubFetch(async () => new Response(JSON.stringify({
+      message_handle: "sb-sent-not-delivered",
+      status: "QUEUED",
+    }), { status: 200 }));
+    await sendTrackedSendblueMessage({ ...sendblueBase, taskId: "task-sendblue-sent" });
+    assert.equal(processSendblueDeliveryCallbackPayload({
+      is_outbound: true,
+      message_handle: "sb-sent-not-delivered",
+      number: sendblueBase.recipient,
+      from_number: sendblueBase.fromNumber,
+      status: "SENT",
+      service: "iMessage",
+      was_downgraded: false,
+    }), null);
+    assert.equal(getLatestLoopMessageAttempt(sendblueBase.tenantId, "task-sendblue-sent")?.state, "queued");
   } finally {
     reset();
     closeSqliteDb();
