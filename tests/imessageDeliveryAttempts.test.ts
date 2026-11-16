@@ -103,7 +103,7 @@ test("a send that fails without a message ID keeps a recoverable, retryable atte
 
     // A retry is possible and is recorded as the next attempt number.
     stubFetch(async () => new Response(JSON.stringify({ success: true, message_id: "loop-attempt-2" }), { status: 200 }));
-    const retried = await sendTrackedLoopMessage(base);
+    const retried = await sendTrackedLoopMessage({ ...base, allowAmbiguousRetry: true });
     assert.equal(retried.result.ok, true);
     assert.equal(retried.attempt.attemptNo, 2);
     assert.equal(retried.duplicateRisk, true, "prior ambiguity must be reported so a duplicate is never silent");
