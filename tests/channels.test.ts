@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sendSendblueMessage } from "../src/lib/channels/sendblue";
-import { sendLoopMessage } from "../src/lib/channels/loopmessage";
+import { getLoopMessageStatus, sendLoopMessage } from "../src/lib/channels/loopmessage";
 import { buildSlackBlocks, postSlackMessage } from "../src/lib/channels/slack";
 import { sendTwilioSms } from "../src/lib/channels/twilio";
 import type { ChatMessage } from "../src/lib/types";
@@ -228,5 +228,41 @@ test("loopmessage sends to a phone number with the same explicit email sender", 
       contact: "+2348012345678", text: "Result", sender: "velnor-email-sender",
     });
     assert.equal(result.deliveryStatus, "queued");
+  } finally { restore(); }
+});
+
+
+test("LoopMessage status lookup uses the documented message status endpoint", async () => {
+  let requestedUrl = "";
+  let authorization = "";
+  const restore = stubFetch((input, init) => {
+    requestedUrl = String(input);
+    authorization = new Headers(init?.headers).get("authorization") || "";
+    return new Response(JSON.stringify({
+      message_id: "loop-status-123",
+      status: "delivered",
+      contact: "alex@icloud.com",
+      last_update: "2026-11-16T10:00:00.000Z",
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  try {
+    const result = await getLoopMessageStatus({ authKey: "loop-api-key", messageId: "loop-status-123" });
+    assert.equal(requestedUrl, "https://a.loopmessage.com/api/v1/message/status/loop-status-123/");
+    assert.equal(authorization, "loop-api-key");
+    assert.deepEqual(result, {
+      ok: true, messageId: "loop-status-123", contact: "alex@icloud.com", status: "delivered",
+      errorCode: undefined,
+    });
+  } finally { restore(); }
+});
+
+test("LoopMessage status lookup rejects a mismatched provider message ID", async () => {
+  const restore = stubFetch(() => new Response(JSON.stringify({
+    message_id: "another-message", status: "delivered", contact: "+15551234567",
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+  try {
+    const result = await getLoopMessageStatus({ authKey: "loop-api-key", messageId: "expected-message" });
+    assert.equal(result.ok, false);
+    assert.match(result.detail, /mismatched/);
   } finally { restore(); }
 });
