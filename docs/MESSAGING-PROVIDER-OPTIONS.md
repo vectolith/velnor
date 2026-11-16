@@ -1,29 +1,44 @@
-# Messaging provider options under the $0 budget
+# VELNOR iMessage provider: Sendblue
 
-## Current LoopMessage status
+## Selected provider
 
-LoopMessage is the provider currently integrated by VELNOR. Its live account, sender identity, real email/phone conversations, callbacks, and retry outcomes have not been verified in this workstream. Do not describe mocked tests as provider delivery evidence. No additional LoopMessage credits or subscription spend is authorized.
+Sendblue is now the configured outbound iMessage provider for VELNOR. New outbound replies and scheduled iMessage reminders use the Sendblue API through the durable attempt ledger. LoopMessage is no longer used for new outbound sends; its callback parser and stored attempt records remain temporarily for historical reconciliation and migration safety.
 
-## Free self-hosted iMessage candidate: BlueBubbles
+The adapter requires:
+- Sendblue API key ID and API secret
+- An explicit Sendblue sender number (SENDBLUE_FROM_NUMBER or the tenant setting)
+- VELNOR_PUBLIC_URL, used to register a per-message delivery-status callback
+- SENDBLUE_WEBHOOK_SECRET, configured to match the Sendblue webhook signing secret
 
-[BlueBubbles Server](https://github.com/BlueBubblesApp/bluebubbles-server) is an open-source Apache-2.0 project. It exposes a REST API and webhooks for a Mac running the native Messages app. Its documented webhook events include new messages, message updates (including delivered/read), and message errors. A released server version also added an isDelivered field to message payloads.
+Provider acceptance is recorded as queued, not delivered. VELNOR marks an attempt delivered only when an authenticated Sendblue callback reports status=DELIVERED, service=iMessage, and no SMS downgrade. SENT is not treated as iMessage delivery. SMS downgrade is recorded as a failed iMessage attempt and is never presented as iMessage success.
 
-### Hard requirements and limits
+Sendblue supports phone-number iMessage recipients. Its receiving documentation also states that an inbound iMessage may originate from an Apple Account email address and that VELNOR can reply by passing that exact email address as the number recipient. This supports replies to email-originated conversations; it does not establish unrestricted new outbound email initiation.
 
-- It must run on macOS with Messages signed in to an Apple Account; it is not a Linux/Cloudflare Worker replacement. The current server repository states macOS 10.15 Catalina or newer, with newer macOS requirements for some bundled proxy options.
-- The Mac must remain powered on and connected for dependable message handling. This is not a hosted, always-available service.
-- A recipient must be reachable through iMessage. Phone-number delivery depends on that number being registered and active for iMessage; email-address delivery depends on that Apple ID address being enabled for iMessage.
-- BlueBubbles REST API authentication uses a server password/token in the guid query parameter. Any VELNOR adapter must keep it server-side, avoid logging credential-bearing URLs, and expose the Mac endpoint only through a protected HTTPS route.
-- Its delivery-update webhook is useful evidence, but VELNOR must validate the actual payload and correlate the event to the exact recipient/message before marking a result delivered.
+## $0 plan limitations
 
-### Decision
+Sendblue currently advertises a $0 shared-line sandbox with no credit card, up to 10 verified contacts, and inbound-first messaging. Its documentation says free shared-line recipients must be verified contacts and must text the Sendblue number once before outbound messaging is enabled. The production AI Agent plan is advertised at $100/month per dedicated line; Enterprise pricing is custom.
 
-BlueBubbles is the strongest $0 software alternative found, provided an already-owned, always-on compatible Mac is available. It avoids a paid messaging vendor but does not remove the hardware, electricity, internet, Apple Account, and operational requirements. No Mac availability is assumed, and no BlueBubbles adapter or live delivery has been implemented or claimed yet.
+The public materials reviewed do not guarantee that the sandbox is permanently free, and they do not establish that Apple Account email identities can be added as verified contacts under the free plan. Therefore:
+- VELNOR's Sendblue adapter is implemented, but account eligibility and live delivery remain unverified.
+- Do not purchase a plan or activate paid credits under the current $0 budget.
+- Do not claim the free sandbox meets unrestricted outbound or permanent-free requirements.
+- Email-address replies are supported by the documented inbound-thread workflow, but free-plan verification for email identities remains unconfirmed.
+- No real messages have been sent as part of this code work.
 
-If no suitable Mac is already available, there is no verified zero-cost hosted replacement in this assessment that can be relied on for production iMessage delivery. Keep the provider boundary and mocked contract tests, and do not silently substitute SMS, email, or a paid trial for iMessage.
+## Operational and verification requirements
 
-## Evidence references
+1. Configure Sendblue credentials and sender number only through the deployment's secret/configuration mechanism; never commit secrets or paste them into chat.
+2. Configure Sendblue's webhook secret to match SENDBLUE_WEBHOOK_SECRET.
+3. Set the account's inbound receive webhook to /api/webhooks/imessage. Each outbound send also supplies that endpoint as status_callback.
+4. Verify both phone-originated and Apple Account email-originated inbound conversations before relying on replies.
+5. Confirm the callback's message_handle, recipient, sender line, service, status, and was_downgraded fields.
+6. Treat mocks and simulated callbacks as code-level evidence only. Real delivery requires a live Sendblue account and verified contacts.
+7. Ambiguous transport outcomes are not automatically resent. An explicit retry may create a duplicate if Sendblue accepted the original request before the connection failed.
 
-- BlueBubbles Server source and macOS requirements: https://github.com/BlueBubblesApp/bluebubbles-server
-- BlueBubbles REST API and webhook documentation: https://github.com/BlueBubblesApp/bluebubbles-docs/blob/master/server/developer-guides/rest-api-and-webhooks.md
-- BlueBubbles release notes (message delivery payload field and webhook support): https://github.com/BlueBubblesApp/bluebubbles-server/releases
+## Documentation references
+
+- Sendblue pricing and free sandbox: https://www.sendblue.com/api
+- Sending messages and free-plan contact verification: https://docs.sendblue.com/getting-started/sending-messages/
+- Receiving Apple Account email messages: https://docs.sendblue.com/getting-started/receiving-messages/
+- Webhook payloads, delivery statuses, and retry policy: https://docs.sendblue.com/getting-started/webhooks/
+- Webhook authentication: https://docs.sendblue.com/security/
