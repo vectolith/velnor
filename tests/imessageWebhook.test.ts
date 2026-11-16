@@ -40,13 +40,29 @@ test("LoopMessage documented message_delivered webhook is durably reconciled bef
     const response = await POST(request);
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { status: "recorded" });
-    assert.equal(getLoopMessageDelivery("tenant-webhook", "task-webhook")?.status, "processing");
+    assert.equal(getLoopMessageDelivery("tenant-webhook", "task-webhook")?.status, "delivered");
 
     recordLoopMessageQueued({
       deliveryId, providerMessageId: "provider-message-123",
       tenantId: "tenant-webhook", taskId: "task-webhook",
       recipient: "alex@icloud.com", senderId: "sender-id-123",
     });
+    assert.equal(getLoopMessageDelivery("tenant-webhook", "task-webhook")?.status, "delivered");
+    const duplicate = await POST(new NextRequest("https://velnor.test/api/webhooks/imessage", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: process.env.LOOPMESSAGE_WEBHOOK_SECRET!,
+      },
+      body: JSON.stringify({
+        event: "message_delivered",
+        message_id: "provider-message-123",
+        contact: "alex@icloud.com",
+        sender: "sender-id-123",
+        passthrough: deliveryId,
+      }),
+    }));
+    assert.equal(duplicate.status, 200);
     assert.equal(getLoopMessageDelivery("tenant-webhook", "task-webhook")?.status, "delivered");
   } finally {
     closeSqliteDb();
