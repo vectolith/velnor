@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sendSendblueMessage } from "../src/lib/channels/sendblue";
-import { sendLoopMessage } from "../src/lib/channels/loopmessage";
+import { sendLoopMessage, verifyLoopMessageSender } from "../src/lib/channels/loopmessage";
 import { buildSlackBlocks, postSlackMessage } from "../src/lib/channels/slack";
 import { sendTwilioSms } from "../src/lib/channels/twilio";
 import type { ChatMessage } from "../src/lib/types";
@@ -229,4 +229,42 @@ test("loopmessage sends to a phone number with the same explicit email sender", 
     });
     assert.equal(result.deliveryStatus, "queued");
   } finally { restore(); }
+});
+
+
+test("LoopMessage sender verification checks the provider sender ID and active status", async () => {
+  let requestedUrl = "";
+  let requestedMethod = "";
+  const restore = stubFetch((input, init) => {
+    requestedUrl = String(input);
+    requestedMethod = String(init?.method);
+    return new Response(JSON.stringify({
+      id: "sender-123", name: "VELNOR", status: "active",
+      imessage_link: "https://imessage.example.test/sender",
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  try {
+    const result = await verifyLoopMessageSender({ authKey: "api-key", senderId: "sender-123" });
+    assert.equal(result.ok, true);
+    assert.equal(result.senderId, "sender-123");
+    assert.equal(result.status, "active");
+    assert.equal(requestedUrl, "https://a.loopmessage.com/api/v1/sender/sender-123/");
+    assert.equal(requestedMethod, "GET");
+    assert.match(result.detail, /does not expose its Apple ID email address/);
+  } finally {
+    restore();
+  }
+});
+
+test("LoopMessage sender verification rejects mismatched or inactive sender IDs", async () => {
+  const restore = stubFetch(() => new Response(JSON.stringify({
+    id: "different-sender", name: "Other", status: "suspended",
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+  try {
+    const result = await verifyLoopMessageSender({ authKey: "api-key", senderId: "sender-123" });
+    assert.equal(result.ok, false);
+    assert.match(result.detail, /did not return the configured sender ID/);
+  } finally {
+    restore();
+  }
 });
