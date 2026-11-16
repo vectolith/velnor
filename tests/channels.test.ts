@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sendSendblueMessage } from "../src/lib/channels/sendblue";
-import { sendLoopMessage, verifyLoopMessageSender } from "../src/lib/channels/loopmessage";
+import { fetchLoopMessageStatus, sendLoopMessage, verifyLoopMessageSender } from "../src/lib/channels/loopmessage";
 import { buildSlackBlocks, postSlackMessage } from "../src/lib/channels/slack";
 import { sendTwilioSms } from "../src/lib/channels/twilio";
 import type { ChatMessage } from "../src/lib/types";
@@ -264,6 +264,59 @@ test("LoopMessage sender verification rejects mismatched or inactive sender IDs"
     const result = await verifyLoopMessageSender({ authKey: "api-key", senderId: "sender-123" });
     assert.equal(result.ok, false);
     assert.match(result.detail, /did not return the configured sender ID/);
+  } finally {
+    restore();
+  }
+});
+
+
+test("LoopMessage status lookup uses the documented endpoint and validates message identity", async () => {
+  let requestedUrl = "";
+  const restore = stubFetch((input, init) => {
+    requestedUrl = String(input);
+    assert.equal(init?.method, "GET");
+    return new Response(JSON.stringify({
+      message_id: "message-abc", status: "delivered",
+      contact: "alex@icloud.com", error_code: 0,
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  try {
+    const result = await fetchLoopMessageStatus({ authKey: "api-key", messageId: "message-abc" });
+    assert.equal(result.ok, true);
+    assert.equal(result.status, "delivered");
+    assert.equal(result.contact, "alex@icloud.com");
+    assert.equal(requestedUrl, "https://a.loopmessage.com/api/v1/message/status/message-abc/");
+  } finally {
+    restore();
+  }
+});
+
+test("LoopMessage status lookup rejects a response for a different message ID", async () => {
+  const restore = stubFetch(() => new Response(JSON.stringify({
+    message_id: "other-message", status: "delivered", contact: "+15551234567",
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+  try {
+    const result = await fetchLoopMessageStatus({ authKey: "api-key", messageId: "message-abc" });
+    assert.equal(result.ok, false);
+    assert.match(String(result.detail), /invalid status response/);
+  } finally {
+    restore();
+  }
+});
+
+test("LoopMessage send includes passthrough correlation metadata", async () => {
+  let body: any = null;
+  const restore = stubFetch((_input, init) => {
+    body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ message_id: "message-passthrough" }), { status: 200 });
+  });
+  try {
+    const result = await sendLoopMessage({
+      authKey: "api-key", recipient: "alex@icloud.com", text: "Hello",
+      senderId: "sender-123", passthrough: "delivery-attempt-123",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(body.passthrough, "delivery-attempt-123");
   } finally {
     restore();
   }
