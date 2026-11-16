@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
 import { sendLoopMessage } from "@/lib/channels/loopmessage";
-import { getLoopMessageDelivery, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
+import { getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
 import type { Attachment } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
 import { withVelnorTenantScope } from "@/lib/store";
@@ -53,6 +53,9 @@ export async function POST(req: NextRequest) {
       if (task.channel !== "imessage" || !task.userHandle) {
         return NextResponse.json({ error: "This task has no iMessage recipient identity." }, { status: 409 });
       }
+      // A missing callback does not mean failure. Only after a 15-minute
+      // callback grace period is a queued attempt marked ambiguous/retryable.
+      markLoopMessageDeliveryUnknownIfStale(tenantId, taskId);
       const delivery = getLoopMessageDelivery(tenantId, taskId);
       if (delivery?.status === "delivered") {
         return NextResponse.json({ error: "This result has already been delivered.", delivery }, { status: 409 });
@@ -87,7 +90,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         taskId, recipient: task.userHandle, senderId,
         deliveryStatus: "queued", messageId: sent.messageId,
-        note: "Queued by LoopMessage; wait for message_delivered before treating this as delivered.",
+        note: "Queued by LoopMessage; wait for message_delivered before treating this as delivered. A retry after an ambiguous timeout can duplicate a message because provider-side idempotency is not established.",
       });
     }
     if (action === "retry") {
