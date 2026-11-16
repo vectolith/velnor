@@ -1,6 +1,7 @@
 import { runAgentLoop } from "./loop";
 import { buildProviderChain, createProvider, estimateCostUsd } from "./registry";
 import { ToolSpec, Turn, Usage, emptyUsage } from "./providers/types";
+import { assertExecutionTaskActive, createExecutionTask, finishExecutionTask, startExecutionTask } from "../tasks/taskStore";
 import { DEFAULT_STATE, getEffectiveKeys, type VelnorState } from "../store";
 import type { PersistedTenantState } from "../storage/d1TenantState";
 import { noteUserMessageAsync } from "../security/asyncToolPolicy";
@@ -70,6 +71,28 @@ export async function processUserMessage(params: {
   userHandle?: string;
   attachments?: Attachment[];
 }): Promise<ChatMessage> {
+  const tenantId = getNodeTenantRepositoryContext().tenantId;
+  const task = createExecutionTask({ tenantId, channel: params.channel, userHandle: params.userHandle });
+  startExecutionTask(tenantId, task.id);
+  try {
+    const reply = await processUserMessageCore({ ...params, taskId: task.id });
+    finishExecutionTask(tenantId, task.id, "succeeded");
+    return { ...reply, interactionId: task.id };
+  } catch (error) {
+    const cancelled = error instanceof Error && error.name === "ExecutionTaskCancelledError";
+    finishExecutionTask(tenantId, task.id, cancelled ? "cancelled" : "failed",
+      cancelled ? undefined : error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+}
+
+async function processUserMessageCore(params: {
+  channel: ChannelType;
+  text: string;
+  userHandle?: string;
+  attachments?: Attachment[];
+  taskId: string;
+}): Promise<ChatMessage> {
   const tenantContext = getNodeTenantRepositoryContext();
   await noteUserMessageAsync(tenantContext.repository, tenantContext.tenantId, params.text);
 
@@ -80,6 +103,7 @@ export async function processUserMessage(params: {
     userHandle: params.userHandle,
     text: params.text,
     timestamp: new Date().toISOString(),
+    interactionId: params.taskId,
     attachments: params.attachments,
   };
   // Persist the inbound message through the repository before tools refresh this tenant scope.
@@ -189,9 +213,10 @@ export async function processUserMessage(params: {
         messages,
         tools,
         maxOutputTokens: Number(process.env.VELNOR_MAX_OUTPUT_TOKENS || 1400),
-        executeTool: async (name, args) => ({
-          payload: await executeToolCall(name, args, params.channel, bundle, params.userHandle),
-        }),
+        executeTool: async (name, args) => {
+          assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
+          return { payload: await executeToolCall(name, args, params.channel, bundle, params.userHandle) };
+        },
       });
       replyText = result.text;
       modelUsed = result.model;
@@ -205,6 +230,7 @@ export async function processUserMessage(params: {
       });
       break;
     } catch (err) {
+      if (err instanceof Error && err.name === "ExecutionTaskCancelledError") throw err;
       const message = err instanceof Error ? err.message : String(err);
       providerFailures.push(slot.id + ": " + message);
       console.warn("[velnor] provider " + slot.id + " failed, trying next:", message);
@@ -229,6 +255,7 @@ export async function processUserMessage(params: {
   }
 
   if (!replyText) {
+    assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     if (providerFailures.length > 0 && chain.length > 0) {
       bundle.toolActions.push({
         tool: "provider_error",
@@ -251,6 +278,7 @@ export async function processUserMessage(params: {
     sender: "velnor",
     text: replyText,
     timestamp: new Date().toISOString(),
+    interactionId: params.taskId,
         providerUsed,
     modelUsed,
     generatedImage: bundle.generatedImage,
