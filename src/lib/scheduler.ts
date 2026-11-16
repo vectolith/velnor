@@ -65,7 +65,7 @@ async function dispatchTenantReminderNotification(
           tenantId,
           taskId: "reminder_" + rem.id,
         });
-        if (tracked.result.ok && tracked.result.messageId) {
+        if (tracked.result.ok && tracked.result.messageId && tracked.attempt.state !== "failed") {
           // Provider acceptance is not delivery. The callback remains the
           // authoritative delivered state; the reminder is queued only once.
           deliveryAccepted = true;
