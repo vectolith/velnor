@@ -136,6 +136,11 @@ export function recordLoopMessageSendFailure(input: {
     WHERE message_id = ? AND status = 'processing'
   `).run(input.status, input.errorCode ?? null, new Date().toISOString(), input.deliveryId) as { changes?: number };
   if (Number(result.changes) !== 1) {
+    const row = db().prepare("SELECT status FROM imessage_deliveries WHERE message_id = ?")
+      .get(input.deliveryId) as { status?: string } | undefined;
+    // A callback correlated through passthrough may have already established
+    // a terminal provider outcome while the original send request timed out.
+    if (row?.status === "delivered" || row?.status === "failed") return;
     throw new Error("LoopMessage delivery attempt was not in a retryable pre-acceptance state.");
   }
 }
