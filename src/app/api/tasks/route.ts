@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       const senderId = typeof config.sendblueFromNumber === "string" && config.sendblueFromNumber
         ? config.sendblueFromNumber : process.env.SENDBLUE_FROM_NUMBER || "";
       const statusCallback = process.env.VELNOR_PUBLIC_URL
-        ? process.env.VELNOR_PUBLIC_URL.replace(/\\/+$/, "") + "/api/webhooks/imessage"
+        ? process.env.VELNOR_PUBLIC_URL.replace(/\/+$/, "") + "/api/webhooks/imessage"
         : "";
       if (!apiKeyId || !apiSecretKey || !senderId || !statusCallback) {
         return NextResponse.json({ error: "Sendblue API credentials, sender number, and VELNOR_PUBLIC_URL are required." }, { status: 503 });
@@ -232,7 +232,7 @@ export async function POST(req: NextRequest) {
         const senderId = typeof config.sendblueFromNumber === "string" && config.sendblueFromNumber
           ? config.sendblueFromNumber : process.env.SENDBLUE_FROM_NUMBER || "";
         const statusCallback = process.env.VELNOR_PUBLIC_URL
-          ? process.env.VELNOR_PUBLIC_URL.replace(/\\/+$/, "") + "/api/webhooks/imessage"
+          ? process.env.VELNOR_PUBLIC_URL.replace(/\/+$/, "") + "/api/webhooks/imessage"
           : "";
         if (!apiKeyId || !apiSecretKey || !senderId || !statusCallback) {
           return NextResponse.json({ error: "Sendblue API credentials, sender number, and VELNOR_PUBLIC_URL are required." }, { status: 503 });
