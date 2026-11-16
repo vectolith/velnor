@@ -44,7 +44,7 @@ export async function sendTrackedSendblueMessage(input: {
     throw new Error("Sendblue requires a valid recipient and configured sender identity.");
   }
   const previous = getLatestLoopMessageAttempt(input.tenantId, input.taskId);
-  const previousWasAmbiguous = previous?.state === "unconfirmed" || previous?.state === "unknown";
+  const previousWasAmbiguous = previous?.state === "unconfirmed" || previous?.state === "unknown" || Boolean(previous?.errorDetail?.includes("downgraded to SMS"));
   if (previous && normalizeImessageIdentity(previous.recipient) !== recipient) {
     throw new Error("Sendblue retry recipient differs from the original attempt; send blocked.");
   }
@@ -137,7 +137,7 @@ export async function sendTrackedSendblueMessage(input: {
     return {
       result,
       attempt,
-      duplicateRisk: previousWasAmbiguous,
+      duplicateRisk: previousWasAmbiguous || result.deliveryStatus === "failed",
       trackingDegraded,
     };
   }
