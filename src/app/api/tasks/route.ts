@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
-import { getLoopMessageStatus } from "@/lib/channels/loopmessage";
+import { getSendblueMessageStatus } from "@/lib/channels/sendblue";
 import { getLoopMessageDelivery, markLoopMessageDeliveryUnknownIfStale, updateLoopMessageProviderStatus } from "@/lib/channels/imessageDeliveryStore";
 import {
   getLatestLoopMessageAttempt, listLoopMessageAttempts, recoverStaleLoopMessageAttempts,
   syncLoopMessageAttemptFromProviderStatus, type LoopMessageDeliveryAttempt,
 } from "@/lib/channels/imessageDeliveryAttempts";
-import { sendTrackedLoopMessage } from "@/lib/channels/trackedLoopMessageSend";
+import { sendTrackedSendblueMessage } from "@/lib/channels/trackedSendblueSend";
 import type { Attachment } from "@/lib/types";
 import { normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
 import { authorizeChatTenant } from "@/lib/security/tenant";
@@ -89,36 +89,47 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "This result has already been delivered.", delivery, attempt: describeAttempt(attempt) }, { status: 409 });
       }
       if (attempt?.state === "pending_send") {
-        return NextResponse.json({ error: "A LoopMessage send is still in flight for this task; retry blocked.", delivery, attempt: describeAttempt(attempt) }, { status: 409 });
+        return NextResponse.json({ error: "A Sendblue send is still in flight for this task; retry blocked.", delivery, attempt: describeAttempt(attempt) }, { status: 409 });
       }
       const record = await repository.load(tenantId);
       const config = (record?.state as { config?: Record<string, unknown> } | undefined)?.config || {};
-      const authKey = typeof config.loopMessageAuthKey === "string" && config.loopMessageAuthKey
-        ? config.loopMessageAuthKey : process.env.LOOPMESSAGE_AUTH_KEY || "";
-      const senderId = (process.env.LOOPMESSAGE_SENDER_ID || "").trim();
-      if (!authKey || !senderId) {
-        return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
+      const apiKeyId = typeof config.sendblueApiKey === "string" && config.sendblueApiKey
+        ? config.sendblueApiKey : process.env.SENDBLUE_API_KEY || "";
+      const apiSecretKey = typeof config.sendblueApiSecret === "string" && config.sendblueApiSecret
+        ? config.sendblueApiSecret : process.env.SENDBLUE_API_SECRET || "";
+      const senderId = typeof config.sendblueFromNumber === "string" && config.sendblueFromNumber
+        ? config.sendblueFromNumber : process.env.SENDBLUE_FROM_NUMBER || "";
+      const statusCallback = process.env.VELNOR_PUBLIC_URL
+        ? process.env.VELNOR_PUBLIC_URL.replace(/\\/+$/, "") + "/api/webhooks/imessage"
+        : "";
+      if (!apiKeyId || !apiSecretKey || !senderId || !statusCallback) {
+        return NextResponse.json({ error: "Sendblue API credentials, sender number, and VELNOR_PUBLIC_URL are required." }, { status: 503 });
       }
       // Preserve the original sender identity across retries and recovery.
       const originalSenderId = attempt?.senderId || delivery?.senderId || "";
       if (originalSenderId && originalSenderId !== senderId) {
         return NextResponse.json({
-          error: "The configured LoopMessage sender ID differs from the sender used for the original attempt; retry blocked to preserve sender identity.",
+          error: "The configured Sendblue sender number differs from the sender used for the original attempt; retry blocked to preserve sender identity.",
           delivery, attempt: describeAttempt(attempt),
         }, { status: 409 });
       }
       const trackedMessageId = attempt?.messageId || delivery?.messageId || "";
       if (trackedMessageId && (!delivery || delivery.status === "queued" || delivery.status === "processing" || delivery.status === "unknown")) {
-        const providerStatus = await getLoopMessageStatus({ authKey, messageId: trackedMessageId });
+        const providerStatus = await getSendblueMessageStatus({
+          apiKeyId, apiSecretKey, messageId: trackedMessageId,
+        });
         if (!providerStatus.ok) {
           return NextResponse.json({
-            error: "Could not reconcile LoopMessage delivery status; no retry was sent.",
+            error: "Could not reconcile Sendblue delivery status; no retry was sent.",
             detail: providerStatus.detail,
           }, { status: 502 });
         }
         const knownRecipient = attempt?.recipient || delivery?.recipient || "";
-        if (normalizeImessageIdentity(providerStatus.contact) !== knownRecipient) {
-          return NextResponse.json({ error: "LoopMessage status identity does not match the stored recipient; retry blocked." }, { status: 409 });
+        if (
+          normalizeImessageIdentity(providerStatus.recipient) !== normalizeImessageIdentity(knownRecipient) ||
+          normalizeImessageIdentity(providerStatus.sender) !== normalizeImessageIdentity(originalSenderId || senderId)
+        ) {
+          return NextResponse.json({ error: "Sendblue status identity does not match the stored recipient or sender; retry blocked." }, { status: 409 });
         }
         updateLoopMessageProviderStatus({
           messageId: trackedMessageId, tenantId, taskId,
@@ -148,13 +159,14 @@ export async function POST(req: NextRequest) {
       if (!resultMessage || typeof resultMessage.text !== "string") {
         return NextResponse.json({ error: "The task has no completed result to deliver." }, { status: 409 });
       }
-      const tracked = await sendTrackedLoopMessage({
-        authKey, recipient: task.userHandle, text: String(resultMessage.text), senderId,
+      const tracked = await sendTrackedSendblueMessage({
+        apiKeyId, apiSecretKey, recipient: task.userHandle, content: String(resultMessage.text), senderId,
+        fromNumber: senderId, statusCallback,
         tenantId, taskId, allowAmbiguousRetry: true,
       });
       if (!tracked.result.ok || !tracked.result.messageId) {
         return NextResponse.json({
-          error: "LoopMessage did not confirm this delivery attempt. The attempt is durably recorded and stays retryable.",
+          error: "Sendblue did not confirm this delivery attempt. The attempt is durably recorded and stays retryable.",
           detail: tracked.result.detail,
           attempt: describeAttempt(tracked.attempt),
           duplicateRisk: tracked.duplicateRisk,
@@ -167,7 +179,7 @@ export async function POST(req: NextRequest) {
         attemptNumber: tracked.attempt.attemptNo,
         duplicateRisk: duplicateRisk || tracked.duplicateRisk,
         trackingDegraded: tracked.trackingDegraded,
-        note: "Queued by LoopMessage; wait for message_delivered before treating this as delivered. " +
+        note: "Queued by Sendblue; wait for an authenticated DELIVERED callback with service=iMessage before treating this as delivered. " +
           (duplicateRisk
             ? "An earlier attempt had an unknown outcome, so this retry may be a duplicate because provider-side idempotency is not established."
             : "An earlier attempt was explicitly rejected or never sent."),
@@ -213,22 +225,29 @@ export async function POST(req: NextRequest) {
         if (!task.userHandle) return NextResponse.json({ error: "Original iMessage recipient identity is missing." }, { status: 409 });
         const refreshed = await repository.load(tenantId);
         const config = (refreshed?.state as { config?: Record<string, unknown> } | undefined)?.config || {};
-        const authKey = typeof config.loopMessageAuthKey === "string" && config.loopMessageAuthKey
-          ? config.loopMessageAuthKey : process.env.LOOPMESSAGE_AUTH_KEY || "";
-        const senderId = (process.env.LOOPMESSAGE_SENDER_ID || "").trim();
-        if (!authKey || !senderId) {
-          return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
+        const apiKeyId = typeof config.sendblueApiKey === "string" && config.sendblueApiKey
+          ? config.sendblueApiKey : process.env.SENDBLUE_API_KEY || "";
+        const apiSecretKey = typeof config.sendblueApiSecret === "string" && config.sendblueApiSecret
+          ? config.sendblueApiSecret : process.env.SENDBLUE_API_SECRET || "";
+        const senderId = typeof config.sendblueFromNumber === "string" && config.sendblueFromNumber
+          ? config.sendblueFromNumber : process.env.SENDBLUE_FROM_NUMBER || "";
+        const statusCallback = process.env.VELNOR_PUBLIC_URL
+          ? process.env.VELNOR_PUBLIC_URL.replace(/\\/+$/, "") + "/api/webhooks/imessage"
+          : "";
+        if (!apiKeyId || !apiSecretKey || !senderId || !statusCallback) {
+          return NextResponse.json({ error: "Sendblue API credentials, sender number, and VELNOR_PUBLIC_URL are required." }, { status: 503 });
         }
         if (!reply.interactionId) {
           return NextResponse.json({ error: "The retried task did not produce a durable task identity; result delivery was not attempted." }, { status: 502 });
         }
-        const tracked = await sendTrackedLoopMessage({
-          authKey, recipient: task.userHandle, text: reply.text, senderId,
+        const tracked = await sendTrackedSendblueMessage({
+          apiKeyId, apiSecretKey, recipient: task.userHandle, content: reply.text, senderId,
+          fromNumber: senderId, statusCallback,
           tenantId, taskId: reply.interactionId,
         });
         if (!tracked.result.ok || !tracked.result.messageId) {
           return NextResponse.json({
-            error: "The retried task completed, but LoopMessage did not confirm result delivery. The attempt is durably recorded and retryable.",
+            error: "The retried task completed, but Sendblue did not confirm result delivery. The attempt is durably recorded and retryable.",
             detail: tracked.result.detail,
             taskId: reply.interactionId,
             attempt: describeAttempt(tracked.attempt),
