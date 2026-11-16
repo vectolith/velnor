@@ -94,3 +94,99 @@ export async function sendSendblueMessage(params: {
     };
   }
 }
+
+
+export type SendblueProviderStatus = "processing" | "failed" | "delivered" | "unknown";
+
+export type SendblueStatusResult =
+  | {
+      ok: true;
+      messageId: string;
+      recipient: string;
+      sender: string;
+      status: SendblueProviderStatus;
+      service: string;
+      wasDowngraded: boolean;
+      errorCode?: number;
+    }
+  | { ok: false; detail: string; status?: number };
+
+/** Query Sendblue's status endpoint before an operator-requested retry. */
+export async function getSendblueMessageStatus(params: {
+  apiKeyId: string;
+  apiSecretKey: string;
+  messageId: string;
+  timeoutMs?: number;
+}): Promise<SendblueStatusResult> {
+  if (!params.apiKeyId || !params.apiSecretKey || !params.messageId) {
+    return { ok: false, detail: "Sendblue status lookup requires API credentials and a message handle." };
+  }
+  try {
+    const url = new URL("https://api.sendblue.co/api/status");
+    url.searchParams.set("handle", params.messageId);
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "sb-api-key-id": params.apiKeyId,
+        "sb-api-secret-key": params.apiSecretKey,
+      },
+      signal: AbortSignal.timeout(params.timeoutMs ?? 12000),
+    });
+    const text = await response.text();
+    let payload: {
+      message_handle?: unknown;
+      number?: unknown;
+      to_number?: unknown;
+      from_number?: unknown;
+      sendblue_number?: unknown;
+      status?: unknown;
+      service?: unknown;
+      was_downgraded?: unknown;
+      error_code?: unknown;
+      error_message?: unknown;
+    } = {};
+    try { payload = JSON.parse(text) as typeof payload; } catch {}
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        detail: typeof payload.error_message === "string"
+          ? payload.error_message
+          : `Sendblue status lookup failed with HTTP ${response.status}.`,
+      };
+    }
+    const recipient = typeof payload.number === "string"
+      ? payload.number
+      : typeof payload.to_number === "string" ? payload.to_number : "";
+    const sender = typeof payload.from_number === "string"
+      ? payload.from_number
+      : typeof payload.sendblue_number === "string" ? payload.sendblue_number : "";
+    if (payload.message_handle !== params.messageId || !recipient || !sender || typeof payload.status !== "string") {
+      return { ok: false, status: response.status, detail: "Sendblue returned an incomplete or mismatched status record." };
+    }
+    const providerStatus = payload.status.toUpperCase();
+    const service = typeof payload.service === "string" ? payload.service : "";
+    const wasDowngraded = payload.was_downgraded === true || service.toLowerCase() === "sms";
+    let status: SendblueProviderStatus = "unknown";
+    if (providerStatus === "ERROR" || providerStatus === "DECLINED" ||
+        (wasDowngraded && (providerStatus === "SENT" || providerStatus === "DELIVERED"))) {
+      status = "failed";
+    } else if (providerStatus === "DELIVERED" && service.toLowerCase() === "imessage" && !wasDowngraded) {
+      status = "delivered";
+    } else if (["REGISTERED", "PENDING", "QUEUED", "ACCEPTED"].includes(providerStatus)) {
+      status = "processing";
+    }
+    return {
+      ok: true,
+      messageId: params.messageId,
+      recipient,
+      sender,
+      status,
+      service,
+      wasDowngraded,
+      errorCode: Number.isInteger(payload.error_code) ? Number(payload.error_code) : undefined,
+    };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : "Sendblue status lookup failed." };
+  }
+}
