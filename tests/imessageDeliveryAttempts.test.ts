@@ -9,7 +9,7 @@ process.env.VELNOR_DATA_DIR = dataDir;
 
 import {
   beginLoopMessageAttempt, getLatestLoopMessageAttempt, listLoopMessageAttempts,
-  recoverStaleLoopMessageAttempts, LoopMessageAttemptInFlightError,
+  recoverStaleLoopMessageAttempts, syncLoopMessageAttemptFromProviderStatus, LoopMessageAttemptInFlightError,
 } from "../src/lib/channels/imessageDeliveryAttempts";
 import { getLoopMessageDelivery, processLoopMessageCallbackPayload } from "../src/lib/channels/imessageDeliveryStore";
 import { sendTrackedLoopMessage } from "../src/lib/channels/trackedLoopMessageSend";
@@ -191,6 +191,65 @@ test("attempts are tenant-scoped and never leak across tenants", () => {
     assert.deepEqual(listLoopMessageAttempts("tenant-other", taskId), []);
     assert.equal(recoverStaleLoopMessageAttempts("tenant-other", taskId, 0), 0);
     assert.equal(getLatestLoopMessageAttempt(base.tenantId, taskId)?.state, "pending_send");
+  } finally {
+    reset();
+    closeSqliteDb();
+  }
+});
+
+
+test("provider status transitions synchronize the exact attempt and terminal states cannot regress", async () => {
+  try {
+    stubFetch(async () => new Response(JSON.stringify({
+      success: true, message_id: "loop-status-transition",
+    }), { status: 200 }));
+    const taskId = "task-status-transition";
+    const tracked = await sendTrackedLoopMessage({ ...base, taskId });
+    assert.equal(tracked.attempt.state, "queued");
+
+    assert.equal(syncLoopMessageAttemptFromProviderStatus({
+      tenantId: base.tenantId, taskId, messageId: "loop-status-transition", status: "processing",
+    }), true);
+    assert.equal(getLatestLoopMessageAttempt(base.tenantId, taskId)?.state, "processing");
+
+    assert.equal(syncLoopMessageAttemptFromProviderStatus({
+      tenantId: base.tenantId, taskId, messageId: "loop-status-transition", status: "delivered",
+    }), true);
+    assert.equal(getLatestLoopMessageAttempt(base.tenantId, taskId)?.state, "delivered");
+
+    assert.equal(syncLoopMessageAttemptFromProviderStatus({
+      tenantId: base.tenantId, taskId, messageId: "loop-status-transition", status: "processing",
+    }), false, "a stale processing response must not regress a delivered attempt");
+    assert.equal(getLatestLoopMessageAttempt(base.tenantId, taskId)?.state, "delivered");
+
+    assert.equal(syncLoopMessageAttemptFromProviderStatus({
+      tenantId: "tenant-other", taskId, messageId: "loop-status-transition", status: "failed",
+    }), false, "status reconciliation must remain tenant-scoped");
+  } finally {
+    reset();
+    closeSqliteDb();
+  }
+});
+
+test("a provider failure callback marks the attempt failed and replay is idempotent", async () => {
+  try {
+    stubFetch(async () => new Response(JSON.stringify({
+      success: true, message_id: "loop-failed-callback",
+    }), { status: 200 }));
+    const taskId = "task-failed-callback";
+    const tracked = await sendTrackedLoopMessage({ ...base, taskId });
+    assert.equal(tracked.attempt.state, "queued");
+
+    const callback = {
+      event: "message_failed",
+      message_id: "loop-failed-callback",
+      contact: base.recipient,
+      error_code: 42,
+    };
+    assert.equal(processLoopMessageCallbackPayload(callback), "applied");
+    assert.equal(getLatestLoopMessageAttempt(base.tenantId, taskId)?.state, "failed");
+    assert.equal(processLoopMessageCallbackPayload(callback), "duplicate");
+    assert.equal(getLatestLoopMessageAttempt(base.tenantId, taskId)?.state, "failed");
   } finally {
     reset();
     closeSqliteDb();
