@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processUserMessage } from "@/lib/ai/agent";
+import { sendLoopMessage } from "@/lib/channels/loopmessage";
+import { getLoopMessageDelivery, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
 import type { Attachment } from "@/lib/types";
 import { authorizeChatTenant } from "@/lib/security/tenant";
 import { withVelnorTenantScope } from "@/lib/store";
@@ -40,6 +42,49 @@ export async function POST(req: NextRequest) {
       if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
       if (!changed) return NextResponse.json({ task, error: "Task is no longer cancellable." }, { status: 409 });
       return NextResponse.json({ task: getExecutionTask(tenantId, taskId) });
+    }
+    if (action === "retry_delivery") {
+      const task = getExecutionTask(tenantId, taskId);
+      if (!task) return NextResponse.json({ error: "Task not found." }, { status: 404 });
+      if (task.channel !== "imessage" || !task.userHandle) {
+        return NextResponse.json({ error: "This task has no iMessage recipient identity." }, { status: 409 });
+      }
+      const delivery = getLoopMessageDelivery(tenantId, taskId);
+      if (delivery?.status === "delivered") {
+        return NextResponse.json({ error: "This result has already been delivered.", delivery }, { status: 409 });
+      }
+      if (delivery && delivery.status !== "failed" && delivery.status !== "unknown") {
+        return NextResponse.json({ error: "Delivery is not in a retryable state.", delivery }, { status: 409 });
+      }
+      const record = await repository.load(tenantId);
+      const messages = (record?.state as { messages?: Array<Record<string, unknown>> } | undefined)?.messages || [];
+      const resultMessage = messages.find((message) =>
+        message.sender === "velnor" && message.interactionId === taskId && typeof message.text === "string"
+      );
+      if (!resultMessage || typeof resultMessage.text !== "string") {
+        return NextResponse.json({ error: "The task has no completed result to deliver." }, { status: 409 });
+      }
+      const config = (record?.state as { config?: Record<string, unknown> } | undefined)?.config || {};
+      const authKey = typeof config.loopMessageAuthKey === "string" && config.loopMessageAuthKey
+        ? config.loopMessageAuthKey : process.env.LOOPMESSAGE_AUTH_KEY || "";
+      const senderId = (process.env.LOOPMESSAGE_SENDER_ID || "").trim();
+      if (!authKey || !senderId) {
+        return NextResponse.json({ error: "LoopMessage API key and explicit VELNOR sender ID are required." }, { status: 503 });
+      }
+      const sent = await sendLoopMessage({
+        authKey, recipient: task.userHandle, text: String(resultMessage.text), senderId,
+      });
+      if (!sent.ok || !sent.messageId) {
+        return NextResponse.json({ error: "LoopMessage did not accept the delivery.", detail: sent.detail }, { status: 502 });
+      }
+      recordLoopMessageQueued({
+        messageId: sent.messageId, tenantId, taskId, recipient: task.userHandle, senderId,
+      });
+      return NextResponse.json({
+        taskId, recipient: task.userHandle, senderId,
+        deliveryStatus: "queued", messageId: sent.messageId,
+        note: "Queued by LoopMessage; wait for message_delivered before treating this as delivered.",
+      });
     }
     if (action === "retry") {
       const task = getExecutionTask(tenantId, taskId);
