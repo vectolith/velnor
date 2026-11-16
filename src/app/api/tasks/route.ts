@@ -135,13 +135,13 @@ export async function POST(req: NextRequest) {
           messageId: trackedMessageId, tenantId, taskId,
           recipient: knownRecipient, senderId: originalSenderId || senderId,
           status: providerStatus.status, errorCode: providerStatus.errorCode,
-          errorDetail: providerStatus.wasDowngraded
-            ? "Sendblue downgraded to SMS; the message may have reached the recipient and an iMessage retry could duplicate it."
-            : undefined,
         });
         syncLoopMessageAttemptFromProviderStatus({
           tenantId, taskId, messageId: trackedMessageId,
           status: providerStatus.status, errorCode: providerStatus.errorCode,
+          errorDetail: providerStatus.wasDowngraded
+            ? "Sendblue downgraded to SMS; the message may have reached the recipient and an iMessage retry could duplicate it."
+            : undefined,
         });
         delivery = getLoopMessageDelivery(tenantId, taskId);
         attempt = getLatestLoopMessageAttempt(tenantId, taskId);
