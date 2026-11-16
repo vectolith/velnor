@@ -205,7 +205,7 @@ export async function POST(req: NextRequest) {
         status: payload.event === "message_delivered" ? "delivered" : "failed",
         errorCode: Number.isInteger(payload.error_code) ? payload.error_code : undefined,
       });
-      return NextResponse.json({ status: applied ? payload.event : "unmatched_delivery_event" });
+      return NextResponse.json({ status: applied ? "recorded" : "invalid_delivery_event" });
     }
     if (provider === "loopmessage" && payload.event && payload.event !== "message_inbound") {
       return NextResponse.json({ status: "ignored", event: payload.event });
