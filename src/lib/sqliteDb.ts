@@ -70,6 +70,22 @@ export function getSqliteDb() {
     if (sqlite && sqlite.DatabaseSync) {
       const db = new sqlite.DatabaseSync(getSqlitePath());
       db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; PRAGMA busy_timeout = 5000; PRAGMA secure_delete = ON;");
+
+      // Convert the incompatible attempt table created by the short-lived PR28
+      // implementation, preserving its history before installing the canonical schema.
+      let legacyAttemptTable = false;
+      const priorAttemptTable = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'imessage_delivery_attempts'",
+      ).get();
+      if (priorAttemptTable) {
+        const columns = db.prepare("PRAGMA table_info(imessage_delivery_attempts)").all() as Array<{ name: string }>;
+        const names = new Set(columns.map((column) => column.name));
+        if (!names.has("attempt_no") || !names.has("state") || !names.has("message_id")) {
+          db.exec("DROP INDEX IF EXISTS imessage_delivery_attempts_tenant_task;");
+          db.exec("ALTER TABLE imessage_delivery_attempts RENAME TO imessage_delivery_attempts_legacy_v1;");
+          legacyAttemptTable = true;
+        }
+      }
       db.exec(`
         CREATE TABLE IF NOT EXISTS kv_state (
           key TEXT PRIMARY KEY,
@@ -107,25 +123,6 @@ export function getSqliteDb() {
         );
         CREATE INDEX IF NOT EXISTS imessage_deliveries_tenant_task ON imessage_deliveries(tenant_id, task_id);
 
-        -- Durable outbound attempts exist before the provider request begins.
-        -- A worker crash or transport timeout therefore remains visible and is
-        -- treated as ambiguous instead of silently disappearing or being resent.
-        CREATE TABLE IF NOT EXISTS imessage_delivery_attempts (
-          attempt_id TEXT PRIMARY KEY,
-          tenant_id TEXT NOT NULL,
-          task_id TEXT NOT NULL,
-          recipient TEXT NOT NULL,
-          sender_id TEXT NOT NULL,
-          status TEXT NOT NULL CHECK (status IN ('sending', 'accepted', 'failed', 'unknown')),
-          provider_message_id TEXT,
-          error_code INTEGER,
-          error_text TEXT,
-          created_at TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS imessage_delivery_attempts_tenant_task
-          ON imessage_delivery_attempts(tenant_id, task_id, created_at DESC);
-
         -- Callback inbox closes the race where LoopMessage calls back before
         -- the outbound worker has persisted the provider message_id.
         CREATE TABLE IF NOT EXISTS imessage_delivery_events (
@@ -140,6 +137,26 @@ export function getSqliteDb() {
         CREATE INDEX IF NOT EXISTS imessage_delivery_events_received
           ON imessage_delivery_events(received_at);
 
+        -- Durable outbound attempt ledger. A row is written BEFORE the provider
+        -- request so a send that fails without returning a message ID is still
+        -- recoverable instead of leaving the task silently undelivered.
+        CREATE TABLE IF NOT EXISTS imessage_delivery_attempts (
+          attempt_id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          recipient TEXT NOT NULL,
+          sender_id TEXT NOT NULL,
+          attempt_no INTEGER NOT NULL,
+          state TEXT NOT NULL CHECK (state IN ('pending_send', 'queued', 'processing', 'delivered', 'failed', 'unknown', 'unconfirmed')),
+          message_id TEXT UNIQUE,
+          error_code INTEGER,
+          error_detail TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS imessage_delivery_attempts_tenant_task
+          ON imessage_delivery_attempts(tenant_id, task_id);
+
         CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
           tenant_id TEXT NOT NULL,
           reminder_id TEXT NOT NULL,
@@ -150,11 +167,42 @@ export function getSqliteDb() {
           PRIMARY KEY (tenant_id, reminder_id)
         );
       `);
+      if (legacyAttemptTable) {
+        db.exec(`
+          INSERT INTO imessage_delivery_attempts
+            (attempt_id, tenant_id, task_id, recipient, sender_id, attempt_no, state, message_id, error_code, error_detail, created_at, updated_at)
+          SELECT legacy.attempt_id, legacy.tenant_id, legacy.task_id, legacy.recipient, legacy.sender_id,
+            ROW_NUMBER() OVER (PARTITION BY legacy.tenant_id, legacy.task_id ORDER BY legacy.created_at, legacy.attempt_id),
+            CASE legacy.status
+              WHEN 'accepted' THEN 'queued'
+              WHEN 'failed' THEN 'failed'
+              ELSE 'unconfirmed'
+            END,
+            legacy.provider_message_id, legacy.error_code, legacy.error_text, legacy.created_at, legacy.updated_at
+          FROM imessage_delivery_attempts_legacy_v1 AS legacy;
+          DROP TABLE imessage_delivery_attempts_legacy_v1;
+        `);
+      }
       const taskColumns = db.prepare("PRAGMA table_info(execution_tasks)").all() as Array<{name:string}>;
       if (!taskColumns.some((column) => column.name === "retry_of")) {
         db.exec("ALTER TABLE execution_tasks ADD COLUMN retry_of TEXT;");
       }
       db.exec("CREATE UNIQUE INDEX IF NOT EXISTS execution_tasks_one_retry_child ON execution_tasks(retry_of) WHERE retry_of IS NOT NULL;");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS imessage_delivery_attempts_number ON imessage_delivery_attempts(tenant_id, task_id, attempt_no);");
+      // Only one send may be in flight per task; retries are explicit and serialized.
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS imessage_delivery_attempts_in_flight ON imessage_delivery_attempts(tenant_id, task_id) WHERE state = 'pending_send';");
+      // Backfill the attempt ledger from pre-existing delivery records so tasks
+      // created before this migration keep a recoverable history.
+      db.exec(`
+        INSERT INTO imessage_delivery_attempts
+          (attempt_id, tenant_id, task_id, recipient, sender_id, attempt_no, state, message_id, error_code, error_detail, created_at, updated_at)
+        SELECT 'attempt_legacy_' || d.message_id, d.tenant_id, d.task_id, d.recipient, d.sender_id,
+          (SELECT COUNT(*) FROM imessage_deliveries d2
+            WHERE d2.tenant_id = d.tenant_id AND d2.task_id = d.task_id AND d2.created_at <= d.created_at),
+          d.status, d.message_id, d.error_code, NULL, d.created_at, d.updated_at
+        FROM imessage_deliveries d
+        WHERE NOT EXISTS (SELECT 1 FROM imessage_delivery_attempts a WHERE a.message_id = d.message_id);
+      `);
 
       const legacyVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vector_chunks'").get();
       const quarantinedVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'legacy_vector_chunks_quarantined'").get();
