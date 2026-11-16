@@ -70,9 +70,13 @@ export async function processUserMessage(params: {
   text: string;
   userHandle?: string;
   attachments?: Attachment[];
+  retryOfTaskId?: string;
 }): Promise<ChatMessage> {
   const tenantId = getNodeTenantRepositoryContext().tenantId;
-  const task = createExecutionTask({ tenantId, channel: params.channel, userHandle: params.userHandle });
+  const task = createExecutionTask({
+    tenantId, channel: params.channel, userHandle: params.userHandle,
+    retryOfTaskId: params.retryOfTaskId,
+  });
   startExecutionTask(tenantId, task.id);
   try {
     const reply = await processUserMessageCore({ ...params, taskId: task.id });
