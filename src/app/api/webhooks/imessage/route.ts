@@ -299,7 +299,7 @@ export async function POST(req: NextRequest) {
                   process.env.SENDBLUE_API_SECRET ||
                   "";
                 const statusCallback = process.env.VELNOR_PUBLIC_URL
-                  ? process.env.VELNOR_PUBLIC_URL.replace(/\\/+$/, "") + "/api/webhooks/imessage"
+                  ? process.env.VELNOR_PUBLIC_URL.replace(/\/+$/, "") + "/api/webhooks/imessage"
                   : "";
                 if (sendblueApiKey && sendblueApiSecret && sendblueFromNumber && statusCallback) {
                   const tracked = await sendTrackedSendblueMessage({
