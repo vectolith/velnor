@@ -10,7 +10,7 @@ process.env.VELNOR_DATA_DIR = dataDir;
 import { applyLoopMessageDeliveryEvent, getLoopMessageDelivery, recordLoopMessageQueued } from "../src/lib/channels/imessageDeliveryStore";
 import { closeSqliteDb } from "../src/lib/sqliteDb";
 
-test("LoopMessage delivery callbacks require matching message, recipient, and sender", () => {
+test("LoopMessage callbacks require matching message, recipient, and sender and are idempotent", () => {
   try {
     recordLoopMessageQueued({
       messageId: "loop-email-1", tenantId: "tenant-a", taskId: "task-a",
@@ -19,11 +19,11 @@ test("LoopMessage delivery callbacks require matching message, recipient, and se
     assert.equal(applyLoopMessageDeliveryEvent({
       messageId: "loop-email-1", recipient: "+15551234567",
       senderId: "velnor-email-sender", status: "delivered",
-    }), false);
+    }), "unmatched");
     assert.equal(applyLoopMessageDeliveryEvent({
       messageId: "loop-email-1", recipient: "alex@icloud.com",
       senderId: "another-sender", status: "delivered",
-    }), false);
+    }), "unmatched");
     assert.equal(getLoopMessageDelivery("tenant-b", "task-a"), null);
     assert.throws(() => recordLoopMessageQueued({
       messageId: "loop-email-1", tenantId: "tenant-b", taskId: "task-b",
@@ -33,12 +33,16 @@ test("LoopMessage delivery callbacks require matching message, recipient, and se
     assert.equal(applyLoopMessageDeliveryEvent({
       messageId: "loop-email-1", recipient: "alex@icloud.com",
       senderId: "velnor-email-sender", status: "delivered",
-    }), true);
+    }), "applied");
     assert.equal(getLoopMessageDelivery("tenant-a", "task-a")?.status, "delivered");
     assert.equal(applyLoopMessageDeliveryEvent({
       messageId: "loop-email-1", recipient: "alex@icloud.com",
+      senderId: "velnor-email-sender", status: "delivered",
+    }), "duplicate");
+    assert.equal(applyLoopMessageDeliveryEvent({
+      messageId: "loop-email-1", recipient: "alex@icloud.com",
       senderId: "velnor-email-sender", status: "failed",
-    }), false);
+    }), "duplicate");
     recordLoopMessageQueued({
       messageId: "loop-phone-1", tenantId: "tenant-a", taskId: "task-phone",
       recipient: "+2348012345678", senderId: "velnor-email-sender",
@@ -46,8 +50,34 @@ test("LoopMessage delivery callbacks require matching message, recipient, and se
     assert.equal(applyLoopMessageDeliveryEvent({
       messageId: "loop-phone-1", recipient: "+2348012345678",
       senderId: "velnor-email-sender", status: "delivered",
-    }), true);
+    }), "applied");
     assert.equal(getLoopMessageDelivery("tenant-a", "task-phone")?.recipient, "+2348012345678");
+  } finally {
+    closeSqliteDb();
+    fs.rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("callback received before outbound record is durably reconciled when message ID is persisted", () => {
+  try {
+    assert.equal(applyLoopMessageDeliveryEvent({
+      messageId: "loop-race-1", recipient: "alex@icloud.com",
+      senderId: "velnor-email-sender", status: "delivered",
+    }), "unmatched");
+
+    // Simulate the outbound request returning after the provider callback.
+    recordLoopMessageQueued({
+      messageId: "loop-race-1", tenantId: "tenant-race", taskId: "task-race",
+      recipient: "alex@icloud.com", senderId: "velnor-email-sender",
+    });
+    assert.equal(getLoopMessageDelivery("tenant-race", "task-race")?.status, "delivered");
+
+    // Replayed callback must not change the terminal state.
+    assert.equal(applyLoopMessageDeliveryEvent({
+      messageId: "loop-race-1", recipient: "alex@icloud.com",
+      senderId: "velnor-email-sender", status: "delivered",
+    }), "duplicate");
+    assert.equal(getLoopMessageDelivery("tenant-race", "task-race")?.status, "delivered");
   } finally {
     closeSqliteDb();
     fs.rmSync(dataDir, { recursive: true, force: true });
