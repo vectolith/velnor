@@ -2,7 +2,6 @@ import crypto from "crypto";
 import { after, NextRequest, NextResponse } from "next/server";
 import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
 import { sendSendblueMessage } from "@/lib/channels/sendblue";
-import { sendLoopMessage } from "@/lib/channels/loopmessage";
 import {
   authorizeJsonWebhook,
   authorizeTwilioRequest,
@@ -15,7 +14,8 @@ import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepos
 import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
 import { getLoopMessageRecipient, isLoopMessagePayload, normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
-import { createLoopMessageDeliveryAttempt, finishLoopMessageDeliveryAttempt, processLoopMessageCallbackPayload, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
+import { processLoopMessageCallbackPayload } from "@/lib/channels/imessageDeliveryStore";
+import { sendTrackedLoopMessage } from "@/lib/channels/trackedLoopMessageSend";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 const MAX_INPUT_CHARS = 8000;
@@ -286,48 +286,23 @@ export async function POST(req: NextRequest) {
                 ) {
                   const recipient = getLoopMessageRecipient(payload);
                   if (!recipient) throw new Error("LoopMessage inbound webhook did not provide a valid contact identity.");
-                  const attempt = createLoopMessageDeliveryAttempt({
-                    tenantId: getNodeTenantRepositoryContext().tenantId,
-                    taskId: reply.interactionId || "",
-                    recipient,
-                    senderId: loopMessageSenderId,
-                  });
-                  const sent = await sendLoopMessage({
+                  // Every outbound send is recorded as a durable attempt before the
+                  // provider call, so a reply that fails without a message ID stays
+                  // recoverable instead of being lost with the request.
+                  const tracked = await sendTrackedLoopMessage({
                     authKey: loopMessageAuthKey,
                     recipient,
                     text: outboundText,
                     senderId: loopMessageSenderId,
+                    tenantId: getNodeTenantRepositoryContext().tenantId,
+                    taskId: reply.interactionId || "inbound_" + (webhookId || senderHandle),
                   });
-                  deliveryResults.push(sent);
-                  if (sent.ok && sent.messageId) {
-                    // Persist the provider ID and callback correlation before marking
-                    // the attempt accepted. If persistence fails, 'sending' remains
-                    // visible and is later treated as ambiguous, not resent.
-                    recordLoopMessageQueued({
-                      messageId: sent.messageId,
-                      tenantId: getNodeTenantRepositoryContext().tenantId,
-                      taskId: reply.interactionId || "",
-                      recipient,
-                      senderId: loopMessageSenderId,
-                    });
-                    finishLoopMessageDeliveryAttempt({
-                      attemptId: attempt.attemptId,
-                      tenantId: attempt.tenantId,
-                      taskId: attempt.taskId,
-                      status: "accepted",
-                      providerMessageId: sent.messageId,
-                    });
-                  } else {
-                    const definiteRejection = sent.status !== undefined &&
-                      sent.status >= 400 && sent.status < 500 &&
-                      sent.status !== 408 && sent.status !== 429;
-                    finishLoopMessageDeliveryAttempt({
-                      attemptId: attempt.attemptId,
-                      tenantId: attempt.tenantId,
-                      taskId: attempt.taskId,
-                      status: definiteRejection ? "failed" : "unknown",
-                      errorCode: sent.status,
-                      errorText: sent.detail,
+                  deliveryResults.push(tracked.result);
+                  if (!tracked.result.ok || !tracked.result.messageId) {
+                    console.warn("LoopMessage outbound attempt not confirmed", {
+                      attemptId: tracked.attempt.attemptId,
+                      state: tracked.attempt.state,
+                      duplicateRisk: tracked.duplicateRisk,
                     });
                   }
                 }
