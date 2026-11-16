@@ -66,14 +66,14 @@ export function buildProviderChain(params: {
 
 /** USD per 1M tokens, [input, output]. Unknown models return zero. */
 const PRICES: Array<[RegExp, [number, number]]> = [
-  [/^gemini-3\\.8-flash/, [0.75, 3.75]],
-  [/^gemini-3\\.6-flash/, [0.75, 3.75]],
-  [/^gemini-2\\.5-pro/, [1.25, 10]],
-  [/^gemini-2\\.5-flash/, [0.3, 2.5]],
-  [/^gemini-2\\.0-flash/, [0.1, 0.4]],
+  [/^gemini-3\.8-flash/, [0.75, 3.75]],
+  [/^gemini-3\.6-flash/, [0.75, 3.75]],
+  [/^gemini-2\.5-pro/, [1.25, 10]],
+  [/^gemini-2\.5-flash/, [0.3, 2.5]],
+  [/^gemini-2\.0-flash/, [0.1, 0.4]],
   [/^gpt-4o-mini/, [0.15, 0.6]],
   [/^gpt-4o/, [2.5, 10]],
-  [/^gpt-4\\.1/, [2, 8]],
+  [/^gpt-4\.1/, [2, 8]],
   [/^o[134](-mini)?/, [1.5, 6]],
   [/^claude-opus-4/, [15, 75]],
   [/^claude-sonnet-4/, [3, 15]],
