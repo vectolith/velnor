@@ -162,6 +162,7 @@ test("LoopMessage uses its documented host, Authorization header, and contact fi
     const body = JSON.parse(String(init?.body));
     assert.equal(body.contact, "+15551234567");
     assert.equal(body.text, "Hello");
+    assert.equal(body.sender, "velnor-email-sender");
     assert.equal((init?.headers as Record<string, string>).Authorization, "loop-api-key");
     assert.equal("Loop-Secret-Key" in (init?.headers as Record<string, string>), false);
     return new Response(JSON.stringify({ success: true, message_id: "loop-message-123" }), { status: 200 });
