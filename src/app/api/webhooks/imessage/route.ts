@@ -15,7 +15,7 @@ import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepos
 import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
 import { getLoopMessageRecipient, isLoopMessagePayload, normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
-import { processLoopMessageCallbackPayload, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
+import { createLoopMessageDeliveryAttempt, finishLoopMessageDeliveryAttempt, processLoopMessageCallbackPayload, recordLoopMessageQueued } from "@/lib/channels/imessageDeliveryStore";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 const MAX_INPUT_CHARS = 8000;
@@ -286,6 +286,12 @@ export async function POST(req: NextRequest) {
                 ) {
                   const recipient = getLoopMessageRecipient(payload);
                   if (!recipient) throw new Error("LoopMessage inbound webhook did not provide a valid contact identity.");
+                  const attempt = createLoopMessageDeliveryAttempt({
+                    tenantId: getNodeTenantRepositoryContext().tenantId,
+                    taskId: reply.interactionId || "",
+                    recipient,
+                    senderId: loopMessageSenderId,
+                  });
                   const sent = await sendLoopMessage({
                     authKey: loopMessageAuthKey,
                     recipient,
@@ -294,12 +300,34 @@ export async function POST(req: NextRequest) {
                   });
                   deliveryResults.push(sent);
                   if (sent.ok && sent.messageId) {
+                    // Persist the provider ID and callback correlation before marking
+                    // the attempt accepted. If persistence fails, 'sending' remains
+                    // visible and is later treated as ambiguous, not resent.
                     recordLoopMessageQueued({
                       messageId: sent.messageId,
                       tenantId: getNodeTenantRepositoryContext().tenantId,
                       taskId: reply.interactionId || "",
                       recipient,
                       senderId: loopMessageSenderId,
+                    });
+                    finishLoopMessageDeliveryAttempt({
+                      attemptId: attempt.attemptId,
+                      tenantId: attempt.tenantId,
+                      taskId: attempt.taskId,
+                      status: "accepted",
+                      providerMessageId: sent.messageId,
+                    });
+                  } else {
+                    const definiteRejection = sent.status !== undefined &&
+                      sent.status >= 400 && sent.status < 500 &&
+                      sent.status !== 408 && sent.status !== 429;
+                    finishLoopMessageDeliveryAttempt({
+                      attemptId: attempt.attemptId,
+                      tenantId: attempt.tenantId,
+                      taskId: attempt.taskId,
+                      status: definiteRejection ? "failed" : "unknown",
+                      errorCode: sent.status,
+                      errorText: sent.detail,
                     });
                   }
                 }
