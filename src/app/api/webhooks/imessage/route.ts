@@ -305,7 +305,7 @@ export async function POST(req: NextRequest) {
                     taskId: reply.interactionId || "inbound_" + (webhookId || senderHandle),
                   });
                   deliveryResults.push(tracked.result);
-                  if (!tracked.result.ok || !tracked.result.messageId || tracked.trackingDegraded) {
+                  if (!tracked.result.ok || !tracked.result.messageId || tracked.trackingDegraded || tracked.attempt.state === "failed") {
                     console.warn("Sendblue outbound attempt requires attention", {
                       attemptId: tracked.attempt.attemptId,
                       state: tracked.attempt.state,
