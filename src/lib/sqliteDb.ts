@@ -107,6 +107,20 @@ export function getSqliteDb() {
         );
         CREATE INDEX IF NOT EXISTS imessage_deliveries_tenant_task ON imessage_deliveries(tenant_id, task_id);
 
+        -- Callback inbox closes the race where LoopMessage calls back before
+        -- the outbound worker has persisted the provider message_id.
+        CREATE TABLE IF NOT EXISTS imessage_delivery_events (
+          message_id TEXT NOT NULL,
+          recipient TEXT NOT NULL,
+          sender_id TEXT NOT NULL,
+          event_status TEXT NOT NULL CHECK (event_status IN ('delivered', 'failed')),
+          error_code INTEGER,
+          received_at TEXT NOT NULL,
+          PRIMARY KEY (message_id, recipient, sender_id, event_status)
+        );
+        CREATE INDEX IF NOT EXISTS imessage_delivery_events_received
+          ON imessage_delivery_events(received_at);
+
         CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
           tenant_id TEXT NOT NULL,
           reminder_id TEXT NOT NULL,
