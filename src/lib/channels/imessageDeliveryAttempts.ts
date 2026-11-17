@@ -3,7 +3,7 @@ import { getSqliteDb } from "../sqliteDb";
 import type { OutboundSendCertainty } from "./types";
 
 /**
- * Durable outbound attempt ledger for LoopMessage sends.
+ * Durable outbound attempt ledger for iMessage providers (LoopMessage, Sendblue).
  *
  * A row is written before the provider request, so an attempt that fails
  * without a provider message ID still has a recoverable record. States:
@@ -14,11 +14,14 @@ import type { OutboundSendCertainty } from "./types";
  *   established (timeout, 5xx, 2xx without a message ID, crashed worker).
  *   A retry is allowed but may duplicate a message that actually landed.
  */
+export type IMessageProvider = "loopmessage" | "sendblue";
+
 export type LoopMessageAttemptState =
   | "pending_send" | "queued" | "processing" | "delivered" | "failed" | "unknown" | "unconfirmed";
 
 export interface LoopMessageDeliveryAttempt {
   attemptId: string;
+  provider: IMessageProvider;
   tenantId: string;
   taskId: string;
   recipient: string;
@@ -33,32 +36,35 @@ export interface LoopMessageDeliveryAttempt {
 }
 
 interface AttemptRow {
-  attempt_id: string; tenant_id: string; task_id: string; recipient: string; sender_id: string;
-  attempt_no: number; state: LoopMessageAttemptState; message_id: string | null;
-  error_code: number | null; error_detail: string | null; created_at: string; updated_at: string;
+  attempt_id: string; provider: IMessageProvider; tenant_id: string; task_id: string;
+  recipient: string; sender_id: string; attempt_no: number; state: LoopMessageAttemptState;
+  message_id: string | null; error_code: number | null; error_detail: string | null;
+  created_at: string; updated_at: string;
 }
 
 export class LoopMessageAttemptInFlightError extends Error {
-  constructor() {
-    super("A LoopMessage send is already in flight for this task.");
+  constructor(message = "An iMessage send is already in flight for this task.") {
+    super(message);
     this.name = "LoopMessageAttemptInFlightError";
   }
 }
 
 function db() {
   const database = getSqliteDb();
-  if (!database) throw new Error("Durable LoopMessage attempts require Node SQLite; refusing ephemeral delivery state.");
+  if (!database) throw new Error("Durable iMessage attempts require Node SQLite; refusing ephemeral delivery state.");
   return database;
 }
 
-function requireIdentity(input: { tenantId: string; taskId: string; recipient: string; senderId: string }): void {
-  if (!input.tenantId || !input.taskId) throw new Error("A LoopMessage attempt requires a tenant and task identity.");
-  if (!input.recipient || !input.senderId) throw new Error("A LoopMessage attempt requires a recipient and sender identity.");
+function requireIdentity(input: {
+  provider: IMessageProvider; tenantId: string; taskId: string; recipient: string; senderId: string;
+}): void {
+  if (!input.tenantId || !input.taskId) throw new Error("An iMessage attempt requires a tenant and task identity.");
+  if (!input.recipient || !input.senderId) throw new Error("An iMessage attempt requires a recipient and sender identity.");
 }
 
 function fromRow(row: AttemptRow): LoopMessageDeliveryAttempt {
   return {
-    attemptId: row.attempt_id, tenantId: row.tenant_id, taskId: row.task_id,
+    attemptId: row.attempt_id, provider: row.provider, tenantId: row.tenant_id, taskId: row.task_id,
     recipient: row.recipient, senderId: row.sender_id, attemptNo: row.attempt_no,
     state: row.state, messageId: row.message_id, errorCode: row.error_code,
     errorDetail: row.error_detail, createdAt: row.created_at, updatedAt: row.updated_at,
@@ -67,9 +73,11 @@ function fromRow(row: AttemptRow): LoopMessageDeliveryAttempt {
 
 /** Persist intent to send BEFORE the provider request so it can never be lost. */
 export function beginLoopMessageAttempt(input: {
+  provider?: IMessageProvider;
   tenantId: string; taskId: string; recipient: string; senderId: string;
 }): LoopMessageDeliveryAttempt {
-  requireIdentity(input);
+  const provider = input.provider ?? "loopmessage";
+  requireIdentity({ ...input, provider });
   const database = db();
   const now = new Date().toISOString();
   const attemptId = "attempt_" + randomUUID();
@@ -82,16 +90,16 @@ export function beginLoopMessageAttempt(input: {
     try {
       database.prepare(`
         INSERT INTO imessage_delivery_attempts
-          (attempt_id, tenant_id, task_id, recipient, sender_id, attempt_no, state, message_id, error_code, error_detail, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'pending_send', NULL, NULL, NULL, ?, ?)
-      `).run(attemptId, input.tenantId, input.taskId, input.recipient, input.senderId, attemptNo, now, now);
+          (attempt_id, provider, tenant_id, task_id, recipient, sender_id, attempt_no, state, message_id, error_code, error_detail, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_send', NULL, NULL, NULL, ?, ?)
+      `).run(attemptId, provider, input.tenantId, input.taskId, input.recipient, input.senderId, attemptNo, now, now);
     } catch (error) {
       if (error instanceof Error && /UNIQUE/i.test(error.message)) throw new LoopMessageAttemptInFlightError();
       throw error;
     }
     const row = database.prepare("SELECT * FROM imessage_delivery_attempts WHERE attempt_id = ?")
       .get(attemptId) as AttemptRow | undefined;
-    if (!row) throw new Error("LoopMessage attempt was not persisted.");
+    if (!row) throw new Error("iMessage attempt was not persisted.");
     database.exec("COMMIT");
     return fromRow(row);
   } catch (error) {
@@ -119,9 +127,9 @@ export function finishLoopMessageAttempt(attemptId: string, outcome: {
   ) as { changes?: number };
   const row = database.prepare("SELECT * FROM imessage_delivery_attempts WHERE attempt_id = ?")
     .get(attemptId) as AttemptRow | undefined;
-  if (!row) throw new Error("LoopMessage attempt was not found.");
+  if (!row) throw new Error("iMessage attempt was not found.");
   if (Number(result.changes) !== 1 && row.state === "pending_send") {
-    throw new Error("LoopMessage attempt could not be finalized.");
+    throw new Error("iMessage attempt could not be finalized.");
   }
   return fromRow(row);
 }
@@ -169,22 +177,56 @@ export function syncLoopMessageAttemptFromProviderStatus(input: {
   return Number(result.changes) === 1;
 }
 
-export function getLatestLoopMessageAttempt(tenantId: string, taskId: string): LoopMessageDeliveryAttempt | null {
-  if (!tenantId || !taskId) return null;
-  const row = db().prepare(`
-    SELECT * FROM imessage_delivery_attempts WHERE tenant_id = ? AND task_id = ?
-    ORDER BY attempt_no DESC LIMIT 1
-  `).get(tenantId, taskId) as AttemptRow | undefined;
+/**
+ * Apply a provider delivery callback to the attempt that owns the message ID.
+ * Returns null when no attempt has claimed that ID yet, so the caller can
+ * acknowledge the callback and let correlation happen after persistence.
+ */
+export function syncAttemptByMessageId(input: {
+  messageId: string;
+  provider: IMessageProvider;
+  status: "processing" | "failed" | "delivered" | "unknown";
+  errorCode?: number | null;
+  errorDetail?: string | null;
+}): LoopMessageDeliveryAttempt | null {
+  if (!input.messageId) return null;
+  const database = db();
+  database.prepare(`
+    UPDATE imessage_delivery_attempts
+    SET state = ?, error_code = COALESCE(?, error_code),
+        error_detail = COALESCE(?, error_detail), updated_at = ?
+    WHERE provider = ? AND message_id = ? AND state <> 'delivered'
+  `).run(
+    input.status, input.errorCode ?? null,
+    input.errorDetail ? String(input.errorDetail).slice(0, 500) : null,
+    new Date().toISOString(), input.provider, input.messageId,
+  );
+  const row = database.prepare(
+    "SELECT * FROM imessage_delivery_attempts WHERE provider = ? AND message_id = ?",
+  ).get(input.provider, input.messageId) as AttemptRow | undefined;
   return row ? fromRow(row) : null;
 }
 
-export function listLoopMessageAttempts(tenantId: string, taskId: string, limit = 20): LoopMessageDeliveryAttempt[] {
+export function getLatestLoopMessageAttempt(
+  tenantId: string, taskId: string, provider: IMessageProvider = "loopmessage",
+): LoopMessageDeliveryAttempt | null {
+  if (!tenantId || !taskId) return null;
+  const row = db().prepare(`
+    SELECT * FROM imessage_delivery_attempts WHERE tenant_id = ? AND task_id = ? AND provider = ?
+    ORDER BY attempt_no DESC LIMIT 1
+  `).get(tenantId, taskId, provider) as AttemptRow | undefined;
+  return row ? fromRow(row) : null;
+}
+
+export function listLoopMessageAttempts(
+  tenantId: string, taskId: string, limit = 20, provider: IMessageProvider = "loopmessage",
+): LoopMessageDeliveryAttempt[] {
   if (!tenantId || !taskId) return [];
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("Attempt history limit must be between 1 and 100.");
   const rows = db().prepare(`
-    SELECT * FROM imessage_delivery_attempts WHERE tenant_id = ? AND task_id = ?
+    SELECT * FROM imessage_delivery_attempts WHERE tenant_id = ? AND task_id = ? AND provider = ?
     ORDER BY attempt_no DESC LIMIT ?
-  `).all(tenantId, taskId, limit) as AttemptRow[];
+  `).all(tenantId, taskId, provider, limit) as AttemptRow[];
   return rows.map(fromRow);
 }
 

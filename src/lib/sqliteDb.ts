@@ -126,6 +126,7 @@ export function getSqliteDb() {
         -- recoverable instead of leaving the task silently undelivered.
         CREATE TABLE IF NOT EXISTS imessage_delivery_attempts (
           attempt_id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL DEFAULT 'loopmessage',
           tenant_id TEXT NOT NULL,
           task_id TEXT NOT NULL,
           recipient TEXT NOT NULL,
@@ -141,6 +142,28 @@ export function getSqliteDb() {
         CREATE INDEX IF NOT EXISTS imessage_delivery_attempts_tenant_task
           ON imessage_delivery_attempts(tenant_id, task_id);
 
+        -- Durable inbound webhook dedupe. Providers retry on slow responses and
+        -- an in-memory cache forgets across restarts and instances, which would
+        -- run the agent (and bill the model) twice for one message.
+        CREATE TABLE IF NOT EXISTS inbound_webhook_events (
+          provider TEXT NOT NULL,
+          event_key TEXT NOT NULL,
+          received_at TEXT NOT NULL,
+          PRIMARY KEY (provider, event_key)
+        );
+        CREATE INDEX IF NOT EXISTS inbound_webhook_events_received
+          ON inbound_webhook_events(received_at);
+
+        -- Delivery callbacks can arrive before the outbound attempt has stored
+        -- its message handle. Buffer them by handle and apply on persistence.
+        CREATE TABLE IF NOT EXISTS sendblue_status_events (
+          message_handle TEXT PRIMARY KEY,
+          state TEXT NOT NULL CHECK (state IN ('processing', 'delivered', 'failed', 'unknown')),
+          error_code INTEGER,
+          error_detail TEXT,
+          received_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
           tenant_id TEXT NOT NULL,
           reminder_id TEXT NOT NULL,
@@ -151,6 +174,10 @@ export function getSqliteDb() {
           PRIMARY KEY (tenant_id, reminder_id)
         );
       `);
+      const attemptColumns = db.prepare("PRAGMA table_info(imessage_delivery_attempts)").all() as Array<{name:string}>;
+      if (!attemptColumns.some((column) => column.name === "provider")) {
+        db.exec("ALTER TABLE imessage_delivery_attempts ADD COLUMN provider TEXT NOT NULL DEFAULT 'loopmessage';");
+      }
       const taskColumns = db.prepare("PRAGMA table_info(execution_tasks)").all() as Array<{name:string}>;
       if (!taskColumns.some((column) => column.name === "retry_of")) {
         db.exec("ALTER TABLE execution_tasks ADD COLUMN retry_of TEXT;");

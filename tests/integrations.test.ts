@@ -152,7 +152,9 @@ test("Sendblue uses the documented send-message contract and sender line", async
       content: "Hello",
     });
     assert.equal(result.ok, true);
-    assert.match(result.detail || "", /sendblue-handle/);
+    assert.equal(result.messageId, "sendblue-handle");
+    assert.equal(result.sendCertainty, "accepted");
+    assert.equal(result.deliveryStatus, "queued");
   });
 });
 
