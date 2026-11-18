@@ -55,7 +55,7 @@ test("loopmessage sends Apple ID email recipients through the configured email s
   let body: any = null;
   const restore = stubFetch((_input, init) => {
     body = JSON.parse(String(init?.body));
-    return new Response(JSON.stringify({ message_id: "msg-1" }), {
+    return new Response(JSON.stringify({ message_id: "loop-email-success-msg-1" }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
@@ -73,7 +73,7 @@ test("loopmessage sends Apple ID email recipients through the configured email s
       text: "Here is your result",
       sender: "email-sender-id",
     });
-    assert.equal(result.messageId, "msg-1");
+    assert.equal(result.messageId, "loop-email-success-msg-1");
     assert.equal(result.deliveryStatus, "queued");
   } finally {
     restore();
