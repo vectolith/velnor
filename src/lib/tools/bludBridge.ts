@@ -55,7 +55,7 @@ function isExecutionReceipt(value: unknown): value is BrowserExecutionReceipt {
 
 /**
  * Delegate a browser task to Blud. A success response is accepted only when
- * Blud returns an authenticated, structurally valid completion receipt.
+ * Blud returns an authenticated completion receipt with a valid evidence digest.
  */
 export async function delegateBrowserTaskToBlud(
   options: BrowserTaskOptions
@@ -137,7 +137,7 @@ export async function delegateBrowserTaskToBlud(
     if (!data || data.status !== "success" || !isExecutionReceipt(data.executionReceipt)) {
       return {
         status: data?.status === "offline" ? "offline" : "failure",
-        summary: data?.message || "Blud did not provide a verifiable browser execution receipt.",
+        summary: data?.message || "Blud did not provide a valid browser execution receipt.",
         error: data?.error || "A success status without a valid executionReceipt is rejected.",
         observedAtUtc: receivedAtUtc,
       };
@@ -146,7 +146,7 @@ export async function delegateBrowserTaskToBlud(
     const receipt = data.executionReceipt;
     return {
       status: "success",
-      summary: data.message || "Browser task completed with a verified execution receipt.",
+      summary: data.message || "Browser task completed with a validated execution receipt.",
       currentUrl: receipt.finalUrl,
       extractedData:
         data.data && typeof data.data === "object" && !Array.isArray(data.data)
