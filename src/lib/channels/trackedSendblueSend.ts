@@ -33,7 +33,8 @@ export async function sendTrackedSendblueMessage(input: {
   allowAmbiguousRetry?: boolean;
 }): Promise<TrackedSendblueSend> {
   const previous = getLatestLoopMessageAttempt(input.tenantId, input.taskId, "sendblue");
-  const previousWasAmbiguous = previous?.state === "unconfirmed" || previous?.state === "unknown";
+  const previousSmsDowngrade = /downgraded(?: this message)? to SMS/i.test(previous?.errorDetail || "");
+  const previousWasAmbiguous = previous?.state === "unconfirmed" || previous?.state === "unknown" || previousSmsDowngrade;
 
   let started: LoopMessageDeliveryAttempt;
   try {
@@ -92,7 +93,21 @@ export async function sendTrackedSendblueMessage(input: {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    return { result, attempt, duplicateRisk: previousWasAmbiguous };
+    const reconciledAttempt = getLatestLoopMessageAttempt(input.tenantId, input.taskId, "sendblue") ?? attempt;
+    const smsDowngrade = /downgraded(?: this message)? to SMS/i.test(reconciledAttempt.errorDetail || "");
+    if (smsDowngrade) {
+      return {
+        result: {
+          ...result,
+          ok: false,
+          detail: reconciledAttempt.errorDetail || "Sendblue downgraded this message to SMS; iMessage delivery is not confirmed.",
+          sendCertainty: "ambiguous",
+        },
+        attempt: reconciledAttempt,
+        duplicateRisk: true,
+      };
+    }
+    return { result, attempt: reconciledAttempt, duplicateRisk: previousWasAmbiguous };
   }
 
   const state = attemptStateForCertainty(result.sendCertainty);
