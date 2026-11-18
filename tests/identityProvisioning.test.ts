@@ -11,13 +11,14 @@ process.env.VELNOR_SECRET_KEY = "test-secret-key-for-provisioning-tests-32-bytes
 process.env.VELNOR_PROVISIONING_SECRET = "test-provisioning-secret-with-at-least-32-bytes";
 
 let provision: typeof import("../src/app/api/internal/tenants/provision/route").POST;
-let listUserIds: typeof import("../src/lib/store").listUserIds;
-let sanitizeUserId: typeof import("../src/lib/store").sanitizeUserId;
+let withVelnorTenantScope: typeof import("../src/lib/store").withVelnorTenantScope;
 let resetStoreCache: typeof import("../src/lib/store").resetStoreCache;
+let getNodeTenantRepositoryContext: typeof import("../src/lib/storage/currentTenantRepository").getNodeTenantRepositoryContext;
 
 before(async () => {
   ({ POST: provision } = await import("../src/app/api/internal/tenants/provision/route"));
-  ({ listUserIds, sanitizeUserId, resetStoreCache } = await import("../src/lib/store"));
+  ({ withVelnorTenantScope, resetStoreCache } = await import("../src/lib/store"));
+  ({ getNodeTenantRepositoryContext } = await import("../src/lib/storage/currentTenantRepository"));
 });
 
 function request(body: unknown, secret = process.env.VELNOR_PROVISIONING_SECRET || "") {
@@ -56,8 +57,19 @@ test("tenant provisioning creates a deterministic tenant partition idempotently"
   assert.equal(first.status, 200);
   assert.deepEqual(await first.json(), { ok: true, tenantId });
 
+  const readProvisionedState = () =>
+    withVelnorTenantScope(tenantId, async () => {
+      const { repository, tenantId: scopedTenantId } =
+        getNodeTenantRepositoryContext();
+      return repository.load(scopedTenantId);
+    });
+  const firstState = await readProvisionedState();
+  assert.ok(firstState);
+  const firstRevision = firstState.revision;
+
   const second = await provision(request({ tenantId }));
   assert.equal(second.status, 200);
-  const stored = new Set(listUserIds().map((id) => sanitizeUserId(id)));
-  assert.equal(stored.has(sanitizeUserId(tenantId)), true);
+  const secondState = await readProvisionedState();
+  assert.ok(secondState);
+  assert.equal(secondState.revision, firstRevision);
 });
