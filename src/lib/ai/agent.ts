@@ -17,7 +17,6 @@ import { ingestDocumentOrUrl, queryVectorDocuments } from "../tools/documentStor
 import { generateImageWithProvider } from "../tools/multimodal";
 import { buildTravelPlan } from "../tools/travelService";
 import { performWebSearch } from "../tools/webSearch";
-import { delegateBrowserTaskToBlud } from "../tools/bludBridge";
 import {
   createCalendarEvent,
   draftOrSendEmail,
@@ -37,7 +36,7 @@ You have tools to:
 4. Set and list text reminders & tasks (create_reminder, list_reminders).
 5. Generate images on demand (generate_image) and analyze user-attached images.
 6. Plan trips, suggest local places, translate phrases, and generate flight/hotel booking links (plan_trip_or_local).
-7. Delegate complex browser automation, multi-step web scraping, and interactive navigation to Blud's Kernel coordinator (delegate_browser_task).`;
+`;
 
 export { VELNOR_FUNCTION_DECLARATIONS, VELNOR_TOOLS } from "./tools/declarations";
 export { executeToolCall } from "./tools/execute";
@@ -122,8 +121,11 @@ export async function processUserMessage(params: {
     ? VELNOR_SYSTEM_PROMPT + "\n\nKnown User Preferences & Memory Facts:\n" + memoryLines
     : VELNOR_SYSTEM_PROMPT;
 
-  // Provider/model identity is preserved by default. Cross-provider failover
-  // changes the executing model and is therefore an explicit deployment opt-in.
+  // =========================================================================
+  // Unified provider chain + one tool loop for every model.
+  // Providers are tried in order; a failure (bad key, timeout, 5xx) moves on
+  // instead of silently degrading to a regex handler.
+  // =========================================================================
   const providerKeys = { gemini: geminiApiKey, openai: openaiApiKey, anthropic: anthropicApiKey };
   const providerConfigurationError = getExplicitProviderConfigurationError(
     state.config.activeProvider,
@@ -210,7 +212,7 @@ export async function processUserMessage(params: {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       providerFailures.push(slot.id + ": " + message);
-      console.warn("[velnor] selected provider " + slot.id + " failed:", message);
+      console.warn("[velnor] provider " + slot.id + " failed, trying next:", message);
     }
   }
 
@@ -249,8 +251,6 @@ export async function processUserMessage(params: {
     replyText =
       "The configured AI provider/model could not complete this request. No alternate provider or model was substituted. Check the selected provider configuration and retry.";
   } else if (!replyText) {
-    // The built-in capability router is used only when no external provider
-    // was selected/configured, never as a silent replacement after failure.
     replyText = await runBuiltInAgentOrchestrator(params, bundle, tenantContext);
   }
 
