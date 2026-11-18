@@ -21,6 +21,10 @@ Reports may cover authentication, authorization, cryptography, data exposure,
 tenant isolation, unsafe parsing, dependency vulnerabilities, build/release
 integrity, and deployment configuration in this repository.
 
+Velnor owns its own identity, authorization, tenant storage, credentials,
+integrations and execution runtime. Do not assume a different Vectolith product
+is a trusted identity provider, secret store, database, or required runtime.
+
 Do not test against third-party services, accounts, wallets, homeservers,
 production deployments, or other users' data without explicit authorization.
 Do not perform destructive testing, denial-of-service testing, or social
