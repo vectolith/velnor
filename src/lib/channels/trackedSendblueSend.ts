@@ -2,7 +2,7 @@ import { sendSendblueMessage, type SendblueSendInput } from "./sendblue";
 import type { SendResult } from "./types";
 import {
   beginLoopMessageAttempt, finishLoopMessageAttempt, attemptStateForCertainty,
-  getLatestLoopMessageAttempt, type LoopMessageDeliveryAttempt,
+  getLatestLoopMessageAttempt, LoopMessageAttemptBlockedError, type LoopMessageDeliveryAttempt,
 } from "./imessageDeliveryAttempts";
 import { applyPendingSendblueStatus } from "./sendblueStatusStore";
 
@@ -29,17 +29,32 @@ export async function sendTrackedSendblueMessage(input: {
   config: Pick<SendblueSendInput, "apiKeyId" | "apiSecret" | "fromNumber" | "timeoutMs">;
   text: string;
   mediaUrl?: string;
+  /** Reserved for an explicit, provider-reconciled user retry. */
+  allowAmbiguousRetry?: boolean;
 }): Promise<TrackedSendblueSend> {
   const previous = getLatestLoopMessageAttempt(input.tenantId, input.taskId, "sendblue");
   const previousWasAmbiguous = previous?.state === "unconfirmed" || previous?.state === "unknown";
 
-  const started = beginLoopMessageAttempt({
-    provider: "sendblue",
-    tenantId: input.tenantId,
-    taskId: input.taskId,
-    recipient: input.recipient,
-    senderId: input.senderId,
-  });
+  let started: LoopMessageDeliveryAttempt;
+  try {
+    started = beginLoopMessageAttempt({
+      provider: "sendblue",
+      tenantId: input.tenantId,
+      taskId: input.taskId,
+      recipient: input.recipient,
+      senderId: input.senderId,
+      allowAmbiguousRetry: input.allowAmbiguousRetry,
+    });
+  } catch (error) {
+    if (!(error instanceof LoopMessageAttemptBlockedError)) throw error;
+    const attempt = getLatestLoopMessageAttempt(input.tenantId, input.taskId, "sendblue");
+    if (!attempt) throw error;
+    return {
+      result: { provider: "sendblue", ok: false, detail: error.message, sendCertainty: "ambiguous" },
+      attempt,
+      duplicateRisk: attempt.state !== "delivered",
+    };
+  }
 
   const finalize = (outcome: {
     state: "queued" | "failed" | "unconfirmed";
