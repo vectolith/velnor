@@ -46,7 +46,7 @@ test("sendblue reports a provider rejection instead of claiming success", async 
 });
 
 test("sendblue refuses to run without credentials", async () => {
-  const result = await sendSendblueMessage({ apiKeyId: "", apiSecretKey: "", number: "+1555", content: "hi" });
+  const result = await sendSendblueMessage({ apiKeyId: "", apiSecretKey: "", number: "+1555", fromNumber: "+15550001", content: "hi", statusCallback: "https://example.com/api/webhooks/imessage" });
   assert.equal(result.ok, false);
   assert.match(String(result.detail), /requires API credentials/);
 });
