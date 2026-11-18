@@ -24,6 +24,7 @@ export interface BrowserTaskResult {
   images?: string[];
   error?: string;
   observedAtUtc: string;
+  sessionRef?: string;
 }
 
 const DEFAULT_BLUD_RPC_URL = "http://127.0.0.1:3000/api/internal/browser-worker";
@@ -140,6 +141,8 @@ export async function delegateBrowserTaskToBlud(
         summary: data?.message || "Blud did not provide a valid browser execution receipt.",
         error: data?.error || "A success status without a valid executionReceipt is rejected.",
         observedAtUtc: receivedAtUtc,
+        sessionRef:
+          typeof data?.sessionRef === "string" ? data.sessionRef : undefined,
       };
     }
 
@@ -154,6 +157,8 @@ export async function delegateBrowserTaskToBlud(
           : undefined,
       images: Array.isArray(data.images) ? data.images : [],
       observedAtUtc: receipt.completedAtUtc,
+      sessionRef:
+        typeof data.sessionRef === "string" ? data.sessionRef : undefined,
     };
   } catch (err: unknown) {
     const isTimeout = err instanceof Error && err.name === "AbortError";
