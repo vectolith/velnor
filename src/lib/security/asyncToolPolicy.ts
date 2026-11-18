@@ -5,7 +5,6 @@ export const SENSITIVE_TOOLS = new Set([
   "draft_or_send_email",
   "create_calendar_event",
   "organize_email",
-  "delegate_browser_task",
 ]);
 
 const PENDING_TTL_MS = 5 * 60 * 1000;
