@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildProviderChain, estimateCostUsd } from "../src/lib/ai/registry";
+import { buildProviderChain, estimateCostUsd, getExplicitProviderConfigurationError } from "../src/lib/ai/registry";
 
 test("explicit provider selection does not substitute another configured provider", () => {
   const chain = buildProviderChain({
@@ -47,4 +47,21 @@ test("cost estimate uses per-model pricing", () => {
   const cost = estimateCostUsd("gpt-4o", 1_000_000, 1_000_000);
   assert.equal(cost, 12.5);
   assert.equal(estimateCostUsd("unknown-model", 1000, 1000), 0);
+});
+
+
+test("an explicitly selected provider with no key returns a configuration error instead of fallback", () => {
+  assert.match(
+    getExplicitProviderConfigurationError("anthropic", { gemini: "g", openai: "o" }) || "",
+    /explicitly selected.*no API key/i,
+  );
+  assert.equal(getExplicitProviderConfigurationError("auto", {}), null);
+  assert.equal(getExplicitProviderConfigurationError("anthropic", { anthropic: "a" }), null);
+});
+
+test("an unsupported non-auto provider selection fails closed", () => {
+  assert.match(
+    getExplicitProviderConfigurationError("unknown-provider", { gemini: "g" }) || "",
+    /unsupported explicitly selected/i,
+  );
 });
