@@ -5,6 +5,7 @@ import { delegateBrowserTaskToBlud } from "../src/lib/tools/bludBridge";
 const originalFetch = globalThis.fetch;
 const originalSecret = process.env.BLUD_INTERNAL_KEY;
 const originalSharedSecret = process.env.VELNOR_SHARED_SECRET;
+const originalRpcUrl = process.env.BLUD_INTERNAL_RPC_URL;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -12,7 +13,8 @@ afterEach(() => {
   else process.env.BLUD_INTERNAL_KEY = originalSecret;
   if (originalSharedSecret === undefined) delete process.env.VELNOR_SHARED_SECRET;
   else process.env.VELNOR_SHARED_SECRET = originalSharedSecret;
-  delete process.env.BLUD_INTERNAL_RPC_URL;
+  if (originalRpcUrl === undefined) delete process.env.BLUD_INTERNAL_RPC_URL;
+  else process.env.BLUD_INTERNAL_RPC_URL = originalRpcUrl;
 });
 
 test("returns failure when task description is empty", async () => {
@@ -81,7 +83,7 @@ test("accepts success only with a structurally valid completion receipt", async 
   const result = await delegateBrowserTaskToBlud({ task: "Inspect the current page" });
   assert.equal(result.status, "success");
   assert.equal(result.currentUrl, "https://example.com/");
-  assert.equal(result.verifiedAtUtc, completedAtUtc);
+  assert.equal(result.observedAtUtc, completedAtUtc);
   assert.deepEqual(result.extractedData, { title: "Example Domain" });
 });
 
@@ -93,5 +95,5 @@ test("returns offline status when Blud RPC endpoint is unreachable", async () =>
     timeoutMs: 1500,
   });
   assert.equal(result.status, "offline");
-  assert.ok(result.verifiedAtUtc);
+  assert.ok(result.observedAtUtc);
 });
