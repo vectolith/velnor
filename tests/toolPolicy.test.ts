@@ -63,7 +63,7 @@ test("affirmation detection is strict", () => {
 });
 
 test("the sensitive set is exactly the tools that leave the machine", () => {
-  assert.deepEqual([...SENSITIVE_TOOLS].sort(), ["create_calendar_event", "delegate_browser_task", "draft_or_send_email", "organize_email"]);
+  assert.deepEqual([...SENSITIVE_TOOLS].sort(), ["create_calendar_event", "draft_or_send_email", "organize_email"]);
 });
 
 test("confirmation is bound to exact arguments", () => {

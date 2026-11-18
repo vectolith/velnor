@@ -14,7 +14,6 @@ import { getNodeTenantRepositoryContext } from "../../storage/currentTenantRepos
 import { generateImageWithProvider } from "../../tools/multimodal";
 import { buildTravelPlan } from "../../tools/travelService";
 import { performWebSearch } from "../../tools/webSearch";
-import { delegateBrowserTaskToBlud } from "../../tools/bludBridge";
 import {
   createCalendarEvent,
   createReminderAsync,
@@ -261,18 +260,6 @@ export async function executeToolCall(
         status: "info",
       });
       return { memories };
-    }
-    case "delegate_browser_task": {
-      const task = String(args.task || "");
-      const startUrl = args.startUrl ? String(args.startUrl) : undefined;
-      const res = await delegateBrowserTaskToBlud({ task, startUrl });
-      bundle.toolActions.push({
-        tool: "delegate_browser_task",
-        label: `Blud Browser Task: ${res.status.toUpperCase()}`,
-        status: res.status === "success" ? "success" : res.status === "offline" ? "info" : "error",
-        details: res.summary,
-      });
-      return { browserResult: res };
     }
     default:
       return { error: `Unknown tool ${name}` };
