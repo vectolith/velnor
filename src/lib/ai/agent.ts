@@ -17,7 +17,6 @@ import { ingestDocumentOrUrl, queryVectorDocuments } from "../tools/documentStor
 import { generateImageWithProvider } from "../tools/multimodal";
 import { buildTravelPlan } from "../tools/travelService";
 import { performWebSearch } from "../tools/webSearch";
-import { delegateBrowserTaskToBlud } from "../tools/bludBridge";
 import {
   createCalendarEvent,
   draftOrSendEmail,
@@ -37,7 +36,7 @@ You have tools to:
 4. Set and list text reminders & tasks (create_reminder, list_reminders).
 5. Generate images on demand (generate_image) and analyze user-attached images.
 6. Plan trips, suggest local places, translate phrases, and generate flight/hotel booking links (plan_trip_or_local).
-${process.env.VELNOR_ENABLE_BLUD_INTEGRATION === "1" ? "7. Optionally delegate browser automation to the separately configured Blud integration (delegate_browser_task)." : ""}`;
+`;
 
 export { VELNOR_FUNCTION_DECLARATIONS, VELNOR_TOOLS } from "./tools/declarations";
 export { executeToolCall } from "./tools/execute";
