@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getStore, listUserIds, saveStore, withVelnorUser } from "@/lib/store";
+import { DEFAULT_STATE } from "@/lib/store";
+import { createNodeSqliteTenantRepository } from "@/lib/storage/nodeSqliteTenantRepository";
+import type { PersistedTenantState } from "@/lib/storage/d1TenantState";
 import { secretsEnabled } from "@/lib/security/secretBox";
 
 export const runtime = "nodejs";
@@ -31,13 +33,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Credential encryption is not configured." }, { status: 503 });
   }
 
-  const tenantIds = listUserIds();
+  const repository = createNodeSqliteTenantRepository();
+  const tenantIds = await repository.listTenantIds();
   let processed = 0;
   try {
     for (const tenantId of tenantIds) {
-      await withVelnorUser(tenantId, () => {
-        saveStore(getStore());
-      });
+      await repository.update(
+        tenantId,
+        () => structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState,
+        (draft) => {
+          draft.persistedAt = new Date().toISOString();
+        }
+      );
       processed += 1;
     }
   } catch (error) {
