@@ -1,5 +1,5 @@
 import { runAgentLoop } from "./loop";
-import { buildProviderChain, createProvider, estimateCostUsd } from "./registry";
+import { buildProviderChain, createProvider, estimateCostUsd, getExplicitProviderConfigurationError } from "./registry";
 import { ToolSpec, Turn, Usage, emptyUsage } from "./providers/types";
 import { DEFAULT_STATE, getEffectiveKeys, type VelnorState } from "../store";
 import type { PersistedTenantState } from "../storage/d1TenantState";
@@ -126,14 +126,20 @@ export async function processUserMessage(params: {
   // Providers are tried in order; a failure (bad key, timeout, 5xx) moves on
   // instead of silently degrading to a regex handler.
   // =========================================================================
+  const providerKeys = { gemini: geminiApiKey, openai: openaiApiKey, anthropic: anthropicApiKey };
+  const providerConfigurationError = getExplicitProviderConfigurationError(
+    state.config.activeProvider,
+    providerKeys,
+  );
   const chain = buildProviderChain({
     preferred: state.config.activeProvider,
-    keys: { gemini: geminiApiKey, openai: openaiApiKey, anthropic: anthropicApiKey },
+    keys: providerKeys,
     models: {
       gemini: state.config.geminiModel,
       openai: state.config.openaiModel,
       anthropic: state.config.anthropicModel,
     },
+    allowFallback: process.env.VELNOR_ALLOW_PROVIDER_FALLBACK === "1",
   });
 
   const imageParts = (params.attachments || [])
@@ -227,15 +233,24 @@ export async function processUserMessage(params: {
     });
   }
 
-  if (!replyText) {
-    if (providerFailures.length > 0 && chain.length > 0) {
-      bundle.toolActions.push({
-        tool: "provider_error",
-        label: "All configured providers failed",
-        status: "error" as any,
-        details: providerFailures.join(" | ").slice(0, 300),
-      });
-    }
+  if (!replyText && providerConfigurationError) {
+    bundle.toolActions.push({
+      tool: "provider_error",
+      label: "Explicitly selected provider is not configured",
+      status: "error" as any,
+      details: providerConfigurationError,
+    });
+    replyText = providerConfigurationError + " Configure that provider or explicitly change the selection; no substitute was used.";
+  } else if (!replyText && providerFailures.length > 0 && chain.length > 0) {
+    bundle.toolActions.push({
+      tool: "provider_error",
+      label: "Selected provider failed; no substitute was used",
+      status: "error" as any,
+      details: providerFailures.join(" | ").slice(0, 300),
+    });
+    replyText =
+      "The configured AI provider/model could not complete this request. No alternate provider or model was substituted. Check the selected provider configuration and retry.";
+  } else if (!replyText) {
     replyText = await runBuiltInAgentOrchestrator(params, bundle, tenantContext);
   }
 

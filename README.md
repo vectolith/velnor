@@ -147,3 +147,10 @@ stroked at width 20 with round joins, two colours, and the same
 same monument: where Vectolith is a static hexagonal prism with a spine, Velnor is a
 rotor, six twisted blades turning around a diamond void with indexing struts outside.
 Circulation rather than monolith.
+
+
+## AI provider selection and failover
+
+Velnor preserves an explicitly selected provider/model by default. If that provider is unavailable or its credentials are missing, the request fails with a configuration/provider error rather than silently switching to another provider or to the built-in orchestrator. The `auto` selection chooses the first configured provider in stable priority order; when no external provider is configured, the built-in capability router may be used.
+
+Cross-provider failover changes which model processes a request and is disabled by default. Set `VELNOR_ALLOW_PROVIDER_FALLBACK=1` only when the deployment explicitly approves that substitution and the user-facing product disclosure is in place.
