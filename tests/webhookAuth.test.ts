@@ -243,3 +243,40 @@ test("Twilio signature URL ignores spoofable forwarded and Host headers", () => 
     else process.env.VELNOR_PUBLIC_URL = originalEnv;
   }
 });
+
+
+test("JSON provider secrets are isolated: LoopMessage credentials cannot authenticate Sendblue", () => {
+  const loopMessageSecret = "loopmessage-test-secret";
+  const sendblueSecret = "sendblue-test-secret";
+  assert.equal(authorizeJsonWebhook({
+    secrets: [sendblueSecret], provided: loopMessageSecret, simulator: false,
+  }).status, 401);
+  assert.equal(authorizeJsonWebhook({
+    secrets: [loopMessageSecret], provided: sendblueSecret, simulator: false,
+  }).status, 401);
+  assert.deepEqual(authorizeJsonWebhook({
+    secrets: [loopMessageSecret], provided: loopMessageSecret, simulator: false,
+  }), { ok: true });
+});
+
+test("JSON webhook simulator cannot bypass authentication in production", () => {
+  const originalEnv = process.env.NODE_ENV;
+  const originalFlag = process.env.VELNOR_ALLOW_SIMULATOR;
+  try {
+    mutableEnv.NODE_ENV = "production";
+    process.env.VELNOR_ALLOW_SIMULATOR = "1";
+    const simulator = isSimulatorAllowed("true");
+    assert.equal(simulator, false);
+    const decision = authorizeJsonWebhook({
+      secrets: ["configured-loopmessage-secret"],
+      provided: null,
+      simulator,
+    });
+    assert.equal(decision.ok, false);
+    assert.equal(decision.status, 401);
+  } finally {
+    mutableEnv.NODE_ENV = originalEnv;
+    if (originalFlag === undefined) delete process.env.VELNOR_ALLOW_SIMULATOR;
+    else process.env.VELNOR_ALLOW_SIMULATOR = originalFlag;
+  }
+});
