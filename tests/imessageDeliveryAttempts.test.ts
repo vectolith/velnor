@@ -340,7 +340,7 @@ test("Sendblue SMS downgrade is never recorded as iMessage delivery", async () =
     }), "applied");
     const failedAttempt = getLatestLoopMessageAttempt(sendblueBase.tenantId, "task-sendblue-sms-fallback");
     assert.equal(failedAttempt?.state, "failed");
-    assert.match(String(failedAttempt?.errorDetail), /downgraded to SMS/);
+    assert.match(String(failedAttempt?.errorDetail), /downgraded (?:this message )?to SMS/);
     assert.notEqual(getLoopMessageDelivery(sendblueBase.tenantId, "task-sendblue-sms-fallback")?.status, "delivered");
     let retryRequests = 0;
     stubFetch(async () => {
@@ -380,7 +380,7 @@ test("an early Sendblue SMS-downgrade callback is reconciled with its duplicate-
       taskId: "task-sendblue-early-sms-fallback",
     });
     assert.equal(tracked.attempt.state, "failed");
-    assert.match(String(tracked.attempt.errorDetail), /downgraded to SMS/);
+    assert.match(String(tracked.attempt.errorDetail), /downgraded (?:this message )?to SMS/);
     assert.equal(tracked.duplicateRisk, true);
     assert.equal(getLoopMessageDelivery(sendblueBase.tenantId, "task-sendblue-early-sms-fallback")?.status, "failed");
   } finally {
