@@ -2,7 +2,20 @@
 
 **Velnor** (engineered by **[Vectolith](https://github.com/vectolith)**) is a general-purpose AI agent platform intended to help people across technical and non-technical fields think, learn, create, build, solve problems, and get work done. Engineering and software development are important strengths, not the limits of the product. Velnor combines multi-provider AI routing, grounded information retrieval, multimodal capabilities, integrations, and an evolving model-training programme.
 
-Velnor currently operates through messaging channels and service APIs, including Apple iMessage (phone numbers and Apple ID email addresses), SMS, Discord, Siri Shortcuts, and Slack. The current repository does not yet provide a general public web-chat frontend; product direction and implemented delivery surfaces are documented separately.
+Velnor currently operates through messaging channels and service APIs, including Apple iMessage, SMS, Siri Shortcuts, and Slack. The current repository does not yet provide a general public web-chat frontend; product direction and implemented delivery surfaces are documented separately.
+
+## Standalone product boundary
+
+Velnor is an independently operated product with its own application runtime, identity and tenant controls, persistence, integrations, deployment, monitoring and release lifecycle. It does not require Blud, Models by Vectolith, or any other Vectolith product to start or fulfil its core purpose. Model providers and external integrations are configured and governed by Velnor; any optional product-to-product adapter must be removable without disabling Velnor's core agent functions.
+
+## Platform direction
+
+VELNOR is an independent, operating-system-neutral AI platform. Its web dashboard and mobile companion are control-centre clients for integrations, activity, approvals, model/service status, administration, permissions and security—not chat interfaces. Messaging and supported APIs remain interaction/invocation channels. The future operating-system compatibility discussion is a target architecture only; no VELNOR OS is part of the current product build.
+
+- [Platform architecture and implementation boundaries](docs/PLATFORM-ARCHITECTURE.md)
+- [Using VELNOR and the target product experience](docs/USING-VELNOR.md)
+
+These documents distinguish implemented repository capabilities from planned interfaces and contracts. A target architecture is not evidence that an unshipped API, dashboard or OS feature is available.
 
 ## Product and intelligence objective
 
@@ -38,14 +51,12 @@ The model must never be treated as the authority for access control. The runtime
    - **Image Understanding**: Send MMS/iMessage photos, receipts, or screenshots for analysis.
    - **Image Generation**: Generate visuals via Gemini, OpenAI, or the built-in SVG engine.
    - **Voice & Siri**: Hands-free voice invocation via `/api/siri` and `/api/tts`.
-5. **Discord Interaction Support**
-   - Accepts signed Discord application-command interactions through /api/webhooks/discord; /ask requests are deferred, processed in the tenant-scoped agent runtime, and answered privately.
-6. **Travel & Local Agent**
+5. **Travel & Local Agent**
    - Multi-day trip itineraries, verified local landmarks via OpenStreetMap Nominatim, quick translations, and flight/hotel booking links.
-7. **One Agent Loop, Every Provider**
+6. **One Agent Loop, Every Provider**
    - Gemini, OpenAI and Anthropic all run through the same tool-calling loop (`src/lib/ai/loop.ts`), so every declared tool works on every model. Providers are tried in order with timeouts, bounded retries on 429/5xx, and per-request token/cost accounting surfaced on `/api/health`.
    - The local PyTorch/PEFT LoRA daemon (`training/serve_adapter.py`, port `8099`) is opt-in via `VELNOR_LOCAL_LORA=1`; it never silently answers a real request.
-8. **Per-User Tenancy**
+7. **Per-User Tenancy**
    - Every channel handle gets its own state (messages, reminders, memories, documents, usage), persisted per tenant in SQLite and `.data/users/<id>.json`. Requests are scoped with `withVelnorUser()`; no cross-tenant reads.
 
 ## Model training principles and evaluation
@@ -64,9 +75,7 @@ Dataset quality, provenance, licensing, privacy, deduplication, contamination ch
 - **Apple iMessage & SMS Webhook**: `POST /api/webhooks/imessage`
   - **Twilio SMS/MMS**: Accepts `application/x-www-form-urlencoded` (`From`, `Body`, `NumMedia`, `MediaUrl0`) and returns valid TwiML XML.
   - **Sendblue**: Accepts JSON (`number`, `content`, `media_url`) and dispatches replies via `https://api.sendblue.co/api/send-message`.
-  - **LoopMessage**: Accepts phone-number or Apple ID email identities and dispatches replies via `https://server.loopmessage.com/api/v1/message/send/`. See docs/IMESSAGE-EMAIL-IDENTITIES.md.
-- **Discord Interactions**: `POST /api/webhooks/discord` — Ed25519 signature verification, timestamp freshness checks, /ask command handling, private deferred responses. See docs/DISCORD-INTEGRATION.md.
-- **Task History & Control**: `GET /api/tasks` lists tenant-scoped execution history; `POST /api/tasks` accepts cancel, task retry, and guarded iMessage delivery retry actions. See docs/EXECUTION-TASKS.md.
+  - **LoopMessage**: Accepts JSON (`recipient`, `text`) and dispatches replies via `https://server.loopmessage.com/api/v1/message/send/`.
 - **Slack Bot Webhook**: `POST /api/webhooks/slack`
   - Handles `url_verification`, `event_callback` (`app_mention`, `message.im`), `x-slack-signature` verification, and `/velnor` slash commands with Slack Block Kit formatting.
 - **Apple Siri / Shortcuts Endpoint**: `GET, POST /api/siri`
@@ -147,3 +156,17 @@ stroked at width 20 with round joins, two colours, and the same
 same monument: where Vectolith is a static hexagonal prism with a spine, Velnor is a
 rotor, six twisted blades turning around a diamond void with indexing struts outside.
 Circulation rather than monolith.
+
+
+## Channel integrations, execution and operations
+
+Velnor owns its own task lifecycle, channel authentication, delivery state and operational controls. Messaging providers are optional integrations; no other Vectolith product is required for Velnor's core operation.
+
+- [Discord integration](docs/DISCORD-INTEGRATION.md)
+- [Execution tasks and cancellation](docs/EXECUTION-TASKS.md)
+- [iMessage and Apple ID email identities](docs/IMESSAGE-EMAIL-IDENTITIES.md)
+- [Sendblue channel configuration](docs/SENDBLUE.md)
+- [Outbound delivery guarantees and retry policy](docs/DELIVERY_RELIABILITY.md)
+- [Operations and deployment notes](docs/OPERATIONS.md)
+
+A provider acceptance response is not proof of delivery. The delivery ledger and callback/status reconciliation distinguish queued, processing, delivered, failed and ambiguous outcomes. Automatic retries are blocked when a prior send may already have reached the recipient. See the delivery reliability document for the remaining at-least-once limitations.
