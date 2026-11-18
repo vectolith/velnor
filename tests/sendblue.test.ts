@@ -8,6 +8,7 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-sendblue-"));
 process.env.VELNOR_DATA_DIR = dataDir;
 
 import { mapSendblueStatus } from "../src/lib/channels/sendblue";
+import { sendTrackedSendblueMessage } from "../src/lib/channels/trackedSendblueSend";
 import { normalizeE164, resolveSendblueConfig } from "../src/lib/channels/sendblueConfig";
 import {
   beginLoopMessageAttempt, finishLoopMessageAttempt, getLatestLoopMessageAttempt,
@@ -102,5 +103,33 @@ test("Inbound webhook claims are durable, unique, and releasable", () => {
     assert.equal(claimInboundWebhookEvent({ provider: "sendblue", eventKey: "msg-1" }), "new");
   } finally {
     closeSqliteDb();
+  }
+});
+
+
+test("Sendblue tracked sender blocks a second send while a prior attempt is queued", async () => {
+  const queued = beginLoopMessageAttempt({
+    provider: "sendblue", tenantId: "tenant-guard", taskId: "sendblue-queued",
+    recipient: "+15550001", senderId: "+15550002",
+  });
+  finishLoopMessageAttempt(queued.attemptId, { state: "queued", messageId: "queued-sendblue" });
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = (async () => {
+    requests += 1;
+    return new Response(JSON.stringify({ status: "QUEUED", message_handle: "second-send" }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const result = await sendTrackedSendblueMessage({
+      tenantId: "tenant-guard", taskId: "sendblue-queued", recipient: "+15550001",
+      senderId: "+15550002", config: { apiKeyId: "key", apiSecret: "secret", fromNumber: "+15550002" },
+      text: "must not duplicate",
+    });
+    assert.equal(result.result.ok, false);
+    assert.match(result.result.detail || "", /pending or in progress|delivered/i);
+    assert.equal(result.attempt.attemptId, queued.attemptId);
+    assert.equal(requests, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
