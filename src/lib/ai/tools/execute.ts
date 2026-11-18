@@ -263,6 +263,20 @@ export async function executeToolCall(
       return { memories };
     }
     case "delegate_browser_task": {
+      if (process.env.VELNOR_ENABLE_BLUD_INTEGRATION !== "1") {
+        const result = {
+          status: "offline",
+          summary: "The optional Blud integration is disabled. Velnor operates independently.",
+          verifiedAtUtc: new Date().toISOString(),
+        };
+        bundle.toolActions.push({
+          tool: "delegate_browser_task",
+          label: "Optional Blud integration disabled",
+          status: "info",
+          details: result.summary,
+        });
+        return { browserResult: result };
+      }
       const task = String(args.task || "");
       const startUrl = args.startUrl ? String(args.startUrl) : undefined;
       const res = await delegateBrowserTaskToBlud({ task, startUrl });
