@@ -4,6 +4,10 @@
 
 Velnor currently operates through messaging channels and service APIs, including Apple iMessage, SMS, Siri Shortcuts, and Slack. The current repository does not yet provide a general public web-chat frontend; product direction and implemented delivery surfaces are documented separately.
 
+## Standalone product boundary
+
+Velnor is an independently operated product with its own application runtime, identity and tenant controls, persistence, integrations, deployment, monitoring and release lifecycle. It does not require Blud, Models by Vectolith, or any other Vectolith product to start or fulfil its core purpose. Model providers and external integrations are configured and governed by Velnor; any optional product-to-product adapter must be removable without disabling Velnor's core agent functions.
+
 ## Product and intelligence objective
 
 Velnor is for **everyone**, including developers, engineers, students, educators, business owners, professionals, creators, and everyday users. Its intelligence roadmap is deliberately broad:
