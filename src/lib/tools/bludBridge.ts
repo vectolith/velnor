@@ -23,7 +23,7 @@ export interface BrowserTaskResult {
   extractedData?: Record<string, unknown>;
   images?: string[];
   error?: string;
-  verifiedAtUtc: string;
+  observedAtUtc: string;
 }
 
 const DEFAULT_BLUD_RPC_URL = "http://127.0.0.1:3000/api/internal/browser-worker";
@@ -67,7 +67,7 @@ export async function delegateBrowserTaskToBlud(
     return {
       status: "failure",
       summary: "Browser delegation failed: no task instruction provided.",
-      verifiedAtUtc: receivedAtUtc,
+      observedAtUtc: receivedAtUtc,
       error: "Task instructions must not be empty.",
     };
   }
@@ -76,7 +76,7 @@ export async function delegateBrowserTaskToBlud(
     return {
       status: "failure",
       summary: "Browser task exceeds the 8,000-character limit.",
-      verifiedAtUtc: receivedAtUtc,
+      observedAtUtc: receivedAtUtc,
       error: "Task instructions are too long.",
     };
   }
@@ -91,7 +91,7 @@ export async function delegateBrowserTaskToBlud(
       status: "failure",
       summary: "Browser delegation refused: Velnor-to-Blud service authentication is not configured.",
       error: "BLUD_INTERNAL_KEY or VELNOR_SHARED_SECRET must be configured before internal RPC.",
-      verifiedAtUtc: receivedAtUtc,
+      observedAtUtc: receivedAtUtc,
     };
   }
 
@@ -129,7 +129,7 @@ export async function delegateBrowserTaskToBlud(
         status: offline ? "offline" : "failure",
         summary: `Blud browser coordinator returned HTTP ${res.status}`,
         error: errBody.slice(0, 500) || `HTTP ${res.status}`,
-        verifiedAtUtc: receivedAtUtc,
+        observedAtUtc: receivedAtUtc,
       };
     }
 
@@ -139,7 +139,7 @@ export async function delegateBrowserTaskToBlud(
         status: data?.status === "offline" ? "offline" : "failure",
         summary: data?.message || "Blud did not provide a verifiable browser execution receipt.",
         error: data?.error || "A success status without a valid executionReceipt is rejected.",
-        verifiedAtUtc: receivedAtUtc,
+        observedAtUtc: receivedAtUtc,
       };
     }
 
@@ -153,7 +153,7 @@ export async function delegateBrowserTaskToBlud(
           ? data.data
           : undefined,
       images: Array.isArray(data.images) ? data.images : [],
-      verifiedAtUtc: receipt.completedAtUtc,
+      observedAtUtc: receipt.completedAtUtc,
     };
   } catch (err: unknown) {
     const isTimeout = err instanceof Error && err.name === "AbortError";
@@ -168,7 +168,7 @@ export async function delegateBrowserTaskToBlud(
         status: "failure",
         summary: `Browser task timed out after ${Math.round(timeoutMs / 1000)} seconds.`,
         error: "Execution exceeded timeout budget; completion is unknown.",
-        verifiedAtUtc: receivedAtUtc,
+        observedAtUtc: receivedAtUtc,
       };
     }
 
@@ -180,7 +180,7 @@ export async function delegateBrowserTaskToBlud(
           rpcUrl +
           ". Ensure Blud is running or configure BLUD_INTERNAL_RPC_URL.",
         error: "Blud RPC coordinator unreachable.",
-        verifiedAtUtc: receivedAtUtc,
+        observedAtUtc: receivedAtUtc,
       };
     }
 
@@ -188,7 +188,7 @@ export async function delegateBrowserTaskToBlud(
       status: "failure",
       summary: "Browser task delegation failed unexpectedly.",
       error: err instanceof Error ? err.message : String(err),
-      verifiedAtUtc: receivedAtUtc,
+      observedAtUtc: receivedAtUtc,
     };
   } finally {
     clearTimeout(timer);
