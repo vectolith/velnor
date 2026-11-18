@@ -50,13 +50,13 @@ export class LoopMessageAttemptInFlightError extends Error {
 }
 
 export class LoopMessageAttemptBlockedError extends LoopMessageAttemptInFlightError {
-  constructor(readonly state: LoopMessageAttemptState) {
+  constructor(readonly state: LoopMessageAttemptState, message?: string) {
     super(
-      state === "delivered"
+      message ?? (state === "delivered"
         ? "This task already has a delivered outbound message."
         : state === "unconfirmed" || state === "unknown"
           ? "A previous outbound attempt has an ambiguous outcome; an explicit, reconciled retry is required."
-          : "A previous outbound attempt is still pending or in progress.",
+          : "A previous outbound attempt is still pending or in progress."),
     );
     this.name = "LoopMessageAttemptBlockedError";
   }
@@ -101,10 +101,18 @@ export function beginLoopMessageAttempt(input: {
     // Never create a second attempt while the previous one may still be in flight
     // or is already delivered. Ambiguous outcomes require an explicit caller opt-in.
     const previous = database.prepare(
-      "SELECT state FROM imessage_delivery_attempts WHERE tenant_id = ? AND task_id = ? AND provider = ? ORDER BY attempt_no DESC LIMIT 1",
-    ).get(input.tenantId, input.taskId, provider) as { state: LoopMessageAttemptState } | undefined;
+      "SELECT state, error_detail FROM imessage_delivery_attempts WHERE tenant_id = ? AND task_id = ? AND provider = ? ORDER BY attempt_no DESC LIMIT 1",
+    ).get(input.tenantId, input.taskId, provider) as { state: LoopMessageAttemptState; error_detail?: string | null } | undefined;
     if (previous) {
       const state = previous.state;
+      const smsDowngrade = provider === "sendblue" &&
+        /downgraded(?: this message)? to SMS/i.test(previous.error_detail || "");
+      if (smsDowngrade && !input.allowAmbiguousRetry) {
+        throw new LoopMessageAttemptBlockedError(
+          state,
+          "A previous Sendblue attempt may have reached the recipient as SMS; an explicit, reconciled retry is required.",
+        );
+      }
       if (state === "pending_send" || state === "queued" || state === "processing" || state === "delivered") {
         throw new LoopMessageAttemptBlockedError(state);
       }
