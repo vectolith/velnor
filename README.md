@@ -8,6 +8,15 @@ Velnor currently operates through messaging channels and service APIs, including
 
 Velnor is an independently operated product with its own application runtime, identity and tenant controls, persistence, integrations, deployment, monitoring and release lifecycle. It does not require Blud, Models by Vectolith, or any other Vectolith product to start or fulfil its core purpose. Model providers and external integrations are configured and governed by Velnor; any optional product-to-product adapter must be removable without disabling Velnor's core agent functions.
 
+## Platform direction
+
+VELNOR is an independent, operating-system-neutral AI platform. Its web dashboard and mobile companion are control-centre clients for integrations, activity, approvals, model/service status, administration, permissions and security—not chat interfaces. Messaging and supported APIs remain interaction/invocation channels. The future operating-system compatibility discussion is a target architecture only; no VELNOR OS is part of the current product build.
+
+- [Platform architecture and implementation boundaries](docs/PLATFORM-ARCHITECTURE.md)
+- [Using VELNOR and the target product experience](docs/USING-VELNOR.md)
+
+These documents distinguish implemented repository capabilities from planned interfaces and contracts. A target architecture is not evidence that an unshipped API, dashboard or OS feature is available.
+
 ## Product and intelligence objective
 
 Velnor is for **everyone**, including developers, engineers, students, educators, business owners, professionals, creators, and everyday users. Its intelligence roadmap is deliberately broad:
