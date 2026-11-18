@@ -83,7 +83,7 @@ export async function delegateBrowserTaskToBlud(
     };
   }
 
-  const taskUrls = [startUrl, ...(task.match(/https?:\/\/[^\\s)]+/g) || [])]
+  const taskUrls = [startUrl, ...(task.match(/https?:\/\/[^\s)]+/g) || [])]
     .filter((value): value is string => Boolean(value));
   for (const url of taskUrls) await resolveAndAssert(url);
 
