@@ -32,6 +32,23 @@ export function createProvider(id: ProviderId, apiKey: string): Provider {
   }
 }
 
+const PROVIDER_ORDER: ProviderId[] = ["gemini", "openai", "anthropic"];
+
+export function getExplicitProviderConfigurationError(
+  preferred: string,
+  keys: Partial<Record<ProviderId, string>>,
+): string | null {
+  if (preferred === "auto") return null;
+  if (!PROVIDER_ORDER.includes(preferred as ProviderId)) {
+    return "Unsupported explicitly selected AI provider: " + preferred;
+  }
+  const provider = preferred as ProviderId;
+  if (!keys[provider]) {
+    return "The explicitly selected AI provider '" + provider + "' has no API key configured.";
+  }
+  return null;
+}
+
 /**
  * Resolve the configured provider without silently substituting another
  * provider/model. "auto" selects the first configured provider in stable
@@ -44,13 +61,12 @@ export function buildProviderChain(params: {
   models: Partial<Record<ProviderId, string>>;
   allowFallback?: boolean;
 }): ProviderSlot[] {
-  const order: ProviderId[] = ["gemini", "openai", "anthropic"];
   const preferred = params.preferred as ProviderId;
-  const selected = order.includes(preferred) ? preferred : order.find((id) => !!params.keys[id]);
+  const selected = PROVIDER_ORDER.includes(preferred) ? preferred : PROVIDER_ORDER.find((id) => !!params.keys[id]);
   if (!selected || !params.keys[selected]) return [];
 
   const ordered = params.allowFallback
-    ? [selected, ...order.filter((id) => id !== selected)]
+    ? [selected, ...PROVIDER_ORDER.filter((id) => id !== selected)]
     : [selected];
 
   return ordered.flatMap((id) => {
