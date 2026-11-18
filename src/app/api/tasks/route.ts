@@ -150,6 +150,7 @@ export async function POST(req: NextRequest) {
       const tracked = await sendTrackedLoopMessage({
         authKey, recipient: task.userHandle, text: String(resultMessage.text), senderId,
         tenantId, taskId,
+        allowAmbiguousRetry: true,
       });
       if (!tracked.result.ok || !tracked.result.messageId) {
         return NextResponse.json({
