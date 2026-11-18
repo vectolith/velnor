@@ -10,6 +10,8 @@ export const VELNOR_FUNCTION_DECLARATIONS = [
       properties: {
         task: { type: "string", description: "Clear instructions of what to perform in the browser" },
         startUrl: { type: "string", description: "Initial URL to navigate to" },
+        sessionRef: { type: "string", description: "Resume a prior Blud Eve session using only the sessionRef returned by an earlier browser task" },
+        extractSchema: { type: "object", description: "Optional JSON object describing the fields to extract from the page" },
       },
       required: ["task"],
     },
