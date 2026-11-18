@@ -49,6 +49,19 @@ export class LoopMessageAttemptInFlightError extends Error {
   }
 }
 
+export class LoopMessageAttemptBlockedError extends Error {
+  constructor(readonly state: LoopMessageAttemptState) {
+    super(
+      state === "delivered"
+        ? "This task already has a delivered outbound message."
+        : state === "unconfirmed" || state === "unknown"
+          ? "A previous outbound attempt has an ambiguous outcome; an explicit, reconciled retry is required."
+          : "A previous outbound attempt is still pending or in progress.",
+    );
+    this.name = "LoopMessageAttemptBlockedError";
+  }
+}
+
 function db() {
   const database = getSqliteDb();
   if (!database) throw new Error("Durable iMessage attempts require Node SQLite; refusing ephemeral delivery state.");
@@ -75,6 +88,7 @@ function fromRow(row: AttemptRow): LoopMessageDeliveryAttempt {
 export function beginLoopMessageAttempt(input: {
   provider?: IMessageProvider;
   tenantId: string; taskId: string; recipient: string; senderId: string;
+  allowAmbiguousRetry?: boolean;
 }): LoopMessageDeliveryAttempt {
   const provider = input.provider ?? "loopmessage";
   requireIdentity({ ...input, provider });
@@ -83,6 +97,21 @@ export function beginLoopMessageAttempt(input: {
   const attemptId = "attempt_" + randomUUID();
   database.exec("BEGIN IMMEDIATE");
   try {
+    // The write transaction makes this state check atomic across workers.
+    // Never create a second attempt while the previous one may still be in flight
+    // or is already delivered. Ambiguous outcomes require an explicit caller opt-in.
+    const previous = database.prepare(
+      "SELECT state FROM imessage_delivery_attempts WHERE tenant_id = ? AND task_id = ? AND provider = ? ORDER BY attempt_no DESC LIMIT 1",
+    ).get(input.tenantId, input.taskId, provider) as { state: LoopMessageAttemptState } | undefined;
+    if (previous) {
+      const state = previous.state;
+      if (state === "pending_send" || state === "queued" || state === "processing" || state === "delivered") {
+        throw new LoopMessageAttemptBlockedError(state);
+      }
+      if ((state === "unconfirmed" || state === "unknown") && !input.allowAmbiguousRetry) {
+        throw new LoopMessageAttemptBlockedError(state);
+      }
+    }
     const next = database.prepare(
       "SELECT COALESCE(MAX(attempt_no), 0) + 1 AS next FROM imessage_delivery_attempts WHERE tenant_id = ? AND task_id = ?",
     ).get(input.tenantId, input.taskId) as { next: number } | undefined;
