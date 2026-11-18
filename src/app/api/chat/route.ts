@@ -58,6 +58,7 @@ function buildSnapshot(state: VelnorState) {
       anthropicModel: state.config.anthropicModel,
       googleConnectedEmail: state.config.googleConnectedEmail || null,
       slackConfigured: Boolean(state.config.slackBotToken || process.env.SLACK_BOT_TOKEN),
+      discordConfigured: Boolean(process.env.DISCORD_PUBLIC_KEY),
       imessageConfigured: Boolean(
         state.config.twilioAccountSid ||
           state.config.sendblueApiKey ||

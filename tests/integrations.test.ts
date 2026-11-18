@@ -152,7 +152,9 @@ test("Sendblue uses the documented send-message contract and sender line", async
       content: "Hello",
     });
     assert.equal(result.ok, true);
-    assert.match(result.detail || "", /sendblue-handle/);
+    assert.equal(result.messageId, "sendblue-handle");
+    assert.equal(result.sendCertainty, "accepted");
+    assert.equal(result.deliveryStatus, "queued");
   });
 });
 
@@ -162,13 +164,16 @@ test("LoopMessage uses its documented host, Authorization header, and contact fi
     const body = JSON.parse(String(init?.body));
     assert.equal(body.contact, "+15551234567");
     assert.equal(body.text, "Hello");
+    assert.equal(body.sender, "velnor-email-sender");
     assert.equal((init?.headers as Record<string, string>).Authorization, "loop-api-key");
     assert.equal("Loop-Secret-Key" in (init?.headers as Record<string, string>), false);
     return new Response(JSON.stringify({ success: true, message_id: "loop-message-123" }), { status: 200 });
   }, async () => {
-    const result = await sendLoopMessage({ authKey: "loop-api-key", recipient: "+15551234567", text: "Hello" });
+    const result = await sendLoopMessage({ authKey: "loop-api-key", recipient: "+15551234567", text: "Hello", senderId: "velnor-email-sender" });
     assert.equal(result.ok, true);
-    assert.match(result.detail || "", /loop-message-123/);
+    assert.equal(result.messageId, "loop-message-123");
+    assert.equal(result.deliveryStatus, "queued");
+    assert.match(result.detail || "", /not yet delivered/);
   });
 });
 

@@ -1,7 +1,25 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import testCase from "node:test";
 import { createNodeSqliteTenantRepository } from "../src/lib/storage/nodeSqliteTenantRepository";
 import type { PersistedTenantState } from "../src/lib/storage/d1TenantState";
+import { closeSqliteDb } from "../src/lib/sqliteDb";
+
+// Give this test worker its own database. Other test workers may initialize
+// SQLite concurrently; sharing cwd/.data can turn a transient DDL lock into
+// sqliteDb's process-wide "unsupported" state.
+const testDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-node-repository-"));
+const previousDataDir = process.env.VELNOR_DATA_DIR;
+process.env.VELNOR_DATA_DIR = testDataDir;
+
+testCase.after(() => {
+  closeSqliteDb();
+  if (previousDataDir === undefined) delete process.env.VELNOR_DATA_DIR;
+  else process.env.VELNOR_DATA_DIR = previousDataDir;
+  fs.rmSync(testDataDir, { recursive: true, force: true });
+});
 
 testCase("Node/SQLite repository serializes same-tenant async mutations", async () => {
   const repository = createNodeSqliteTenantRepository();

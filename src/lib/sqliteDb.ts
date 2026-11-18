@@ -59,7 +59,7 @@ function getSqlitePath(): string {
 let sqliteInstance: any = null;
 let sqliteSupported: boolean | null = null;
 
-function getSqliteDb() {
+export function getSqliteDb() {
   if (sqliteSupported === false) return null;
   if (sqliteInstance) return sqliteInstance;
 
@@ -80,6 +80,90 @@ function getSqliteDb() {
           key TEXT PRIMARY KEY,
           revision INTEGER NOT NULL CHECK (revision >= 0)
         );
+        CREATE TABLE IF NOT EXISTS execution_tasks (
+          id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          channel TEXT NOT NULL,
+          user_handle TEXT,
+          status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'cancel_requested', 'succeeded', 'failed', 'cancelled', 'interrupted')),
+          error TEXT,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          updated_at TEXT NOT NULL,
+          completed_at TEXT,
+          lease_until TEXT
+        );
+        CREATE INDEX IF NOT EXISTS execution_tasks_tenant_created ON execution_tasks(tenant_id, created_at DESC);
+        CREATE TABLE IF NOT EXISTS imessage_deliveries (
+          message_id TEXT PRIMARY KEY,
+          tenant_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          recipient TEXT NOT NULL,
+          sender_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('queued', 'processing', 'delivered', 'failed', 'unknown')),
+          error_code INTEGER,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS imessage_deliveries_tenant_task ON imessage_deliveries(tenant_id, task_id);
+
+        -- Callback inbox closes the race where LoopMessage calls back before
+        -- the outbound worker has persisted the provider message_id.
+        CREATE TABLE IF NOT EXISTS imessage_delivery_events (
+          message_id TEXT NOT NULL,
+          recipient TEXT NOT NULL,
+          sender_id TEXT NOT NULL,
+          event_status TEXT NOT NULL CHECK (event_status IN ('delivered', 'failed')),
+          error_code INTEGER,
+          received_at TEXT NOT NULL,
+          PRIMARY KEY (message_id, recipient, sender_id, event_status)
+        );
+        CREATE INDEX IF NOT EXISTS imessage_delivery_events_received
+          ON imessage_delivery_events(received_at);
+
+        -- Durable outbound attempt ledger. A row is written BEFORE the provider
+        -- request so a send that fails without returning a message ID is still
+        -- recoverable instead of leaving the task silently undelivered.
+        CREATE TABLE IF NOT EXISTS imessage_delivery_attempts (
+          attempt_id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL DEFAULT 'loopmessage',
+          tenant_id TEXT NOT NULL,
+          task_id TEXT NOT NULL,
+          recipient TEXT NOT NULL,
+          sender_id TEXT NOT NULL,
+          attempt_no INTEGER NOT NULL,
+          state TEXT NOT NULL CHECK (state IN ('pending_send', 'queued', 'processing', 'delivered', 'failed', 'unknown', 'unconfirmed')),
+          message_id TEXT UNIQUE,
+          error_code INTEGER,
+          error_detail TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS imessage_delivery_attempts_tenant_task
+          ON imessage_delivery_attempts(tenant_id, task_id);
+
+        -- Durable inbound webhook dedupe. Providers retry on slow responses and
+        -- an in-memory cache forgets across restarts and instances, which would
+        -- run the agent (and bill the model) twice for one message.
+        CREATE TABLE IF NOT EXISTS inbound_webhook_events (
+          provider TEXT NOT NULL,
+          event_key TEXT NOT NULL,
+          received_at TEXT NOT NULL,
+          PRIMARY KEY (provider, event_key)
+        );
+        CREATE INDEX IF NOT EXISTS inbound_webhook_events_received
+          ON inbound_webhook_events(received_at);
+
+        -- Delivery callbacks can arrive before the outbound attempt has stored
+        -- its message handle. Buffer them by handle and apply on persistence.
+        CREATE TABLE IF NOT EXISTS sendblue_status_events (
+          message_handle TEXT PRIMARY KEY,
+          state TEXT NOT NULL CHECK (state IN ('processing', 'delivered', 'failed', 'unknown')),
+          error_code INTEGER,
+          error_detail TEXT,
+          received_at TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
           tenant_id TEXT NOT NULL,
           reminder_id TEXT NOT NULL,
@@ -90,6 +174,31 @@ function getSqliteDb() {
           PRIMARY KEY (tenant_id, reminder_id)
         );
       `);
+      const attemptColumns = db.prepare("PRAGMA table_info(imessage_delivery_attempts)").all() as Array<{name:string}>;
+      if (!attemptColumns.some((column) => column.name === "provider")) {
+        db.exec("ALTER TABLE imessage_delivery_attempts ADD COLUMN provider TEXT NOT NULL DEFAULT 'loopmessage';");
+      }
+      const taskColumns = db.prepare("PRAGMA table_info(execution_tasks)").all() as Array<{name:string}>;
+      if (!taskColumns.some((column) => column.name === "retry_of")) {
+        db.exec("ALTER TABLE execution_tasks ADD COLUMN retry_of TEXT;");
+      }
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS execution_tasks_one_retry_child ON execution_tasks(retry_of) WHERE retry_of IS NOT NULL;");
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS imessage_delivery_attempts_number ON imessage_delivery_attempts(tenant_id, task_id, attempt_no);");
+      // Only one send may be in flight per task; retries are explicit and serialized.
+      db.exec("CREATE UNIQUE INDEX IF NOT EXISTS imessage_delivery_attempts_in_flight ON imessage_delivery_attempts(tenant_id, task_id) WHERE state = 'pending_send';");
+      // Backfill the attempt ledger from pre-existing delivery records so tasks
+      // created before this migration keep a recoverable history.
+      db.exec(`
+        INSERT INTO imessage_delivery_attempts
+          (attempt_id, tenant_id, task_id, recipient, sender_id, attempt_no, state, message_id, error_code, error_detail, created_at, updated_at)
+        SELECT 'attempt_legacy_' || d.message_id, d.tenant_id, d.task_id, d.recipient, d.sender_id,
+          (SELECT COUNT(*) FROM imessage_deliveries d2
+            WHERE d2.tenant_id = d.tenant_id AND d2.task_id = d.task_id AND d2.created_at <= d.created_at),
+          d.status, d.message_id, d.error_code, NULL, d.created_at, d.updated_at
+        FROM imessage_deliveries d
+        WHERE NOT EXISTS (SELECT 1 FROM imessage_delivery_attempts a WHERE a.message_id = d.message_id);
+      `);
+
       const legacyVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vector_chunks'").get();
       const quarantinedVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'legacy_vector_chunks_quarantined'").get();
       if (legacyVector && !quarantinedVector) {
@@ -271,6 +380,18 @@ export function claimReminderDispatch(
     try { db.exec("ROLLBACK"); } catch {}
     throw error;
   }
+}
+
+export function releaseReminderDispatch(
+  tenantId: string, reminderId: string, workerId: string, now = new Date(),
+): void {
+  const db = getSqliteDb();
+  if (!db) throw new Error("SQLite is required for durable reminder dispatch claims.");
+  db.prepare(`
+    UPDATE reminder_dispatch_claims
+    SET lease_until = ?, updated_at = ?
+    WHERE tenant_id = ? AND reminder_id = ? AND status = 'claimed' AND worker_id = ?
+  `).run(now.toISOString(), now.toISOString(), tenantId, reminderId, workerId);
 }
 
 export function completeReminderDispatch(

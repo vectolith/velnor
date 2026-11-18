@@ -156,3 +156,17 @@ stroked at width 20 with round joins, two colours, and the same
 same monument: where Vectolith is a static hexagonal prism with a spine, Velnor is a
 rotor, six twisted blades turning around a diamond void with indexing struts outside.
 Circulation rather than monolith.
+
+
+## Channel integrations, execution and operations
+
+Velnor owns its own task lifecycle, channel authentication, delivery state and operational controls. Messaging providers are optional integrations; no other Vectolith product is required for Velnor's core operation.
+
+- [Discord integration](docs/DISCORD-INTEGRATION.md)
+- [Execution tasks and cancellation](docs/EXECUTION-TASKS.md)
+- [iMessage and Apple ID email identities](docs/IMESSAGE-EMAIL-IDENTITIES.md)
+- [Sendblue channel configuration](docs/SENDBLUE.md)
+- [Outbound delivery guarantees and retry policy](docs/DELIVERY_RELIABILITY.md)
+- [Operations and deployment notes](docs/OPERATIONS.md)
+
+A provider acceptance response is not proof of delivery. The delivery ledger and callback/status reconciliation distinguish queued, processing, delivered, failed and ambiguous outcomes. Automatic retries are blocked when a prior send may already have reached the recipient. See the delivery reliability document for the remaining at-least-once limitations.

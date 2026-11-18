@@ -1,8 +1,10 @@
 import crypto from "crypto";
 import { after, NextRequest, NextResponse } from "next/server";
 import { inboundKey, inboundWebhookCache } from "@/lib/security/idempotency";
-import { sendSendblueMessage } from "@/lib/channels/sendblue";
-import { sendLoopMessage } from "@/lib/channels/loopmessage";
+import { sendTrackedSendblueMessage } from "@/lib/channels/trackedSendblueSend";
+import { syncSendblueStatusCallback } from "@/lib/channels/sendblueStatusStore";
+import { resolveSendblueConfig } from "@/lib/channels/sendblueConfig";
+import { claimInboundWebhookEvent, releaseInboundWebhookEvent } from "@/lib/security/inboundWebhookStore";
 import {
   authorizeJsonWebhook,
   authorizeTwilioRequest,
@@ -14,6 +16,9 @@ import { resolveUserId, withVelnorTenantScope } from "@/lib/store";
 import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
 import { splitForSms, toPlainText } from "@/lib/format";
 import { Attachment } from "@/lib/types";
+import { getLoopMessageRecipient, isLoopMessagePayload, normalizeImessageIdentity } from "@/lib/channels/imessageIdentity";
+import { processLoopMessageCallbackPayload } from "@/lib/channels/imessageDeliveryStore";
+import { sendTrackedLoopMessage } from "@/lib/channels/trackedLoopMessageSend";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 const MAX_INPUT_CHARS = 8000;
@@ -77,10 +82,10 @@ export async function POST(req: NextRequest) {
 
       // Each provider must prove possession of its own webhook secret. A
       // LoopMessage secret must never authenticate a Sendblue callback (or vice versa).
-      const isLoopMessage = Boolean(jsonPayload.contact) || jsonPayload.event === "message_inbound";
+      const isLoopMessage = isLoopMessagePayload(jsonPayload);
       const expectedSecret = isLoopMessage
         ? process.env.LOOPMESSAGE_WEBHOOK_SECRET
-        : process.env.SENDBLUE_WEBHOOK_SECRET;
+        : resolveSendblueConfig(rootConfig).config.webhookSecret;
       const provided = isLoopMessage
         ? req.headers.get("authorization") || req.headers.get("x-velnor-webhook-secret")
         : req.headers.get("sb-signing-secret") || req.headers.get("x-velnor-webhook-secret");
@@ -191,25 +196,73 @@ export async function POST(req: NextRequest) {
     // 2. SENDBLUE / LOOPMESSAGE iMESSAGE JSON WEBHOOK
     // =========================================================================
     const payload: any = jsonPayload;
-    const provider = payload.contact ? "loopmessage" : "sendblue";
+    const provider = isLoopMessagePayload(payload) ? "loopmessage" : "sendblue";
+    if (provider === "loopmessage") {
+      const outcome = processLoopMessageCallbackPayload(payload);
+      if (outcome !== null) {
+        if (outcome === "unmatched") {
+          // A callback may beat persistence of the send response. The event is
+          // durably queued and reconciled when the provider message ID is saved.
+          return NextResponse.json({ status: "callback_persisted_pending_correlation" });
+        }
+        return NextResponse.json({
+          status: outcome === "applied" ? payload.event : "duplicate_callback",
+        });
+      }
+    }
     if (provider === "loopmessage" && payload.event && payload.event !== "message_inbound") {
       return NextResponse.json({ status: "ignored", event: payload.event });
     }
     if (provider === "sendblue") {
       const eventType = String(payload.event_type || "").toLowerCase();
+      // Sendblue reports its own outbound sends and delivery receipts here too.
+      // They are tracked, never answered: treating one as inbound would create a
+      // reply loop that bills the model for every message VELNOR itself sent.
+      if (payload.is_outbound === true) {
+        const outcome = syncSendblueStatusCallback({
+          messageHandle: String(payload.message_handle || payload.message_id || ""),
+          status: payload.status,
+          errorCode: Number.isFinite(Number(payload.error_code)) ? Number(payload.error_code) : null,
+          errorDetail: payload.error_message || payload.error_key || null,
+        });
+        return NextResponse.json({ status: outcome, event: "delivery_receipt" });
+      }
       if (
-        payload.is_outbound === true ||
         (payload.message_type && payload.message_type !== "message") ||
         (eventType && !eventType.includes("message") && !eventType.includes("receive"))
       ) {
-        return NextResponse.json({ status: "ignored", event: eventType || "outbound_or_non_message" });
+        return NextResponse.json({ status: "ignored", event: eventType || "non_message" });
       }
     }
-    const senderHandle = String(payload.contact || payload.number || payload.from_number || "").slice(0, 64);
+    const senderHandle = normalizeImessageIdentity(payload.contact || payload.email || payload.from_email || payload.apple_id || payload.number || payload.from_number);
     if (!senderHandle) return NextResponse.json({ error: "iMessage webhook is missing sender identity." }, { status: 400 });
+    const loopMessageSenderId = provider === "loopmessage" ? (process.env.LOOPMESSAGE_SENDER_ID || "").trim() : "";
+    if (provider === "loopmessage" && !loopMessageSenderId) {
+      return NextResponse.json({ error: "LOOPMESSAGE_SENDER_ID must explicitly identify VELNOR's email sender." }, { status: 503 });
+    }
     const providerAccount = String(payload.organization_id || payload.sendblue_number || payload.to_number || "default");
     const webhookId = String(payload.message_handle || payload.webhook_id || payload.message_id || "");
-    if (webhookId && !inboundWebhookCache.seen(inboundKey([provider, webhookId]))) return NextResponse.json({ status: "duplicate" });
+
+    // A message VELNOR sent is echoed here as inbound by some providers. Without
+    // this guard the agent replies to itself forever.
+    if (provider === "sendblue") {
+      const sendblue = resolveSendblueConfig(rootConfig);
+      const from = normalizeImessageIdentity(payload.from_number || payload.sendblue_number);
+      if (sendblue.config.fromNumber && from && from === sendblue.config.fromNumber) {
+        return NextResponse.json({ status: "ignored", event: "self_message" });
+      }
+    }
+
+    // Dedupe durably first: an in-memory key is lost on restart and shared by no
+    // other instance, which would let a provider retry run the agent twice.
+    if (webhookId) {
+      if (!inboundWebhookCache.seen(inboundKey([provider, webhookId]))) {
+        return NextResponse.json({ status: "duplicate" });
+      }
+      if (claimInboundWebhookEvent({ provider, eventKey: webhookId }) === "duplicate") {
+        return NextResponse.json({ status: "duplicate" });
+      }
+    }
     const messageText = String(
       payload.content || payload.text || payload.body || payload.message || ""
     )
@@ -243,29 +296,79 @@ export async function POST(req: NextRequest) {
                 const record = await repository.load(tenantId);
                 if (!record) throw new Error("Authenticated tenant state is not initialized.");
                 const scoped = record.state as unknown as { config: Record<string, any> };
-                const deliveryResults = [] as Array<{ provider: string; ok: boolean; status?: number; detail?: string }>; 
-        
-                // Outbound dispatch via Sendblue if configured
-                if (scoped.config.sendblueApiKey && scoped.config.sendblueApiSecret && payload.number) {
-                  deliveryResults.push(await sendSendblueMessage({
-                    apiKeyId: scoped.config.sendblueApiKey,
-                    apiSecretKey: scoped.config.sendblueApiSecret,
-                    number: payload.number,
-                    fromNumber: scoped.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
-                    content: outboundText,
-                  }));
+                const deliveryResults = [] as Array<{
+                  provider: string; ok: boolean; status?: number; detail?: string;
+                  messageId?: string; attemptId?: string;
+                }>;
+
+                // Outbound dispatch via Sendblue. Config comes from the workspace
+                // when present and from the environment otherwise, so a deployment
+                // does not have to duplicate secrets into the tenant record.
+                const sendblue = resolveSendblueConfig(scoped.config);
+                const sendblueRecipient = normalizeImessageIdentity(payload.number);
+                if (sendblue.configured && sendblueRecipient) {
+                  // Long replies are split so the carrier does not truncate or drop
+                  // them; each part is separately tracked and retryable.
+                  for (const part of splitForSms(outboundText)) {
+                    const tracked = await sendTrackedSendblueMessage({
+                      tenantId: getNodeTenantRepositoryContext().tenantId,
+                      taskId: reply.interactionId || "inbound_" + (webhookId || senderHandle),
+                      recipient: sendblueRecipient,
+                      senderId: sendblue.config.fromNumber,
+                      config: {
+                        apiKeyId: sendblue.config.apiKeyId,
+                        apiSecret: sendblue.config.apiSecret,
+                        fromNumber: sendblue.config.fromNumber,
+                      },
+                      text: part,
+                    });
+                    deliveryResults.push({
+                      ...tracked.result,
+                      attemptId: tracked.attempt.attemptId,
+                      messageId: tracked.attempt.messageId ?? tracked.result.messageId,
+                    });
+                    if (!tracked.result.ok) {
+                      console.warn("Sendblue outbound attempt not confirmed", {
+                        attemptId: tracked.attempt.attemptId,
+                        state: tracked.attempt.state,
+                        duplicateRisk: tracked.duplicateRisk,
+                        detail: tracked.result.detail,
+                      });
+                      break;
+                    }
+                  }
                 }
         
                 // Outbound dispatch via LoopMessage if configured
+                const loopMessageAuthKey =
+                  (typeof scoped.config.loopMessageAuthKey === "string" ? scoped.config.loopMessageAuthKey : "") ||
+                  process.env.LOOPMESSAGE_AUTH_KEY ||
+                  "";
                 if (
-                  scoped.config.loopMessageAuthKey &&
-                  payload.contact
+                  loopMessageAuthKey &&
+                  (payload.contact || payload.email || payload.from_email || payload.apple_id)
                 ) {
-                  deliveryResults.push(await sendLoopMessage({
-                    authKey: scoped.config.loopMessageAuthKey,
-                    recipient: payload.contact,
+                  const recipient = getLoopMessageRecipient(payload);
+                  if (!recipient) throw new Error("LoopMessage inbound webhook did not provide a valid contact identity.");
+                  // Every outbound send is recorded as a durable attempt before the
+                  // provider call, so a reply that fails without a message ID stays
+                  // recoverable instead of being lost with the request.
+                  const tracked = await sendTrackedLoopMessage({
+                    authKey: loopMessageAuthKey,
+                    recipient,
                     text: outboundText,
-                  }));
+                    senderId: loopMessageSenderId,
+                    tenantId: getNodeTenantRepositoryContext().tenantId,
+                    taskId: reply.interactionId || "inbound_" + (webhookId || senderHandle),
+                  });
+                  deliveryResults.push(tracked.result);
+                  if (!tracked.result.ok || !tracked.result.messageId) {
+                    console.warn("LoopMessage outbound attempt not confirmed", {
+                      attemptId: tracked.attempt.attemptId,
+                      state: tracked.attempt.state,
+                      duplicateRisk: tracked.duplicateRisk,
+                    });
+                  }
                 }
         
                 return { reply, outboundText, deliveryResults };
@@ -278,6 +381,33 @@ export async function POST(req: NextRequest) {
         });
       } catch (error) {
         console.error("iMessage JSON webhook processing failed:", error);
+        // Silence looks like being ignored. A consumer-grade channel always
+        // answers, even when the agent could not.
+        try {
+          const { repository, tenantId } = getNodeTenantRepositoryContext();
+          const record = await repository.load(tenantId);
+          const config = (record?.state as unknown as { config?: Record<string, unknown> } | undefined)?.config ?? {};
+          const sendblue = resolveSendblueConfig(config);
+          const recipient = normalizeImessageIdentity(payload.number);
+          if (sendblue.configured && recipient && !payload.is_outbound) {
+            await sendTrackedSendblueMessage({
+              tenantId,
+              taskId: "inbound_" + (webhookId || senderHandle),
+              recipient,
+              senderId: sendblue.config.fromNumber,
+              config: {
+                apiKeyId: sendblue.config.apiKeyId,
+                apiSecret: sendblue.config.apiSecret,
+                fromNumber: sendblue.config.fromNumber,
+              },
+              text: "Sorry — I hit a problem handling that. Please send it again in a moment.",
+            });
+          }
+        } catch (fallbackError) {
+          console.error("iMessage fallback reply failed:", fallbackError);
+        }
+        // Let the provider retry instead of claiming success for a failed turn.
+        if (webhookId) releaseInboundWebhookEvent(provider, webhookId);
       }
     });
 
