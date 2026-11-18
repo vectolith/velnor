@@ -214,3 +214,31 @@ test("ambiguous retries require explicit authorization while definite failures m
   });
   assert.equal(safeRetry.attemptNo, failed.attemptNo + 1);
 });
+
+
+test("tracked LoopMessage sender refuses a second queued send without contacting the provider", async () => {
+  const queued = beginLoopMessageAttempt({
+    tenantId: "tenant-loop-guard", taskId: "task-loop-queued",
+    recipient: "+15550001", senderId: "+15550002",
+  });
+  finishLoopMessageAttempt(queued.attemptId, { state: "queued", messageId: "loop-queued-guard" });
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = (async () => {
+    requests += 1;
+    return new Response(JSON.stringify({ success: true, message_id: "duplicate" }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const result = await sendTrackedLoopMessage({
+      tenantId: "tenant-loop-guard", taskId: "task-loop-queued",
+      recipient: "+15550001", senderId: "+15550002", authKey: "test-key",
+      text: "must not duplicate",
+    });
+    assert.equal(result.result.ok, false);
+    assert.match(result.result.detail || "", /pending or in progress|delivered/i);
+    assert.equal(result.attempt.attemptId, queued.attemptId);
+    assert.equal(requests, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
