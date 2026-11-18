@@ -49,7 +49,7 @@ export class LoopMessageAttemptInFlightError extends Error {
   }
 }
 
-export class LoopMessageAttemptBlockedError extends Error {
+export class LoopMessageAttemptBlockedError extends LoopMessageAttemptInFlightError {
   constructor(readonly state: LoopMessageAttemptState) {
     super(
       state === "delivered"
