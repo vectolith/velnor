@@ -68,6 +68,7 @@ test("accepts success only with a structurally valid completion receipt", async 
       JSON.stringify({
         status: "success",
         message: "Page inspected",
+        sessionRef: "wrun_internal_1",
         executionReceipt: {
           taskId: "verified-task",
           state: "completed",
@@ -85,6 +86,26 @@ test("accepts success only with a structurally valid completion receipt", async 
   assert.equal(result.currentUrl, "https://example.com/");
   assert.equal(result.observedAtUtc, completedAtUtc);
   assert.deepEqual(result.extractedData, { title: "Example Domain" });
+  assert.equal(result.sessionRef, "wrun_internal_1");
+});
+
+
+test("preserves a resumable session reference when the worker needs follow-up", async () => {
+  process.env.BLUD_INTERNAL_KEY = "test-internal-secret";
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        status: "failure",
+        error: "browser_worker_waiting_for_human_input",
+        message: "The worker needs an OTP.",
+        sessionRef: "wrun_pending_1",
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+
+  const result = await delegateBrowserTaskToBlud({ task: "Continue sign-in" });
+  assert.equal(result.status, "failure");
+  assert.equal(result.sessionRef, "wrun_pending_1");
 });
 
 test("returns offline status when Blud RPC endpoint is unreachable", async () => {
