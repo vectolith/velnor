@@ -31,11 +31,11 @@ const DEFAULT_BLUD_RPC_URL = "http://127.0.0.1:3000/api/internal/browser-worker"
 const DEFAULT_TIMEOUT_MS = 180_000;
 
 function configuredSharedSecret(): string {
-  return (
+  const secret =
     process.env.BLUD_INTERNAL_KEY ||
     process.env.VELNOR_SHARED_SECRET ||
-    ""
-  );
+    "";
+  return secret.length >= 32 ? secret : "";
 }
 
 function isExecutionReceipt(value: unknown): value is BrowserExecutionReceipt {
