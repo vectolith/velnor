@@ -40,9 +40,10 @@ Provider credentials entered through `POST /api/settings` are sealed with AES-25
 
 - Without `VELNOR_SECRET_KEY`, credentials stay in memory only. Set it before you
   rely on a stored key surviving a restart.
-- Rotating the key makes existing sealed values undecryptable. They are dropped on
-  read rather than crashing, which means: rotate, then re-enter the provider keys
-  once through `POST /api/settings`.
+- Rotating the key makes existing sealed values undecryptable. Reads that need
+  those credentials fail until the original key is restored or a coordinated
+  decrypt-and-reseal migration is completed. Do not rotate by simply replacing
+  the key; back it up and rehearse key rotation first.
 - Deployment preflight requires `VELNOR_SHARED_SECRET`,
   `VELNOR_TENANT_TOKEN_SECRET`, `VELNOR_PROVISIONING_SECRET`,
   `VELNOR_SECRET_KEY`, `CRON_SECRET`, and canonical HTTPS
@@ -63,6 +64,8 @@ Provider credentials entered through `POST /api/settings` are sealed with AES-25
 | `POST /api/webhooks/imessage` (Sendblue JSON) | gateway-injected `x-velnor-secret` + `sb-signing-secret` or configured webhook secret |
 | `POST /api/webhooks/imessage` (LoopMessage JSON) | gateway-injected `x-velnor-secret` + configured `Authorization` webhook header (`LOOPMESSAGE_WEBHOOK_SECRET`) |
 | `POST /api/webhooks/slack` | gateway-injected `x-velnor-secret` + v0 signature + 300s freshness |
+| `POST /api/webhooks/discord` | gateway-injected `x-velnor-secret` + Discord Ed25519 signature + 300s freshness |
+| `GET/POST /api/tasks` | signed tenant bearer token + shared deployment-secret perimeter |
 | `GET/POST /api/chat`, `GET/POST /api/settings`, `POST /api/siri` | signed tenant bearer token; shared deployment secret is an outer gate where enabled |
 | `POST /api/tts` | signed tenant bearer token + shared deployment gate |
 | `GET/POST /api/lora-pilot` | signed tenant bearer token + shared deployment-secret perimeter |

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sendSendblueMessage } from "../src/lib/channels/sendblue";
-import { sendLoopMessage } from "../src/lib/channels/loopmessage";
+import { getLoopMessageStatus, sendLoopMessage } from "../src/lib/channels/loopmessage";
 import { buildSlackBlocks, postSlackMessage } from "../src/lib/channels/slack";
+import { sendTwilioSms } from "../src/lib/channels/twilio";
 import type { ChatMessage } from "../src/lib/types";
 
 function stubFetch(handler: (input: RequestInfo | URL, init?: RequestInit) => Response) {
@@ -17,7 +18,7 @@ test("sendblue sends the documented headers and body", async () => {
   let seen: { url: string; headers: any; body: any } | null = null;
   const restore = stubFetch((input, init) => {
     seen = { url: String(input), headers: init?.headers, body: JSON.parse(String(init?.body)) };
-    return new Response(JSON.stringify({ status: "OK" }), { status: 200, headers: { "content-type": "application/json" } });
+    return new Response(JSON.stringify({ status: "QUEUED", message_handle: "handle-1" }), { status: 200, headers: { "content-type": "application/json" } });
   });
   try {
     const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+15550100", content: "hi" });
@@ -27,6 +28,31 @@ test("sendblue sends the documented headers and body", async () => {
     assert.equal(seen!.headers["sb-api-key-id"], "key");
     assert.equal(seen!.headers["sb-api-secret-key"], "secret");
     assert.deepEqual(seen!.body, { number: "+15550100", content: "hi" });
+    assert.equal(result.messageId, "handle-1");
+    assert.equal(result.sendCertainty, "accepted");
+  } finally {
+    restore();
+  }
+});
+
+test("sendblue treats a 2xx without a message handle as ambiguous, not sent", async () => {
+  const restore = stubFetch(() => new Response(JSON.stringify({ status: "QUEUED" }), { status: 200, headers: { "content-type": "application/json" } }));
+  try {
+    const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+15550100", content: "hi" });
+    assert.equal(result.ok, false);
+    assert.equal(result.sendCertainty, "ambiguous");
+  } finally {
+    restore();
+  }
+});
+
+test("sendblue treats an error payload on a 2xx as an explicit rejection", async () => {
+  const restore = stubFetch(() => new Response(JSON.stringify({ status: "ERROR", error_message: "from number not allowed" }), { status: 200, headers: { "content-type": "application/json" } }));
+  try {
+    const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+15550100", content: "hi" });
+    assert.equal(result.ok, false);
+    assert.equal(result.sendCertainty, "rejected");
+    assert.match(String(result.detail), /from number not allowed/);
   } finally {
     restore();
   }
@@ -50,12 +76,41 @@ test("sendblue refuses to run without credentials", async () => {
   assert.match(String(result.detail), /not configured/);
 });
 
+test("loopmessage sends Apple ID email recipients through the configured email sender ID", async () => {
+  let body: any = null;
+  const restore = stubFetch((_input, init) => {
+    body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ message_id: "msg-1" }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  });
+  try {
+    const result = await sendLoopMessage({
+      authKey: "api-key",
+      recipient: "alex@icloud.com",
+      text: "Here is your result",
+      senderId: "email-sender-id",
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(body, {
+      contact: "alex@icloud.com",
+      text: "Here is your result",
+      sender: "email-sender-id",
+    });
+    assert.equal(result.messageId, "msg-1");
+    assert.equal(result.deliveryStatus, "queued");
+  } finally {
+    restore();
+  }
+});
+
 test("loopmessage reports transport failures", async () => {
   const restore = stubFetch(() => {
     throw new Error("ECONNRESET");
   });
   try {
-    const result = await sendLoopMessage({ authKey: "a", recipient: "+1555", text: "hi" });
+    const result = await sendLoopMessage({ authKey: "a", recipient: "+1555", text: "hi", senderId: "velnor-email-sender" });
     assert.equal(result.ok, false);
     assert.match(String(result.detail), /ECONNRESET/);
   } finally {
@@ -110,4 +165,129 @@ test("block kit rendering escapes bold and attaches tool context", () => {
   const blocks = buildSlackBlocks(reply);
   assert.equal(blocks[0].text.text, "*done*");
   assert.ok(blocks.some((block) => block.type === "context"));
+});
+
+
+test("Twilio sends an authenticated SMS and requires a provider message SID", async () => {
+  let request: { url: string; headers: Headers; body: URLSearchParams } | null = null;
+  const restore = stubFetch((input, init) => {
+    request = {
+      url: String(input),
+      headers: new Headers(init?.headers),
+      body: new URLSearchParams(String(init?.body)),
+    };
+    return new Response(JSON.stringify({ sid: "SM123", status: "queued" }), {
+      status: 201,
+      headers: { "content-type": "application/json" },
+    });
+  });
+  try {
+    const result = await sendTwilioSms({
+      accountSid: "AC123",
+      authToken: "token",
+      from: "+15550001",
+      to: "+15550002",
+      body: "Reminder",
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.provider, "twilio");
+    assert.equal(request!.url, "https://api.twilio.com/2010-04-01/Accounts/AC123/Messages.json");
+    assert.equal(request!.headers.get("authorization"), "Basic " + Buffer.from("AC123:token").toString("base64"));
+    assert.equal(request!.body.get("From"), "+15550001");
+    assert.equal(request!.body.get("To"), "+15550002");
+    assert.equal(request!.body.get("Body"), "Reminder");
+  } finally {
+    restore();
+  }
+});
+
+test("Twilio does not report acceptance without a message SID", async () => {
+  const restore = stubFetch(() => new Response(JSON.stringify({ status: "queued" }), {
+    status: 201,
+    headers: { "content-type": "application/json" },
+  }));
+  try {
+    const result = await sendTwilioSms({
+      accountSid: "AC123",
+      authToken: "token",
+      from: "+15550001",
+      to: "+15550002",
+      body: "Reminder",
+    });
+    assert.equal(result.ok, false);
+    assert.match(String(result.detail), /not return a message SID/);
+  } finally {
+    restore();
+  }
+});
+
+test("Twilio rejects empty and oversized SMS bodies", async () => {
+  const empty = await sendTwilioSms({
+    accountSid: "AC123", authToken: "token", from: "+15550001", to: "+15550002", body: "",
+  });
+  const oversized = await sendTwilioSms({
+    accountSid: "AC123", authToken: "token", from: "+15550001", to: "+15550002", body: "x".repeat(1601),
+  });
+  assert.equal(empty.ok, false);
+  assert.equal(oversized.ok, false);
+});
+
+test("loopmessage requires an explicit VELNOR sender identity", async () => {
+  const result = await sendLoopMessage({ authKey: "api-key", recipient: "+15551234567", text: "hi", senderId: "" });
+  assert.equal(result.ok, false);
+  assert.match(String(result.detail), /explicit sender ID/);
+});
+
+test("loopmessage sends to a phone number with the same explicit email sender", async () => {
+  let body: any = null;
+  const restore = stubFetch((_input, init) => {
+    body = JSON.parse(String(init?.body));
+    return new Response(JSON.stringify({ message_id: "phone-msg-1" }), { status: 200 });
+  });
+  try {
+    const result = await sendLoopMessage({
+      authKey: "api-key", recipient: "+2348012345678", text: "Result", senderId: "velnor-email-sender",
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(body, {
+      contact: "+2348012345678", text: "Result", sender: "velnor-email-sender",
+    });
+    assert.equal(result.deliveryStatus, "queued");
+  } finally { restore(); }
+});
+
+
+test("LoopMessage status lookup uses the documented message status endpoint", async () => {
+  let requestedUrl = "";
+  let authorization = "";
+  const restore = stubFetch((input, init) => {
+    requestedUrl = String(input);
+    authorization = new Headers(init?.headers).get("authorization") || "";
+    return new Response(JSON.stringify({
+      message_id: "loop-status-123",
+      status: "delivered",
+      contact: "alex@icloud.com",
+      last_update: "2026-11-16T10:00:00.000Z",
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  });
+  try {
+    const result = await getLoopMessageStatus({ authKey: "loop-api-key", messageId: "loop-status-123" });
+    assert.equal(requestedUrl, "https://a.loopmessage.com/api/v1/message/status/loop-status-123/");
+    assert.equal(authorization, "loop-api-key");
+    assert.deepEqual(result, {
+      ok: true, messageId: "loop-status-123", contact: "alex@icloud.com", status: "delivered",
+      errorCode: undefined,
+    });
+  } finally { restore(); }
+});
+
+test("LoopMessage status lookup rejects a mismatched provider message ID", async () => {
+  const restore = stubFetch(() => new Response(JSON.stringify({
+    message_id: "another-message", status: "delivered", contact: "+15551234567",
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+  try {
+    const result = await getLoopMessageStatus({ authKey: "loop-api-key", messageId: "expected-message" });
+    if (result.ok) assert.fail("Expected a mismatched message ID to be rejected.");
+    assert.match(result.detail, /mismatched/);
+  } finally { restore(); }
 });

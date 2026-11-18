@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { getStore, saveStore, resolveSlackChannel, listUserIds, withVelnorUser, currentUserId } from "./store";
-import { claimReminderDispatch, completeReminderDispatch } from "./sqliteDb";
-import { sendSendblueMessage } from "./channels/sendblue";
-import { sendLoopMessage } from "./channels/loopmessage";
+import { claimReminderDispatch, completeReminderDispatch, releaseReminderDispatch } from "./sqliteDb";
+import { sendTrackedSendblueMessage } from "./channels/trackedSendblueSend";
+import { resolveSendblueConfig } from "./channels/sendblueConfig";
+import { sendTrackedLoopMessage } from "./channels/trackedLoopMessageSend";
 import { postSlackMessage } from "./channels/slack";
+import { sendTwilioSms } from "./channels/twilio";
 import { ChatMessage, ReminderItem } from "./types";
 
 export interface DispatchedReminderResult {
@@ -36,96 +38,148 @@ async function dispatchTenantReminderNotification(
 
   const results: DispatchedReminderResult[] = [];
   const workerId = randomUUID();
-  const claimedReminderIds: string[] = [];
+  const completedReminderIds: string[] = [];
   const tenantId = currentUserId();
 
   for (const rem of pending.slice(0, reminderId ? 1 : 3)) {
-    // The lease is persisted in SQLite, so overlapping cron invocations and
-    // separate app processes cannot dispatch the same reminder concurrently.
+    // A durable lease excludes overlapping cron workers and app processes.
     if (!claimReminderDispatch(tenantId, rem.id, workerId)) continue;
-    claimedReminderIds.push(rem.id);
-    const channelsUsed: string[] = ["in-app-feed"];
-    const alertText = `🔔 **Velnor Reminder:** ${rem.text} _(Scheduled for ${rem.dueAt})_`;
 
-    // 1. Append proactive message to the channel conversation
+    try {
+    const channelsUsed: string[] = [];
+    const alertText = `🔔 **Velnor Reminder:** ${rem.text} _(Scheduled for ${rem.dueAt})_`;
+    let deliveryAccepted = !rem.recipient;
+
+    if (rem.channel === "imessage" && rem.recipient) {
+      deliveryAccepted = false;
+      const sendblue = resolveSendblueConfig(state.config as unknown as Record<string, unknown>);
+      if (sendblue.configured) {
+        // Reminders use the same durable attempt ledger as task replies, so a
+        // timeout or crash leaves a retryable record instead of a lost reminder.
+        const tracked = await sendTrackedSendblueMessage({
+          tenantId,
+          taskId: "reminder_" + rem.id,
+          recipient: rem.recipient,
+          senderId: sendblue.config.fromNumber,
+          config: {
+            apiKeyId: sendblue.config.apiKeyId,
+            apiSecret: sendblue.config.apiSecret,
+            fromNumber: sendblue.config.fromNumber,
+          },
+          text: `🔔 Reminder from Velnor: ${rem.text}`,
+        });
+        if (!tracked.result.ok) {
+          console.warn(`Sendblue reminder attempt recorded as ${tracked.attempt.state} (${tracked.attempt.attemptId}): ${tracked.result.detail}`);
+        }
+        if (tracked.result.ok) {
+          deliveryAccepted = true;
+          channelsUsed.push("sendblue-imessage");
+        }
+      }
+      if (state.config.loopMessageAuthKey) {
+        // Reminders get the same durable attempt ledger as tasks so a reminder
+        // that fails without a provider message ID is not silently lost.
+        const tracked = await sendTrackedLoopMessage({
+          authKey: state.config.loopMessageAuthKey,
+          recipient: rem.recipient,
+          text: `🔔 Reminder from Velnor: ${rem.text}`,
+          senderId: process.env.LOOPMESSAGE_SENDER_ID || "",
+          tenantId,
+          taskId: "reminder_" + rem.id,
+        });
+        const result = tracked.result;
+        if (!result.ok) {
+          console.warn(`LoopMessage reminder attempt recorded as ${tracked.attempt.state} (${tracked.attempt.attemptId})`);
+        }
+        if (result.ok) {
+          deliveryAccepted = true;
+          channelsUsed.push("loopmessage-imessage");
+        } else {
+          console.warn(`LoopMessage reminder failed: ${result.detail}`);
+        }
+      }
+    } else if (rem.channel === "slack") {
+      const slackToken = state.config.slackBotToken || process.env.SLACK_BOT_TOKEN;
+      const slackChannel = rem.recipient || resolveSlackChannel(state);
+      deliveryAccepted = false;
+      if (slackToken && slackChannel) {
+        const result = await postSlackMessage({
+          botToken: slackToken,
+          channel: slackChannel,
+          text: `🔔 *Reminder from Velnor:* ${rem.text} _(${rem.dueAt})_`,
+        });
+        if (result.ok) {
+          deliveryAccepted = true;
+          channelsUsed.push("slack-bot");
+        } else {
+          console.warn(`Slack reminder failed: ${result.detail}`);
+        }
+      }
+    } else if (rem.channel === "sms" && rem.recipient) {
+      deliveryAccepted = false;
+      const result = await sendTwilioSms({
+        accountSid: state.config.twilioAccountSid || "",
+        authToken: state.config.twilioAuthToken || "",
+        from: state.config.twilioFromNumber || "",
+        to: rem.recipient,
+        body: `Reminder from Velnor: ${rem.text}`,
+      });
+      if (result.ok) {
+        deliveryAccepted = true;
+        channelsUsed.push("twilio-sms");
+      } else {
+        console.warn(`Twilio SMS reminder failed: ${result.detail}`);
+      }
+    }
+
+    if (!deliveryAccepted) {
+      // Do not append a success-looking feed message or complete the reminder.
+      // Release this worker's lease immediately so the next scheduler run can retry.
+      releaseReminderDispatch(tenantId, rem.id, workerId);
+      continue;
+    }
+
+    channelsUsed.push("in-app-feed");
     const msg: ChatMessage = {
-      id: `msg-rem-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: `msg-rem-${randomUUID()}`,
       channel: rem.channel,
       sender: "velnor",
       text: alertText,
       timestamp: new Date().toISOString(),
       providerUsed: "scheduler",
       modelUsed: "velnor-proactive-cron",
-      toolActions: [
-        {
-          tool: "proactive_reminder",
-          label: `Triggered scheduled reminder (${rem.dueAt})`,
-          status: "success",
-          details: rem.text,
-        },
-      ],
+      toolActions: [{
+        tool: "proactive_reminder",
+        label: `Delivered scheduled reminder (${rem.dueAt})`,
+        status: "success",
+        details: rem.text,
+      }],
     };
     state.messages.push(msg);
-
-    // 2. Outbound Sendblue iMessage dispatch if configured
-    if (
-      rem.channel === "imessage" &&
-      state.config.sendblueApiKey &&
-      state.config.sendblueApiSecret &&
-      rem.recipient
-    ) {
-      const sendblueResult = await sendSendblueMessage({
-        apiKeyId: state.config.sendblueApiKey,
-        apiSecretKey: state.config.sendblueApiSecret,
-        number: rem.recipient,
-        fromNumber: state.config.sendblueFromNumber || process.env.SENDBLUE_FROM_NUMBER,
-        content: `🔔 Reminder from Velnor: ${rem.text}`,
-      });
-      if (sendblueResult.ok) channelsUsed.push("sendblue-imessage");
-      else console.warn(`Sendblue reminder failed: ${sendblueResult.detail}`);
-    }
-
-    // 3. Outbound LoopMessage iMessage dispatch if configured
-    if (
-      rem.channel === "imessage" &&
-      state.config.loopMessageAuthKey &&
-      rem.recipient
-    ) {
-      const loopResult = await sendLoopMessage({
-        authKey: state.config.loopMessageAuthKey,
-        recipient: rem.recipient,
-        text: `🔔 Reminder from Velnor: ${rem.text}`,
-      });
-      if (loopResult.ok) channelsUsed.push("loopmessage-imessage");
-      else console.warn(`LoopMessage reminder failed: ${loopResult.detail}`);
-    }
-
-    // 4. Outbound Slack notification if configured
-    const slackToken = state.config.slackBotToken || process.env.SLACK_BOT_TOKEN;
-    if (rem.channel === "slack" && slackToken) {
-      const slackResult = await postSlackMessage({
-        botToken: slackToken,
-        channel: rem.recipient || resolveSlackChannel(state),
-        text: `🔔 *Reminder from Velnor:* ${rem.text} _(${rem.dueAt})_`,
-      });
-      if (slackResult.ok) channelsUsed.push("slack-bot");
-      else console.warn(`Slack reminder failed: ${slackResult.detail}`);
-    }
-
     rem.completed = true;
+    completedReminderIds.push(rem.id);
     results.push({ reminder: rem, deliveredVia: channelsUsed });
+    } catch (error) {
+      // Unexpected failures must not strand the durable claim until lease expiry.
+      try {
+        releaseReminderDispatch(tenantId, rem.id, workerId);
+      } catch (releaseError) {
+        console.error("Could not release failed reminder dispatch claim:", releaseError);
+      }
+      console.error("Reminder dispatch failed before completion:", error);
+    }
   }
 
-  // Persist the in-app notification and completed flag before making the
-  // durable claim terminal. If persistence fails, the lease expires and the
-  // reminder can be retried instead of being lost. A provider may already have
-  // accepted an external send before that persistence failure, so crash recovery
-  // is at-least-once and can duplicate an external notification until the
-  // provider idempotency/outbox ledger is integrated for every channel.
-  if (claimedReminderIds.length > 0) {
+  // Persist only accepted deliveries. Failed external sends remain incomplete;
+  // their leases expire and the scheduler can retry them. A provider may already
+  // have accepted a send before a persistence failure or process crash, so this
+  // is at-least-once recovery, not exactly-once delivery. The outbound attempt
+  // ledger and provider idempotency/reconciliation are still required to prevent
+  // duplicates across that failure window.
+  if (completedReminderIds.length > 0) {
     saveStore(state);
-    for (const claimedId of claimedReminderIds) {
-      completeReminderDispatch(tenantId, claimedId, workerId);
+    for (const completedId of completedReminderIds) {
+      completeReminderDispatch(tenantId, completedId, workerId);
     }
   }
   return results;

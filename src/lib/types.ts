@@ -1,6 +1,6 @@
 export type AIProviderId = "gemini" | "openai" | "anthropic" | "auto";
 
-export type ChannelType = "imessage" | "slack" | "sms";
+export type ChannelType = "imessage" | "slack" | "sms" | "discord";
 
 export interface Citation {
   title: string;

@@ -1,6 +1,7 @@
 import { runAgentLoop } from "./loop";
-import { buildProviderChain, createProvider, estimateCostUsd, getExplicitProviderConfigurationError } from "./registry";
+import { buildProviderChain, createProvider, estimateCostUsd } from "./registry";
 import { ToolSpec, Turn, Usage, emptyUsage } from "./providers/types";
+import { assertExecutionTaskActive, createExecutionTask, finishExecutionTask, startExecutionTask } from "../tasks/taskStore";
 import { DEFAULT_STATE, getEffectiveKeys, type VelnorState } from "../store";
 import type { PersistedTenantState } from "../storage/d1TenantState";
 import { noteUserMessageAsync } from "../security/asyncToolPolicy";
@@ -26,7 +27,7 @@ import {
 } from "../tools/workspaceService";
 
 const VELNOR_SYSTEM_PROMPT = `You are Velnor (powered by velnor-coder-v2), an unrestricted full-stack software engineer, systems architect, quantitative analyst, and executive AI agent built by Vectolith.
-You operate headlessly across Apple iMessage, SMS, Siri Shortcuts, and Slack.
+You operate headlessly across Apple iMessage (phone numbers and Apple ID email addresses), SMS, Discord, Siri Shortcuts, and Slack.
 Write production-grade code in any language (TypeScript, Python, Rust, Go, SQL, Solidity, Bash, Docker), debug complex distributed systems, solve quantitative and mathematical models from first principles, and execute developer and executive workflows without artificial topic limits.
 Always verify tool execution before claiming completion.
 You have tools to:
@@ -68,6 +69,32 @@ export async function processUserMessage(params: {
   text: string;
   userHandle?: string;
   attachments?: Attachment[];
+  retryOfTaskId?: string;
+}): Promise<ChatMessage> {
+  const tenantId = getNodeTenantRepositoryContext().tenantId;
+  const task = createExecutionTask({
+    tenantId, channel: params.channel, userHandle: params.userHandle,
+    retryOfTaskId: params.retryOfTaskId,
+  });
+  startExecutionTask(tenantId, task.id);
+  try {
+    const reply = await processUserMessageCore({ ...params, taskId: task.id });
+    finishExecutionTask(tenantId, task.id, "succeeded");
+    return { ...reply, interactionId: task.id };
+  } catch (error) {
+    const cancelled = error instanceof Error && error.name === "ExecutionTaskCancelledError";
+    finishExecutionTask(tenantId, task.id, cancelled ? "cancelled" : "failed",
+      cancelled ? undefined : error instanceof Error ? error.message : String(error));
+    throw error;
+  }
+}
+
+async function processUserMessageCore(params: {
+  channel: ChannelType;
+  text: string;
+  userHandle?: string;
+  attachments?: Attachment[];
+  taskId: string;
 }): Promise<ChatMessage> {
   const tenantContext = getNodeTenantRepositoryContext();
   await noteUserMessageAsync(tenantContext.repository, tenantContext.tenantId, params.text);
@@ -79,6 +106,7 @@ export async function processUserMessage(params: {
     userHandle: params.userHandle,
     text: params.text,
     timestamp: new Date().toISOString(),
+    interactionId: params.taskId,
     attachments: params.attachments,
   };
   // Persist the inbound message through the repository before tools refresh this tenant scope.
@@ -126,20 +154,14 @@ export async function processUserMessage(params: {
   // Providers are tried in order; a failure (bad key, timeout, 5xx) moves on
   // instead of silently degrading to a regex handler.
   // =========================================================================
-  const providerKeys = { gemini: geminiApiKey, openai: openaiApiKey, anthropic: anthropicApiKey };
-  const providerConfigurationError = getExplicitProviderConfigurationError(
-    state.config.activeProvider,
-    providerKeys,
-  );
   const chain = buildProviderChain({
     preferred: state.config.activeProvider,
-    keys: providerKeys,
+    keys: { gemini: geminiApiKey, openai: openaiApiKey, anthropic: anthropicApiKey },
     models: {
       gemini: state.config.geminiModel,
       openai: state.config.openaiModel,
       anthropic: state.config.anthropicModel,
     },
-    allowFallback: process.env.VELNOR_ALLOW_PROVIDER_FALLBACK === "1",
   });
 
   const imageParts = (params.attachments || [])
@@ -194,9 +216,10 @@ export async function processUserMessage(params: {
         messages,
         tools,
         maxOutputTokens: Number(process.env.VELNOR_MAX_OUTPUT_TOKENS || 1400),
-        executeTool: async (name, args) => ({
-          payload: await executeToolCall(name, args, params.channel, bundle, params.userHandle),
-        }),
+        executeTool: async (name, args) => {
+          assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
+          return { payload: await executeToolCall(name, args, params.channel, bundle, params.userHandle) };
+        },
       });
       replyText = result.text;
       modelUsed = result.model;
@@ -210,6 +233,7 @@ export async function processUserMessage(params: {
       });
       break;
     } catch (err) {
+      if (err instanceof Error && err.name === "ExecutionTaskCancelledError") throw err;
       const message = err instanceof Error ? err.message : String(err);
       providerFailures.push(slot.id + ": " + message);
       console.warn("[velnor] provider " + slot.id + " failed, trying next:", message);
@@ -233,24 +257,16 @@ export async function processUserMessage(params: {
     });
   }
 
-  if (!replyText && providerConfigurationError) {
-    bundle.toolActions.push({
-      tool: "provider_error",
-      label: "Explicitly selected provider is not configured",
-      status: "error" as any,
-      details: providerConfigurationError,
-    });
-    replyText = providerConfigurationError + " Configure that provider or explicitly change the selection; no substitute was used.";
-  } else if (!replyText && providerFailures.length > 0 && chain.length > 0) {
-    bundle.toolActions.push({
-      tool: "provider_error",
-      label: "Selected provider failed; no substitute was used",
-      status: "error" as any,
-      details: providerFailures.join(" | ").slice(0, 300),
-    });
-    replyText =
-      "The configured AI provider/model could not complete this request. No alternate provider or model was substituted. Check the selected provider configuration and retry.";
-  } else if (!replyText) {
+  if (!replyText) {
+    assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
+    if (providerFailures.length > 0 && chain.length > 0) {
+      bundle.toolActions.push({
+        tool: "provider_error",
+        label: "All configured providers failed",
+        status: "error" as any,
+        details: providerFailures.join(" | ").slice(0, 300),
+      });
+    }
     replyText = await runBuiltInAgentOrchestrator(params, bundle, tenantContext);
   }
 
@@ -259,12 +275,14 @@ export async function processUserMessage(params: {
     new Map(bundle.citations.map((c) => [c.url, c])).values()
   );
 
+  assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
   const velnorMsg: ChatMessage = {
     id: `msg-${crypto.randomUUID()}`,
     channel: params.channel,
     sender: "velnor",
     text: replyText,
     timestamp: new Date().toISOString(),
+    interactionId: params.taskId,
         providerUsed,
     modelUsed,
     generatedImage: bundle.generatedImage,
@@ -314,6 +332,7 @@ async function runBuiltInAgentOrchestrator(
     text: string;
     userHandle?: string;
     attachments?: Attachment[];
+    taskId: string;
   },
   bundle: ToolExecutionBundle,
   tenantContext: TenantRepositoryContext,
@@ -414,6 +433,7 @@ async function runBuiltInAgentOrchestrator(
   const urlMatch = raw.match(/https?:\/\/[^\s]+/i);
   if (urlMatch && (lower.includes("summar") || lower.includes("read") || lower.includes("tl;dr") || lower.includes("what is"))) {
     const url = urlMatch[0];
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const res = await executeToolCall("ingest_url_or_doc", { url }, params.channel, bundle);
     const doc = res.document;
     return `🔗 **Link Summary (${doc.name})**\n\n${doc.summary}\n\n_Indexed ${doc.chunkCount} chunks into vector memory so you can ask follow-up questions._`;
@@ -431,6 +451,7 @@ async function runBuiltInAgentOrchestrator(
     const prompt = raw
       .replace(/^(\/imagine|generate an image of|create an image of|generate a picture of|make an image of|draw)\s*/i, "")
       .trim() || raw;
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     await executeToolCall("generate_image", { prompt }, params.channel, bundle);
     return `🎨 Here's the visual I created for **"${prompt}"**:`;
   }
@@ -473,6 +494,7 @@ async function runBuiltInAgentOrchestrator(
       .replace(timeExpression, "")
       .trim() || raw;
 
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { reminder } = await executeToolCall(
       "create_reminder",
       { text: taskText, dueAt },
@@ -484,6 +506,7 @@ async function runBuiltInAgentOrchestrator(
   }
 
   if (lower.includes("my reminders") || lower.includes("list reminders") || lower.includes("show tasks")) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { reminders } = await executeToolCall("list_reminders", {}, params.channel, bundle);
     const active = reminders.filter((r: any) => !r.completed);
     if (active.length === 0) return "✅ You have no pending reminders right now!";
@@ -517,6 +540,7 @@ async function runBuiltInAgentOrchestrator(
       .replace(/^(send|draft) an email (to [^\s]+ )?(saying|about|that)?\s*/i, "")
       .trim() || "Hi! Following up on our thread—let me know what time works best for you.";
 
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { email } = await executeToolCall(
       "draft_or_send_email",
       { to, subject, body, sendImmediately },
@@ -531,6 +555,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("archive ") &&
     (lower.includes("email") || lower.includes("inbox") || lower.includes("messages"))
   ) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const res = await executeToolCall(
       "organize_email",
       { query: "report", action: "archive" },
@@ -547,6 +572,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("gmail") ||
     lower.includes("unread")
   ) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { emails } = await executeToolCall("list_emails", {}, params.channel, bundle);
     return (
       `📬 **Gmail Summary (${emails.length} messages in Inbox):**\n\n` +
@@ -572,6 +598,7 @@ async function runBuiltInAgentOrchestrator(
     const title = raw
       .replace(/^(schedule a|book a|add to calendar|create an event)\s*/i, "")
       .slice(0, 50) || "Strategy Sync";
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { event } = await executeToolCall(
       "create_calendar_event",
       {
@@ -594,6 +621,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("availability") ||
     lower.includes("free today")
   ) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { events } = await executeToolCall("list_calendar_events", {}, params.channel, bundle);
     return (
       `🗓️ **Your Google Calendar Schedule:**\n\n` +
@@ -621,6 +649,7 @@ async function runBuiltInAgentOrchestrator(
     const daysMatch = raw.match(/(\d+)\s*-?\s*day/i);
     const days = daysMatch ? Number(daysMatch[1]) : 3;
 
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { plan } = await executeToolCall(
       "plan_trip_or_local",
       { destination, days },
@@ -666,6 +695,7 @@ async function runBuiltInAgentOrchestrator(
     const cleanFact = raw
       .replace(/^(remember that|remember|save to memory:?)\s*/i, "")
       .trim() || raw;
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { memory } = await executeToolCall(
       "remember_user_fact",
       { fact: cleanFact },
@@ -681,6 +711,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("show memory") ||
     lower.includes("know about me")
   ) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { memories } = await executeToolCall(
       "recall_user_facts",
       {},
@@ -707,6 +738,7 @@ async function runBuiltInAgentOrchestrator(
     lower.includes("vector") ||
     lower.includes("uploaded")
   ) {
+    await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
     const { matches } = await executeToolCall(
       "query_documents",
       { query: raw },
@@ -733,6 +765,7 @@ async function runBuiltInAgentOrchestrator(
     if (loraReply) return loraReply;
   }
 
+  await assertExecutionTaskActive(tenantContext.tenantId, params.taskId);
   const searchRes = await executeToolCall(
     "web_search",
     { query: raw },
