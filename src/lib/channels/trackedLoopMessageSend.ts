@@ -2,7 +2,7 @@ import { sendLoopMessage } from "./loopmessage";
 import type { SendResult } from "./types";
 import {
   beginLoopMessageAttempt, finishLoopMessageAttempt, attemptStateForCertainty,
-  getLatestLoopMessageAttempt, type LoopMessageDeliveryAttempt,
+  getLatestLoopMessageAttempt, LoopMessageAttemptBlockedError, type LoopMessageDeliveryAttempt,
 } from "./imessageDeliveryAttempts";
 import { recordLoopMessageQueued } from "./imessageDeliveryStore";
 
@@ -32,14 +32,30 @@ export async function sendTrackedLoopMessage(input: {
   authKey: string;
   text: string;
   timeoutMs?: number;
+  /** Only explicit retry APIs may authorize a retry after an ambiguous outcome. */
+  allowAmbiguousRetry?: boolean;
 }): Promise<TrackedLoopMessageSend> {
   const previous = getLatestLoopMessageAttempt(input.tenantId, input.taskId);
   const previousWasAmbiguous = previous?.state === "unconfirmed" || previous?.state === "unknown";
 
-  const started = beginLoopMessageAttempt({
-    tenantId: input.tenantId, taskId: input.taskId,
-    recipient: input.recipient, senderId: input.senderId,
-  });
+  let started: LoopMessageDeliveryAttempt;
+  try {
+    started = beginLoopMessageAttempt({
+      tenantId: input.tenantId, taskId: input.taskId,
+      recipient: input.recipient, senderId: input.senderId,
+      allowAmbiguousRetry: input.allowAmbiguousRetry,
+    });
+  } catch (error) {
+    if (!(error instanceof LoopMessageAttemptBlockedError)) throw error;
+    const attempt = getLatestLoopMessageAttempt(input.tenantId, input.taskId);
+    if (!attempt) throw error;
+    return {
+      result: { provider: "loopmessage", ok: false, detail: error.message, sendCertainty: "ambiguous" },
+      attempt,
+      duplicateRisk: attempt.state !== "delivered",
+      trackingDegraded: false,
+    };
+  }
 
   const finalize = (outcome: {
     state: "queued" | "failed" | "unconfirmed";
