@@ -3,19 +3,6 @@ import { ToolSpec } from "../providers/types";
 export const VELNOR_FUNCTION_DECLARATIONS = [
   {
     type: "function" as const,
-    name: "delegate_browser_task",
-    description: "Delegate a multi-step browser automation or web interaction task to Blud's Kernel coordinator (form submission, interactive scraping, button clicking, multi-page workflows).",
-    parameters: {
-      type: "object",
-      properties: {
-        task: { type: "string", description: "Clear instructions of what to perform in the browser" },
-        startUrl: { type: "string", description: "Initial URL to navigate to" },
-      },
-      required: ["task"],
-    },
-  },
-  {
-    type: "function" as const,
     name: "web_search",
     description: "Search the live web for real-time facts, news, weather, stocks, or general knowledge.",
     parameters: {
@@ -199,9 +186,7 @@ export const VELNOR_FUNCTION_DECLARATIONS = [
       },
     },
   },
-].filter((fn) =>
-  process.env.VELNOR_ENABLE_BLUD_INTEGRATION === "1" || fn.name !== "delegate_browser_task"
-);
+];
 
 /** Same declarations, in the provider-neutral shape the loop consumes. */
 export const VELNOR_TOOLS: ToolSpec[] = VELNOR_FUNCTION_DECLARATIONS.map(
