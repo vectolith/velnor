@@ -118,7 +118,10 @@ async function dispatchTenantReminderNotification(
 
   // Persist the in-app notification and completed flag before making the
   // durable claim terminal. If persistence fails, the lease expires and the
-  // reminder can be retried instead of being lost.
+  // reminder can be retried instead of being lost. A provider may already have
+  // accepted an external send before that persistence failure, so crash recovery
+  // is at-least-once and can duplicate an external notification until the
+  // provider idempotency/outbox ledger is integrated for every channel.
   if (claimedReminderIds.length > 0) {
     saveStore(state);
     for (const claimedId of claimedReminderIds) {
