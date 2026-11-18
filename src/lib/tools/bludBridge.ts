@@ -1,12 +1,3 @@
-/**
- * Velnor <-> Blud Kernel Browser Automation Bridge
- * ===============================================
- * Wires Blud's Kernel-powered browser automation coordinator into Velnor's
- * agent tool pipeline. Allows Velnor to delegate multi-step web navigation,
- * form filling, authenticated workflows, and scraping directly to Blud over
- * an internal RPC with strict execution verification and zero fabrication.
- */
-
 import { resolveAndAssert } from "@/lib/security/outboundUrl";
 
 export interface BrowserTaskOptions {
@@ -15,6 +6,14 @@ export interface BrowserTaskOptions {
   extractSchema?: Record<string, unknown>;
   sessionRef?: string;
   timeoutMs?: number;
+}
+
+export interface BrowserExecutionReceipt {
+  taskId: string;
+  state: "completed";
+  completedAtUtc: string;
+  finalUrl: string;
+  evidenceSha256: string;
 }
 
 export interface BrowserTaskResult {
@@ -31,50 +30,84 @@ const DEFAULT_BLUD_RPC_URL =
   process.env.BLUD_INTERNAL_RPC_URL || "http://127.0.0.1:3000/api/internal/browser-worker";
 const DEFAULT_TIMEOUT_MS = 45_000;
 
+function configuredSharedSecret(): string {
+  return (
+    process.env.BLUD_INTERNAL_KEY ||
+    process.env.VELNOR_SHARED_SECRET ||
+    process.env.VELNOR_ADMIN_TOKEN ||
+    ""
+  );
+}
+
+function isExecutionReceipt(value: unknown): value is BrowserExecutionReceipt {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const receipt = value as Record<string, unknown>;
+  return (
+    typeof receipt.taskId === "string" &&
+    receipt.taskId.length > 0 &&
+    receipt.state === "completed" &&
+    typeof receipt.completedAtUtc === "string" &&
+    Number.isFinite(Date.parse(receipt.completedAtUtc)) &&
+    typeof receipt.finalUrl === "string" &&
+    /^https?:\/\//i.test(receipt.finalUrl) &&
+    typeof receipt.evidenceSha256 === "string" &&
+    /^[a-f0-9]{64}$/i.test(receipt.evidenceSha256)
+  );
+}
+
 /**
- * Delegate a multi-step browser navigation task to Blud's Kernel coordinator.
+ * Delegate a browser task to Blud. A success response is accepted only when
+ * Blud returns an authenticated, structurally valid completion receipt.
  */
 export async function delegateBrowserTaskToBlud(
   options: BrowserTaskOptions
 ): Promise<BrowserTaskResult> {
   const { task, startUrl, extractSchema, sessionRef, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
-  const verifiedAtUtc = new Date().toISOString();
+  const receivedAtUtc = new Date().toISOString();
 
   if (!task || task.trim().length === 0) {
     return {
       status: "failure",
       summary: "Browser delegation failed: no task instruction provided.",
-      verifiedAtUtc,
+      verifiedAtUtc: receivedAtUtc,
       error: "Task instructions must not be empty.",
     };
   }
 
   if (task.length > 8000) {
-    return { status: "failure", summary: "Browser task exceeds the 8,000-character limit.", verifiedAtUtc, error: "Task instructions are too long." };
+    return {
+      status: "failure",
+      summary: "Browser task exceeds the 8,000-character limit.",
+      verifiedAtUtc: receivedAtUtc,
+      error: "Task instructions are too long.",
+    };
   }
-  const taskUrls = [startUrl, ...(task.match(/https?:\/\/[^\s)]+/g) || [])].filter((value): value is string => Boolean(value));
+
+  const taskUrls = [startUrl, ...(task.match(/https?:\/\/[^\\s)]+/g) || [])]
+    .filter((value): value is string => Boolean(value));
   for (const url of taskUrls) await resolveAndAssert(url);
 
-  // 1. Attempt internal RPC to Blud browser agent
+  const sharedSecret = configuredSharedSecret();
+  if (!sharedSecret) {
+    return {
+      status: "failure",
+      summary: "Browser delegation refused: Velnor-to-Blud service authentication is not configured.",
+      error: "BLUD_INTERNAL_KEY or VELNOR_SHARED_SECRET must be configured before internal RPC.",
+      verifiedAtUtc: receivedAtUtc,
+    };
+  }
+
   const rpcUrl = DEFAULT_BLUD_RPC_URL;
-  const sharedSecret =
-    process.env.BLUD_INTERNAL_KEY ||
-    process.env.VELNOR_SHARED_SECRET ||
-    process.env.VELNOR_ADMIN_TOKEN ||
-    "";
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "User-Agent": "Velnor-Agent/1.0 (Vectolith)",
+      "x-blud-key": sharedSecret,
+      Authorization: `Bearer ${sharedSecret}`,
     };
-    if (sharedSecret) {
-      headers["x-blud-key"] = sharedSecret;
-      headers["Authorization"] = `Bearer ${sharedSecret}`;
-    }
 
     const payload = {
       message: task,
@@ -90,35 +123,39 @@ export async function delegateBrowserTaskToBlud(
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
-    clearTimeout(timer);
 
-    if (res.ok) {
-      const data = await res.json();
-      if (!data || data.status !== "success") {
-        return {
-          status: data?.status === "offline" ? "offline" : "failure",
-          summary: data?.message || data?.summary || "Blud did not confirm successful browser execution.",
-          error: data?.error || "Coordinator response did not contain status=success.",
-          verifiedAtUtc,
-        };
-      }
+    if (!res.ok) {
+      const errBody = await res.text().catch(() => "");
+      const offline = res.status === 502 || res.status === 503 || res.status === 504;
       return {
-        status: "success",
-        summary: data.message || data.summary || "Browser task completed and confirmed by Blud.",
-        currentUrl: typeof data.currentUrl === "string" ? data.currentUrl : startUrl,
-        extractedData: data.data || data.extractedData,
-        images: Array.isArray(data.images) ? data.images : [],
-        verifiedAtUtc,
+        status: offline ? "offline" : "failure",
+        summary: `Blud browser coordinator returned HTTP ${res.status}`,
+        error: errBody.slice(0, 500) || `HTTP ${res.status}`,
+        verifiedAtUtc: receivedAtUtc,
       };
     }
 
-    // Server responded with non-200
-    const errBody = await res.text().catch(() => "");
+    const data = await res.json();
+    if (!data || data.status !== "success" || !isExecutionReceipt(data.executionReceipt)) {
+      return {
+        status: data?.status === "offline" ? "offline" : "failure",
+        summary: data?.message || "Blud did not provide a verifiable browser execution receipt.",
+        error: data?.error || "A success status without a valid executionReceipt is rejected.",
+        verifiedAtUtc: receivedAtUtc,
+      };
+    }
+
+    const receipt = data.executionReceipt;
     return {
-      status: "failure",
-      summary: `Blud browser coordinator returned HTTP ${res.status}`,
-      error: errBody.slice(0, 500) || `HTTP ${res.status}`,
-      verifiedAtUtc,
+      status: "success",
+      summary: data.message || "Browser task completed with a verified execution receipt.",
+      currentUrl: receipt.finalUrl,
+      extractedData:
+        data.data && typeof data.data === "object" && !Array.isArray(data.data)
+          ? data.data
+          : undefined,
+      images: Array.isArray(data.images) ? data.images : [],
+      verifiedAtUtc: receipt.completedAtUtc,
     };
   } catch (err: unknown) {
     const isTimeout = err instanceof Error && err.name === "AbortError";
@@ -132,21 +169,20 @@ export async function delegateBrowserTaskToBlud(
       return {
         status: "failure",
         summary: `Browser task timed out after ${Math.round(timeoutMs / 1000)} seconds.`,
-        error: "Execution exceeded timeout budget.",
-        verifiedAtUtc,
+        error: "Execution exceeded timeout budget; completion is unknown.",
+        verifiedAtUtc: receivedAtUtc,
       };
     }
 
     if (isConnRefused) {
-      // Epistemic honesty: acknowledge coordinator is not reachable on the local port
       return {
         status: "offline",
         summary:
-          "Blud Kernel browser coordinator is not actively listening on " +
+          "Blud browser coordinator is not reachable at " +
           rpcUrl +
-          ". Ensure Blud is running (`npm run dev` in blud) or set BLUD_INTERNAL_RPC_URL.",
+          ". Ensure Blud is running or configure BLUD_INTERNAL_RPC_URL.",
         error: "Blud RPC coordinator unreachable.",
-        verifiedAtUtc,
+        verifiedAtUtc: receivedAtUtc,
       };
     }
 
@@ -154,7 +190,9 @@ export async function delegateBrowserTaskToBlud(
       status: "failure",
       summary: "Browser task delegation failed unexpectedly.",
       error: err instanceof Error ? err.message : String(err),
-      verifiedAtUtc,
+      verifiedAtUtc: receivedAtUtc,
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
