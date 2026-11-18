@@ -33,7 +33,6 @@ function configuredSharedSecret(): string {
   return (
     process.env.BLUD_INTERNAL_KEY ||
     process.env.VELNOR_SHARED_SECRET ||
-    process.env.VELNOR_ADMIN_TOKEN ||
     ""
   );
 }
