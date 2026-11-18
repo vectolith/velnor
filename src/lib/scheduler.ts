@@ -171,7 +171,11 @@ async function dispatchTenantReminderNotification(
   }
 
   // Persist only accepted deliveries. Failed external sends remain incomplete;
-  // their leases expire and the scheduler can retry them.
+  // their leases expire and the scheduler can retry them. A provider may already
+  // have accepted a send before a persistence failure or process crash, so this
+  // is at-least-once recovery, not exactly-once delivery. The outbound attempt
+  // ledger and provider idempotency/reconciliation are still required to prevent
+  // duplicates across that failure window.
   if (completedReminderIds.length > 0) {
     saveStore(state);
     for (const completedId of completedReminderIds) {
