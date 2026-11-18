@@ -10,8 +10,8 @@ export interface ProviderSlot {
 }
 
 /**
- * Defaults are env-overridable because model names move fast. These are the
- * names that were current when this was written; set VELNOR_MODEL_* to pin.
+ * Defaults are env-overridable. Production deployments should pin these
+ * values to the exact model identifiers they have approved.
  */
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   gemini: process.env.VELNOR_MODEL_GEMINI || "gemini-3.8-flash",
@@ -32,34 +32,52 @@ export function createProvider(id: ProviderId, apiKey: string): Provider {
   }
 }
 
+const PROVIDER_ORDER: ProviderId[] = ["gemini", "openai", "anthropic"];
+
+export function getExplicitProviderConfigurationError(
+  preferred: string,
+  keys: Partial<Record<ProviderId, string>>,
+): string | null {
+  if (preferred === "auto") return null;
+  if (!PROVIDER_ORDER.includes(preferred as ProviderId)) {
+    return "Unsupported explicitly selected AI provider: " + preferred;
+  }
+  const provider = preferred as ProviderId;
+  if (!keys[provider]) {
+    return "The explicitly selected AI provider '" + provider + "' has no API key configured.";
+  }
+  return null;
+}
+
 /**
- * Ordered list of providers to try. "auto" means: requested provider first (if
- * keyed), then the others by configured priority. The agent walks this list
- * until one answers.
+ * Resolve the configured provider without silently substituting another
+ * provider/model. "auto" selects the first configured provider in stable
+ * priority order. Cross-provider failover is available only when explicitly
+ * enabled by deployment policy.
  */
 export function buildProviderChain(params: {
   preferred: string;
   keys: Partial<Record<ProviderId, string>>;
   models: Partial<Record<ProviderId, string>>;
+  allowFallback?: boolean;
 }): ProviderSlot[] {
-  const order: ProviderId[] = ["gemini", "openai", "anthropic"];
   const preferred = params.preferred as ProviderId;
-  const ordered =
-    preferred && preferred !== ("auto" as any) && order.includes(preferred)
-      ? [preferred, ...order.filter((p) => p !== preferred)]
-      : order;
+  const selected = PROVIDER_ORDER.includes(preferred) ? preferred : PROVIDER_ORDER.find((id) => !!params.keys[id]);
+  if (!selected || !params.keys[selected]) return [];
 
-  const chain: ProviderSlot[] = [];
-  for (const id of ordered) {
+  const ordered = params.allowFallback
+    ? [selected, ...PROVIDER_ORDER.filter((id) => id !== selected)]
+    : [selected];
+
+  return ordered.flatMap((id) => {
     const apiKey = params.keys[id];
-    if (!apiKey) continue;
-    chain.push({
+    if (!apiKey) return [];
+    return [{
       id,
       apiKey,
       model: params.models[id] || DEFAULT_MODELS[id],
-    });
-  }
-  return chain;
+    }];
+  });
 }
 
 /** USD per 1M tokens, [input, output]. Unknown models return zero. */
