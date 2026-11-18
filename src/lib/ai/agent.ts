@@ -1,5 +1,5 @@
 import { runAgentLoop } from "./loop";
-import { buildProviderChain, createProvider, estimateCostUsd } from "./registry";
+import { buildProviderChain, createProvider, estimateCostUsd, getExplicitProviderConfigurationError } from "./registry";
 import { ToolSpec, Turn, Usage, emptyUsage } from "./providers/types";
 import { DEFAULT_STATE, getEffectiveKeys, type VelnorState } from "../store";
 import type { PersistedTenantState } from "../storage/d1TenantState";
@@ -124,9 +124,14 @@ export async function processUserMessage(params: {
 
   // Provider/model identity is preserved by default. Cross-provider failover
   // changes the executing model and is therefore an explicit deployment opt-in.
+  const providerKeys = { gemini: geminiApiKey, openai: openaiApiKey, anthropic: anthropicApiKey };
+  const providerConfigurationError = getExplicitProviderConfigurationError(
+    state.config.activeProvider,
+    providerKeys,
+  );
   const chain = buildProviderChain({
     preferred: state.config.activeProvider,
-    keys: { gemini: geminiApiKey, openai: openaiApiKey, anthropic: anthropicApiKey },
+    keys: providerKeys,
     models: {
       gemini: state.config.geminiModel,
       openai: state.config.openaiModel,
@@ -226,7 +231,15 @@ export async function processUserMessage(params: {
     });
   }
 
-  if (!replyText && providerFailures.length > 0 && chain.length > 0) {
+  if (!replyText && providerConfigurationError) {
+    bundle.toolActions.push({
+      tool: "provider_error",
+      label: "Explicitly selected provider is not configured",
+      status: "error" as any,
+      details: providerConfigurationError,
+    });
+    replyText = providerConfigurationError + " Configure that provider or explicitly change the selection; no substitute was used.";
+  } else if (!replyText && providerFailures.length > 0 && chain.length > 0) {
     bundle.toolActions.push({
       tool: "provider_error",
       label: "Selected provider failed; no substitute was used",
