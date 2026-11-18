@@ -4,14 +4,18 @@
 
 Velnor currently operates through messaging channels and service APIs, including Apple iMessage, SMS, Siri Shortcuts, and Slack. The current repository does not yet provide a general public web-chat frontend; product direction and implemented delivery surfaces are documented separately.
 
+## Standalone product boundary
+
+Velnor is an independently operated product with its own application runtime, identity and tenant controls, persistence, integrations, deployment, monitoring and release lifecycle. It does not require Blud, Models by Vectolith, or any other Vectolith product to start or fulfil its core purpose. Model providers and external integrations are configured and governed by Velnor; any optional product-to-product adapter must be removable without disabling Velnor's core agent functions.
+
 ## Platform direction
 
-VELNOR is being developed as an independent, operating-system-neutral AI platform. Web, mobile, desktop, and messaging experiences are clients of shared platform services; the future VELNOR OS will use those same contracts as a first-party client and permissioned local-capability host. The operating system itself is not part of the current build.
+VELNOR is an independent, operating-system-neutral AI platform. Its web dashboard and mobile companion are control-centre clients for integrations, activity, approvals, model/service status, administration, permissions and security—not chat interfaces. Messaging and supported APIs remain interaction/invocation channels. The future operating-system compatibility discussion is a target architecture only; no VELNOR OS is part of the current product build.
 
-- [Platform architecture and future OS compatibility](docs/PLATFORM-ARCHITECTURE.md)
-- [How to use VELNOR and the target product experience](docs/USING-VELNOR.md)
+- [Platform architecture and implementation boundaries](docs/PLATFORM-ARCHITECTURE.md)
+- [Using VELNOR and the target product experience](docs/USING-VELNOR.md)
 
-These documents distinguish current implementation from target capabilities. Architecture documentation is not a claim that an unshipped interface, API, or OS feature is already available.
+These documents distinguish implemented repository capabilities from planned interfaces and contracts. A target architecture is not evidence that an unshipped API, dashboard or OS feature is available.
 
 ## Product and intelligence objective
 
