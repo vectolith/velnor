@@ -4,7 +4,7 @@
 
 ## Product decision
 
-Build VELNOR as an independent, general-purpose AI platform. Operating-system development and  compatibility are out of scope.
+Build VELNOR as an independent, general-purpose AI platform. Operating-system development is outside VELNOR's current product scope; the platform remains client- and operating-system-neutral.
 
 VELNOR is not a model wrapper and must not be coupled to one model family, inference provider, cloud vendor, or client application. Models by vectolith is the preferred first-party model family, but the platform must be able to register and route to other explicitly approved model backends.
 
@@ -51,8 +51,7 @@ This is a logical view, not a claim that every box is currently a separate deplo
 ### 1. Client adapters
 
 Clients render the experience and translate platform contracts into their native interaction patterns. They may include:
-- Mobile applications: native chat, voice, notifications, camera, and file handoff.
-- Mobile applications: native chat, voice, notifications, camera, and file handoff.
+- Mobile applications: native notifications, camera, and file handoff.
 - Desktop application: chat plus approved local-file and application workflows.
 - Messaging adapters: iMessage/SMS, Slack, and future channels.
 - Messaging and other supported invocation channels: channel-specific interaction and notifications.
