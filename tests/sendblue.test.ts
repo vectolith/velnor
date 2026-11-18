@@ -133,3 +133,42 @@ test("Sendblue tracked sender blocks a second send while a prior attempt is queu
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("an early Sendblue SMS downgrade is reconciled as ambiguous and blocks automatic resend", async () => {
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  assert.equal(syncSendblueStatusCallback({
+    messageHandle: "handle-sms-early",
+    status: "ERROR",
+    errorDetail: "Sendblue downgraded this message to SMS; it may already have reached the recipient.",
+  }), "pending");
+  globalThis.fetch = (async () => {
+    requests += 1;
+    return new Response(JSON.stringify({ status: "QUEUED", message_handle: "handle-sms-early" }), { status: 200 });
+  }) as typeof fetch;
+  try {
+    const first = await sendTrackedSendblueMessage({
+      tenantId: "tenant-sms-early", taskId: "task-sms-early", recipient: "+15550001",
+      senderId: "+15550002", config: { apiKeyId: "key", apiSecret: "secret", fromNumber: "+15550002" },
+      text: "SMS downgrade case",
+    });
+    assert.equal(first.result.ok, false);
+    assert.equal(first.attempt.state, "failed");
+    assert.equal(first.duplicateRisk, true);
+    assert.match(first.result.detail || "", /downgraded this message to SMS/i);
+
+    const beforeRetry = requests;
+    const retry = await sendTrackedSendblueMessage({
+      tenantId: "tenant-sms-early", taskId: "task-sms-early", recipient: "+15550001",
+      senderId: "+15550002", config: { apiKeyId: "key", apiSecret: "secret", fromNumber: "+15550002" },
+      text: "must not automatically resend",
+    });
+    assert.equal(retry.result.ok, false);
+    assert.equal(retry.duplicateRisk, true);
+    assert.equal(requests, beforeRetry);
+  } finally {
+    globalThis.fetch = originalFetch;
+    closeSqliteDb();
+  }
+});
