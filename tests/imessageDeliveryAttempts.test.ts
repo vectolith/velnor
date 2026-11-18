@@ -161,3 +161,55 @@ test("attempts are tenant-scoped and never leak across tenants", () => {
     closeSqliteDb();
   }
 });
+
+
+test("attempt ledger blocks queued and delivered retries atomically", () => {
+  const queued = beginLoopMessageAttempt({
+    tenantId: "tenant-guard", taskId: "task-queued", recipient: "+15550001", senderId: "+15550002",
+  });
+  finishLoopMessageAttempt(queued.attemptId, { state: "queued", messageId: "queued-guard" });
+  assert.throws(
+    () => beginLoopMessageAttempt({
+      tenantId: "tenant-guard", taskId: "task-queued", recipient: "+15550001", senderId: "+15550002",
+    }),
+    /pending or in progress|delivered/i,
+  );
+
+  const delivered = beginLoopMessageAttempt({
+    tenantId: "tenant-guard", taskId: "task-delivered", recipient: "+15550001", senderId: "+15550002",
+  });
+  finishLoopMessageAttempt(delivered.attemptId, { state: "delivered", messageId: "delivered-guard" });
+  assert.throws(
+    () => beginLoopMessageAttempt({
+      tenantId: "tenant-guard", taskId: "task-delivered", recipient: "+15550001", senderId: "+15550002",
+    }),
+    /already has a delivered/i,
+  );
+});
+
+test("ambiguous retries require explicit authorization while definite failures may retry", () => {
+  const ambiguous = beginLoopMessageAttempt({
+    tenantId: "tenant-guard", taskId: "task-ambiguous", recipient: "+15550001", senderId: "+15550002",
+  });
+  finishLoopMessageAttempt(ambiguous.attemptId, { state: "unconfirmed", errorDetail: "timeout" });
+  assert.throws(
+    () => beginLoopMessageAttempt({
+      tenantId: "tenant-guard", taskId: "task-ambiguous", recipient: "+15550001", senderId: "+15550002",
+    }),
+    /explicit, reconciled retry/i,
+  );
+  const retry = beginLoopMessageAttempt({
+    tenantId: "tenant-guard", taskId: "task-ambiguous", recipient: "+15550001", senderId: "+15550002",
+    allowAmbiguousRetry: true,
+  });
+  assert.equal(retry.attemptNo, ambiguous.attemptNo + 1);
+
+  const failed = beginLoopMessageAttempt({
+    tenantId: "tenant-guard", taskId: "task-failed", recipient: "+15550001", senderId: "+15550002",
+  });
+  finishLoopMessageAttempt(failed.attemptId, { state: "failed", errorDetail: "provider rejected" });
+  const safeRetry = beginLoopMessageAttempt({
+    tenantId: "tenant-guard", taskId: "task-failed", recipient: "+15550001", senderId: "+15550002",
+  });
+  assert.equal(safeRetry.attemptNo, failed.attemptNo + 1);
+});
