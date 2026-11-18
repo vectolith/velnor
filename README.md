@@ -160,7 +160,7 @@ Circulation rather than monolith.
 
 ## Channel integrations, execution and operations
 
-Velnor owns its own task lifecycle, channel authentication, delivery state and operational controls. Messaging providers are optional integrations; no other Vectolith product is required for Velnor's core operation.
+Velnor owns its own task lifecycle, channel authentication, delivery state and operational controls. Messaging providers are optional integrations; no other Vectolith product is required for Velnor's core operation. A fresh installation can run the core dashboard, task engine and local orchestration without Discord, iMessage, LoopMessage, Sendblue, Twilio or any other external channel configured.
 
 - [Discord integration](docs/DISCORD-INTEGRATION.md)
 - [Execution tasks and cancellation](docs/EXECUTION-TASKS.md)
