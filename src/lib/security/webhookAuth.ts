@@ -52,10 +52,10 @@ export function computeGitHubWebhookSignature(
   webhookSecret: string,
   rawBody: string
 ): string {
-  return \`sha256=\${crypto
+  return `sha256=${crypto
     .createHmac("sha256", webhookSecret)
     .update(rawBody, "utf8")
-    .digest("hex")}\`;
+    .digest("hex")}`;
 }
 
 export function verifyGitHubWebhookSignature(
