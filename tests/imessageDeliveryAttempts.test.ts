@@ -8,8 +8,8 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-imessage-attempts-
 process.env.VELNOR_DATA_DIR = dataDir;
 
 import {
-  beginLoopMessageAttempt, getLatestLoopMessageAttempt, listLoopMessageAttempts,
-  recoverStaleLoopMessageAttempts, LoopMessageAttemptInFlightError,
+  beginLoopMessageAttempt, finishLoopMessageAttempt, getLatestLoopMessageAttempt, listLoopMessageAttempts,
+  recoverStaleLoopMessageAttempts, syncLoopMessageAttemptFromProviderStatus, LoopMessageAttemptInFlightError,
 } from "../src/lib/channels/imessageDeliveryAttempts";
 import { getLoopMessageDelivery } from "../src/lib/channels/imessageDeliveryStore";
 import { sendTrackedLoopMessage } from "../src/lib/channels/trackedLoopMessageSend";
@@ -178,7 +178,8 @@ test("attempt ledger blocks queued and delivered retries atomically", () => {
   const delivered = beginLoopMessageAttempt({
     tenantId: "tenant-guard", taskId: "task-delivered", recipient: "+15550001", senderId: "+15550002",
   });
-  finishLoopMessageAttempt(delivered.attemptId, { state: "delivered", messageId: "delivered-guard" });
+  finishLoopMessageAttempt(delivered.attemptId, { state: "queued", messageId: "delivered-guard" });
+  syncLoopMessageAttemptFromProviderStatus({ tenantId: "tenant-guard", taskId: "task-delivered", status: "delivered" });
   assert.throws(
     () => beginLoopMessageAttempt({
       tenantId: "tenant-guard", taskId: "task-delivered", recipient: "+15550001", senderId: "+15550002",
