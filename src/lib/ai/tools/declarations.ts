@@ -199,7 +199,9 @@ export const VELNOR_FUNCTION_DECLARATIONS = [
       },
     },
   },
-];
+].filter((fn) =>
+  process.env.VELNOR_ENABLE_BLUD_INTEGRATION === "1" || fn.name !== "delegate_browser_task"
+);
 
 /** Same declarations, in the provider-neutral shape the loop consumes. */
 export const VELNOR_TOOLS: ToolSpec[] = VELNOR_FUNCTION_DECLARATIONS.map(
