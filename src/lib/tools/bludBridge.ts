@@ -26,8 +26,7 @@ export interface BrowserTaskResult {
   verifiedAtUtc: string;
 }
 
-const DEFAULT_BLUD_RPC_URL =
-  process.env.BLUD_INTERNAL_RPC_URL || "http://127.0.0.1:3000/api/internal/browser-worker";
+const DEFAULT_BLUD_RPC_URL = "http://127.0.0.1:3000/api/internal/browser-worker";
 const DEFAULT_TIMEOUT_MS = 45_000;
 
 function configuredSharedSecret(): string {
@@ -97,7 +96,7 @@ export async function delegateBrowserTaskToBlud(
     };
   }
 
-  const rpcUrl = DEFAULT_BLUD_RPC_URL;
+  const rpcUrl = process.env.BLUD_INTERNAL_RPC_URL || DEFAULT_BLUD_RPC_URL;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
