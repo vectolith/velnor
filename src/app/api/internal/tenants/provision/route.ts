@@ -1,6 +1,8 @@
 import crypto from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getStore, listUserIds, sanitizeUserId, saveStore, withVelnorUser } from "@/lib/store";
+import { DEFAULT_STATE, withVelnorTenantScope } from "@/lib/store";
+import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
+import type { PersistedTenantState } from "@/lib/storage/d1TenantState";
 import { PayloadTooLargeError, readRequestBodyLimited } from "@/lib/security/requestBody";
 
 export const runtime = "nodejs";
@@ -42,13 +44,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid gateway tenant identifier." }, { status: 400 });
   }
 
-  const storageId = sanitizeUserId(tenantId);
-  const existing = new Set(listUserIds().map((id) => sanitizeUserId(id)));
-  if (!existing.has(storageId)) {
-    await withVelnorUser(tenantId, () => {
-      saveStore(getStore());
-    });
-  }
+  await withVelnorTenantScope(tenantId, async () => {
+    const { repository, tenantId: scopedTenantId } =
+      getNodeTenantRepositoryContext();
+    await repository.update(
+      scopedTenantId,
+      () => structuredClone(DEFAULT_STATE) as unknown as PersistedTenantState,
+      (draft) => {
+        if (typeof draft.persistedAt !== "string") {
+          draft.persistedAt = new Date().toISOString();
+        }
+      }
+    );
+  });
 
   return NextResponse.json({ ok: true, tenantId });
 }
