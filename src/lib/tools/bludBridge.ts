@@ -28,7 +28,7 @@ export interface BrowserTaskResult {
 }
 
 const DEFAULT_BLUD_RPC_URL = "http://127.0.0.1:3000/api/internal/browser-worker";
-const DEFAULT_TIMEOUT_MS = 45_000;
+const DEFAULT_TIMEOUT_MS = 180_000;
 
 function configuredSharedSecret(): string {
   return (
