@@ -43,6 +43,70 @@ export function timingSafeEquals(a: string, b: string): boolean {
   return crypto.timingSafeEqual(left, right);
 }
 
+export interface GitHubWebhookDecision extends WebhookDecision {
+  deliveryId?: string;
+}
+
+/** GitHub App webhooks sign the exact raw request body with HMAC-SHA256. */
+export function computeGitHubWebhookSignature(
+  webhookSecret: string,
+  rawBody: string
+): string {
+  return `sha256=${crypto
+    .createHmac("sha256", webhookSecret)
+    .update(rawBody, "utf8")
+    .digest("hex")}`;
+}
+
+export function verifyGitHubWebhookSignature(
+  rawBody: string,
+  signature: string | null | undefined,
+  webhookSecret: string
+): boolean {
+  if (!webhookSecret || !signature || !/^sha256=[a-f0-9]{64}$/i.test(signature)) {
+    return false;
+  }
+  return timingSafeEquals(
+    computeGitHubWebhookSignature(webhookSecret, rawBody),
+    signature.toLowerCase()
+  );
+}
+
+/**
+ * Require both GitHub's signed raw body and delivery ID. The caller must persist
+ * delivery IDs idempotently before performing any side effect; signature checks
+ * alone do not prevent replay.
+ */
+export function authorizeGitHubWebhookRequest(input: {
+  webhookSecret: string | undefined;
+  rawBody: string;
+  signature: string | null | undefined;
+  deliveryId: string | null | undefined;
+}): GitHubWebhookDecision {
+  if (!input.webhookSecret || input.webhookSecret.length < 32) {
+    return deny(503, "GitHub App webhook authentication is not configured.");
+  }
+  const deliveryId = input.deliveryId?.trim();
+  if (
+    !deliveryId ||
+    deliveryId.length > 128 ||
+    /[\\r\\n]/.test(deliveryId) ||
+    !input.signature
+  ) {
+    return deny(401, "Missing or invalid GitHub webhook delivery metadata.");
+  }
+  if (
+    !verifyGitHubWebhookSignature(
+      input.rawBody,
+      input.signature,
+      input.webhookSecret
+    )
+  ) {
+    return deny(401, "Invalid X-Hub-Signature-256.");
+  }
+  return { ok: true, deliveryId };
+}
+
 export function authorizeCronRequest(secret: string | undefined, provided: string | null | undefined): WebhookDecision {
   if (!secret || secret.length < 32) {
     return deny(503, "Cron authentication is not configured.");
