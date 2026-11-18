@@ -41,3 +41,45 @@ test("reminder dispatch traverses tenant partitions without mixing their state",
     // Windows file handle release guard
   }
 });
+
+
+test("overlapping scheduler runs claim a due reminder only once", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "velnor-scheduler-claim-"));
+  process.env.VELNOR_DATA_DIR = dir;
+  const { withVelnorUser, getStore, resetStoreCache } = await import("../src/lib/store");
+  const { createReminderAsync } = await import("../src/lib/tools/workspaceService");
+  const { dispatchReminderNotification } = await import("../src/lib/scheduler");
+
+  await withVelnorUser("scheduler-claim-tenant", async () => {
+    await createReminderAsync({
+      text: "dispatch exactly once across concurrent workers",
+      dueAt: new Date(Date.now() - 1000).toISOString(),
+      channel: "imessage",
+      recipient: "",
+    });
+  });
+
+  const [first, second] = await Promise.all([
+    dispatchReminderNotification(),
+    dispatchReminderNotification(),
+  ]);
+  const allResults = [...first, ...second];
+  assert.equal(
+    allResults.filter((item) => item.reminder.text === "dispatch exactly once across concurrent workers").length,
+    1,
+  );
+
+  const state = await withVelnorUser("scheduler-claim-tenant", () => getStore());
+  assert.equal(
+    state.messages.filter((message) => message.text.includes("dispatch exactly once across concurrent workers")).length,
+    1,
+  );
+  assert.equal(state.reminders.find((item) => item.text === "dispatch exactly once across concurrent workers")?.completed, true);
+
+  resetStoreCache();
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // Windows file handle release guard
+  }
+});

@@ -1,4 +1,6 @@
-import { getStore, saveStore, resolveSlackChannel, listUserIds, withVelnorUser } from "./store";
+import { randomUUID } from "node:crypto";
+import { getStore, saveStore, resolveSlackChannel, listUserIds, withVelnorUser, currentUserId } from "./store";
+import { claimReminderDispatch, completeReminderDispatch } from "./sqliteDb";
 import { sendSendblueMessage } from "./channels/sendblue";
 import { sendLoopMessage } from "./channels/loopmessage";
 import { postSlackMessage } from "./channels/slack";
@@ -33,8 +35,15 @@ async function dispatchTenantReminderNotification(
   });
 
   const results: DispatchedReminderResult[] = [];
+  const workerId = randomUUID();
+  const claimedReminderIds: string[] = [];
+  const tenantId = currentUserId();
 
   for (const rem of pending.slice(0, reminderId ? 1 : 3)) {
+    // The lease is persisted in SQLite, so overlapping cron invocations and
+    // separate app processes cannot dispatch the same reminder concurrently.
+    if (!claimReminderDispatch(tenantId, rem.id, workerId)) continue;
+    claimedReminderIds.push(rem.id);
     const channelsUsed: string[] = ["in-app-feed"];
     const alertText = `🔔 **Velnor Reminder:** ${rem.text} _(Scheduled for ${rem.dueAt})_`;
 
@@ -107,6 +116,17 @@ async function dispatchTenantReminderNotification(
     results.push({ reminder: rem, deliveredVia: channelsUsed });
   }
 
-  saveStore(state);
+  // Persist the in-app notification and completed flag before making the
+  // durable claim terminal. If persistence fails, the lease expires and the
+  // reminder can be retried instead of being lost. A provider may already have
+  // accepted an external send before that persistence failure, so crash recovery
+  // is at-least-once and can duplicate an external notification until the
+  // provider idempotency/outbox ledger is integrated for every channel.
+  if (claimedReminderIds.length > 0) {
+    saveStore(state);
+    for (const claimedId of claimedReminderIds) {
+      completeReminderDispatch(tenantId, claimedId, workerId);
+    }
+  }
   return results;
 }

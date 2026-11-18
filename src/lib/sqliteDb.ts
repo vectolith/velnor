@@ -80,6 +80,15 @@ function getSqliteDb() {
           key TEXT PRIMARY KEY,
           revision INTEGER NOT NULL CHECK (revision >= 0)
         );
+        CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
+          tenant_id TEXT NOT NULL,
+          reminder_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('claimed', 'delivered')),
+          worker_id TEXT,
+          lease_until TEXT,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (tenant_id, reminder_id)
+        );
       `);
       const legacyVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'vector_chunks'").get();
       const quarantinedVector = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'legacy_vector_chunks_quarantined'").get();
@@ -205,6 +214,77 @@ export function saveStateToSqlite(state: VelnorState, key = "velnor_root_state")
     try { db.exec("ROLLBACK"); } catch {}
     console.warn("SQLite write warning:", err);
     return false;
+  }
+}
+
+
+export interface ReminderDispatchClaim {
+  tenantId: string;
+  reminderId: string;
+  workerId: string;
+}
+
+/**
+ * Cross-process reminder lease. SQLite's IMMEDIATE transaction makes the
+ * claim exclusive across application instances sharing the same database.
+ * A delivered row is terminal; an expired in-flight lease may be reclaimed.
+ */
+export function claimReminderDispatch(
+  tenantId: string,
+  reminderId: string,
+  workerId: string,
+  leaseMs = 120_000,
+  now = new Date(),
+): boolean {
+  if (!tenantId || !reminderId || !workerId) throw new Error("Reminder claim identifiers are required.");
+  if (tenantId.length > 128 || reminderId.length > 256 || workerId.length > 128) {
+    throw new Error("Reminder claim identifier exceeds its limit.");
+  }
+  if (!Number.isSafeInteger(leaseMs) || leaseMs < 1_000 || leaseMs > 15 * 60_000) {
+    throw new Error("Reminder claim lease must be between 1 second and 15 minutes.");
+  }
+  const db = getSqliteDb();
+  if (!db) throw new Error("SQLite is required for durable reminder dispatch claims.");
+  const nowIso = now.toISOString();
+  const leaseUntil = new Date(now.getTime() + leaseMs).toISOString();
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const existing = db.prepare(
+      "SELECT status, lease_until FROM reminder_dispatch_claims WHERE tenant_id = ? AND reminder_id = ?"
+    ).get(tenantId, reminderId) as { status?: string; lease_until?: string | null } | undefined;
+    if (existing?.status === "delivered" ||
+        (existing?.status === "claimed" && existing.lease_until && existing.lease_until > nowIso)) {
+      db.exec("ROLLBACK");
+      return false;
+    }
+    db.prepare(`
+      INSERT INTO reminder_dispatch_claims
+        (tenant_id, reminder_id, status, worker_id, lease_until, updated_at)
+      VALUES (?, ?, 'claimed', ?, ?, ?)
+      ON CONFLICT(tenant_id, reminder_id) DO UPDATE SET
+        status = 'claimed', worker_id = excluded.worker_id,
+        lease_until = excluded.lease_until, updated_at = excluded.updated_at
+    `).run(tenantId, reminderId, workerId, leaseUntil, nowIso);
+    db.exec("COMMIT");
+    return true;
+  } catch (error) {
+    try { db.exec("ROLLBACK"); } catch {}
+    throw error;
+  }
+}
+
+export function completeReminderDispatch(
+  tenantId: string, reminderId: string, workerId: string, now = new Date(),
+): void {
+  const db = getSqliteDb();
+  if (!db) throw new Error("SQLite is required for durable reminder dispatch claims.");
+  const result = db.prepare(`
+    UPDATE reminder_dispatch_claims
+    SET status = 'delivered', worker_id = NULL, lease_until = NULL, updated_at = ?
+    WHERE tenant_id = ? AND reminder_id = ? AND status = 'claimed' AND worker_id = ?
+  `).run(now.toISOString(), tenantId, reminderId, workerId) as { changes?: number };
+  if (Number(result.changes) !== 1) {
+    throw new Error("Reminder dispatch claim is no longer owned by this worker.");
   }
 }
 
