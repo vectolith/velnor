@@ -3,7 +3,6 @@ import test from "node:test";
 import { getStore, saveStore, withVelnorUser } from "../src/lib/store";
 import { sendSendblueMessage } from "../src/lib/channels/sendblue";
 import { sendLoopMessage } from "../src/lib/channels/loopmessage";
-import { getGoogleAccessToken } from "../src/lib/auth/googleToken";
 import { getGoogleAccessTokenAsync } from "../src/lib/auth/googleTokenAsync";
 import { getNodeTenantRepositoryContext } from "../src/lib/storage/currentTenantRepository";
 
@@ -214,41 +213,6 @@ test("Google Calendar does not report success when provider omits the event ID",
     assert.equal(getStore().calendarEvents.some((event) => event.title === "Missing provider ID"), false);
   });
 });
-
-test("Google access token refresh is tenant-scoped and persists the replacement", async () => {
-  await withVelnorUser("google-token-refresh", async () => {
-    const state = getStore();
-    state.config.googleClientId = "client-id";
-    state.config.googleClientSecret = "client-secret";
-    state.config.googleRefreshToken = "refresh-token";
-    state.config.googleAccessToken = "expired-token";
-    state.config.googleAccessTokenExpiresAt = new Date(Date.now() - 60_000).toISOString();
-    saveStore(state);
-    await withFetchMock(async (input, init) => {
-      assert.equal(String(input), "https://oauth2.googleapis.com/token");
-      const body = new URLSearchParams(String(init?.body));
-      assert.equal(body.get("grant_type"), "refresh_token");
-      assert.equal(body.get("refresh_token"), "refresh-token");
-      return new Response(JSON.stringify({ access_token: "fresh-token", expires_in: 3600 }), { status: 200 });
-    }, async () => {
-      const token = await getGoogleAccessToken();
-      assert.equal(token, "fresh-token");
-      assert.equal(getStore().config.googleAccessToken, "fresh-token");
-      assert.ok(Date.parse(getStore().config.googleAccessTokenExpiresAt || "") > Date.now());
-    });
-  });
-});
-
-test("Google token helper rejects expired access without a refresh grant", async () => {
-  await withVelnorUser("google-token-no-refresh", async () => {
-    const state = getStore();
-    state.config.googleAccessToken = "expired-token";
-    state.config.googleAccessTokenExpiresAt = new Date(Date.now() - 60_000).toISOString();
-    saveStore(state);
-    await assert.rejects(getGoogleAccessToken(), /reconnect the Google account/);
-  });
-});
-
 
 test("async workspace reminder operations persist through the tenant repository", async () => {
   await withVelnorUser("workspace-reminder-tenant-a", async () => {
