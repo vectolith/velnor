@@ -17,7 +17,7 @@ Do not replace `saveStore()` with fire-and-forget promises, hide D1 writes in `w
 - `src/app/api/webhooks/slack/route.ts` and `src/app/api/webhooks/imessage/route.ts` — root signing/webhook credential reads and tenant-specific bot/provider credential reads now use the async tenant repository; processing establishes tenant identity without synchronously loading the Node store. Their public provider callback routes must not be blanket-protected by Cloudflare Access. Outbound replies are still direct provider calls and are not yet protected by a durable outbox; do not add automatic retries.
 - `src/app/api/cron/reminders/route.ts` and `src/lib/scheduler.ts` — cross-tenant enumeration, due-reminder selection, external message delivery, and completion updates remain synchronous and are not yet outbox-backed.
 - `src/app/api/internal/tenants/provision/route.ts` — now establishes a tenant-only scope and provisions idempotently through the async tenant repository; it no longer enumerates users or reads/writes the synchronous store. The route remains Node-only because its provisioning-secret comparison uses Node crypto.
-- `src/app/api/internal/maintenance/reseal-credentials/route.ts` — cross-tenant credential migration.
+- `src/app/api/internal/maintenance/reseal-credentials/route.ts` — now enumerates tenants and reseals credentials through the async tenant repository; it no longer directly reads or writes the synchronous store. The endpoint remains Node-only because it uses the Node credential-encryption readiness check.
 - `src/app/api/vcard/route.ts` — currently reads the root store directly and needs an explicit tenant or public-profile policy before Worker migration.
 
 ### Synchronous store consumers still requiring migration
