@@ -17,3 +17,25 @@ test("returns offline status when Blud RPC endpoint is unreachable", async () =>
   assert.ok(result.status === "offline" || result.status === "failure");
   assert.ok(result.verifiedAtUtc);
 });
+
+test("does not inherit Velnor credentials for the optional Blud integration", async () => {
+  const previousRpcUrl = process.env.BLUD_INTERNAL_RPC_URL;
+  const previousBludKey = process.env.BLUD_INTERNAL_KEY;
+  const previousVelnorSecret = process.env.VELNOR_SHARED_SECRET;
+  delete process.env.BLUD_INTERNAL_RPC_URL;
+  delete process.env.BLUD_INTERNAL_KEY;
+  process.env.VELNOR_SHARED_SECRET = "velnor-only-secret";
+
+  try {
+    const result = await delegateBrowserTaskToBlud({ task: "Run an optional browser task" });
+    assert.equal(result.status, "offline");
+    assert.match(result.error || "", /dedicated BLUD_INTERNAL_KEY/i);
+  } finally {
+    if (previousRpcUrl === undefined) delete process.env.BLUD_INTERNAL_RPC_URL;
+    else process.env.BLUD_INTERNAL_RPC_URL = previousRpcUrl;
+    if (previousBludKey === undefined) delete process.env.BLUD_INTERNAL_KEY;
+    else process.env.BLUD_INTERNAL_KEY = previousBludKey;
+    if (previousVelnorSecret === undefined) delete process.env.VELNOR_SHARED_SECRET;
+    else process.env.VELNOR_SHARED_SECRET = previousVelnorSecret;
+  }
+});
