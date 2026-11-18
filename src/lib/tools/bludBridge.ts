@@ -27,8 +27,6 @@ export interface BrowserTaskResult {
   verifiedAtUtc: string;
 }
 
-const DEFAULT_BLUD_RPC_URL =
-  process.env.BLUD_INTERNAL_RPC_URL || "http://127.0.0.1:3000/api/internal/browser-worker";
 const DEFAULT_TIMEOUT_MS = 45_000;
 
 /**
@@ -55,13 +53,17 @@ export async function delegateBrowserTaskToBlud(
   const taskUrls = [startUrl, ...(task.match(/https?:\/\/[^\s)]+/g) || [])].filter((value): value is string => Boolean(value));
   for (const url of taskUrls) await resolveAndAssert(url);
 
-  // 1. Attempt internal RPC to Blud browser agent
-  const rpcUrl = DEFAULT_BLUD_RPC_URL;
-  const sharedSecret =
-    process.env.BLUD_INTERNAL_KEY ||
-    process.env.VELNOR_SHARED_SECRET ||
-    process.env.VELNOR_ADMIN_TOKEN ||
-    "";
+  // This is an optional integration. Never infer its endpoint or reuse Velnor credentials.
+  const rpcUrl = process.env.BLUD_INTERNAL_RPC_URL?.trim();
+  const sharedSecret = process.env.BLUD_INTERNAL_KEY?.trim();
+  if (!rpcUrl || !sharedSecret) {
+    return {
+      status: "offline",
+      summary: "Optional Blud integration is not configured. Velnor remains fully independent.",
+      error: "Set BLUD_INTERNAL_RPC_URL and a dedicated BLUD_INTERNAL_KEY only when explicitly enabling this integration.",
+      verifiedAtUtc,
+    };
+  }
 
   try {
     const controller = new AbortController();
