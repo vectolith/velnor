@@ -38,11 +38,28 @@ test("refuses to call Blud when internal service authentication is not configure
   assert.equal(called, false);
 });
 
+test("refuses weak internal service secrets before making an RPC request", async () => {
+  process.env.BLUD_INTERNAL_KEY = "short-secret";
+  delete process.env.VELNOR_SHARED_SECRET;
+  let called = false;
+  globalThis.fetch = async () => {
+    called = true;
+    return new Response("unexpected", { status: 200 });
+  };
+
+  const result = await delegateBrowserTaskToBlud({
+    task: "Inspect the current page",
+  });
+  assert.equal(result.status, "failure");
+  assert.match(result.error || "", /must be configured/i);
+  assert.equal(called, false);
+});
+
 test("rejects success responses without a verifiable execution receipt", async () => {
-  process.env.BLUD_INTERNAL_KEY = "test-internal-secret";
+  process.env.BLUD_INTERNAL_KEY = "test-internal-secret-with-at-least-32-characters";
   globalThis.fetch = async (_input, init) => {
     const headers = new Headers(init?.headers);
-    assert.equal(headers.get("x-blud-key"), "test-internal-secret");
+    assert.equal(headers.get("x-blud-key"), "test-internal-secret-with-at-least-32-characters");
     return new Response(
       JSON.stringify({
         status: "success",
@@ -61,7 +78,7 @@ test("rejects success responses without a verifiable execution receipt", async (
 });
 
 test("accepts success only with a structurally valid completion receipt", async () => {
-  process.env.BLUD_INTERNAL_KEY = "test-internal-secret";
+  process.env.BLUD_INTERNAL_KEY = "test-internal-secret-with-at-least-32-characters";
   const completedAtUtc = "2026-11-18T09:00:00.000Z";
   globalThis.fetch = async () =>
     new Response(
@@ -91,7 +108,7 @@ test("accepts success only with a structurally valid completion receipt", async 
 
 
 test("preserves a resumable session reference when the worker needs follow-up", async () => {
-  process.env.BLUD_INTERNAL_KEY = "test-internal-secret";
+  process.env.BLUD_INTERNAL_KEY = "test-internal-secret-with-at-least-32-characters";
   globalThis.fetch = async () =>
     new Response(
       JSON.stringify({
@@ -109,7 +126,7 @@ test("preserves a resumable session reference when the worker needs follow-up", 
 });
 
 test("returns offline status when Blud RPC endpoint is unreachable", async () => {
-  process.env.BLUD_INTERNAL_KEY = "test-internal-secret";
+  process.env.BLUD_INTERNAL_KEY = "test-internal-secret-with-at-least-32-characters";
   process.env.BLUD_INTERNAL_RPC_URL = "http://127.0.0.1:59999/api/nonexistent";
   const result = await delegateBrowserTaskToBlud({
     task: "Inspect the current page",
