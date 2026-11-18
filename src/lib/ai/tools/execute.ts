@@ -265,7 +265,17 @@ export async function executeToolCall(
     case "delegate_browser_task": {
       const task = String(args.task || "");
       const startUrl = args.startUrl ? String(args.startUrl) : undefined;
-      const res = await delegateBrowserTaskToBlud({ task, startUrl });
+      const sessionRef = args.sessionRef ? String(args.sessionRef) : undefined;
+      const extractSchema =
+        args.extractSchema && typeof args.extractSchema === "object" && !Array.isArray(args.extractSchema)
+          ? (args.extractSchema as Record<string, unknown>)
+          : undefined;
+      const res = await delegateBrowserTaskToBlud({
+        task,
+        startUrl,
+        sessionRef,
+        extractSchema,
+      });
       bundle.toolActions.push({
         tool: "delegate_browser_task",
         label: `Blud Browser Task: ${res.status.toUpperCase()}`,
