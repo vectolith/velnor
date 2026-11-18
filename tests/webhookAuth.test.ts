@@ -4,13 +4,16 @@ import test from "node:test";
 import crypto from "node:crypto";
 import {
   authorizeCronRequest,
+  authorizeGitHubWebhookRequest,
   authorizeJsonWebhook,
   authorizeSlackRequest,
   authorizeTwilioRequest,
+  computeGitHubWebhookSignature,
   computeSlackSignature,
   computeTwilioSignature,
   isSimulatorAllowed,
   publicRequestUrl,
+  verifyGitHubWebhookSignature,
   verifySlackSignature,
   verifyTwilioSignature,
 } from "../src/lib/security/webhookAuth";
@@ -23,6 +26,75 @@ const SLACK_SECRET = "test-slack-signing-secret";
 const URL_PATH = "https://example.test/api/webhooks/imessage";
 
 const twilioParams = { From: "+15550100000", Body: "hello", NumMedia: "0" };
+
+const GITHUB_WEBHOOK_SECRET = "github-webhook-secret-with-at-least-32-characters";
+
+test("GitHub App webhook: exact raw-body signature and delivery ID are required", () => {
+  const rawBody = JSON.stringify({ action: "opened", repository: { id: 42 } });
+  const deliveryId = "8a6a4a1c-90b0-4b4c-ae1d-9f9f4e8a7c01";
+  const signature = computeGitHubWebhookSignature(
+    GITHUB_WEBHOOK_SECRET,
+    rawBody
+  );
+
+  assert.equal(
+    verifyGitHubWebhookSignature(rawBody, signature, GITHUB_WEBHOOK_SECRET),
+    true
+  );
+  assert.deepEqual(
+    authorizeGitHubWebhookRequest({
+      webhookSecret: GITHUB_WEBHOOK_SECRET,
+      rawBody,
+      signature,
+      deliveryId,
+    }),
+    { ok: true, deliveryId }
+  );
+  assert.equal(
+    verifyGitHubWebhookSignature(
+      `${rawBody} `,
+      signature,
+      GITHUB_WEBHOOK_SECRET
+    ),
+    false
+  );
+});
+
+test("GitHub App webhook: missing secret fails closed and malformed metadata is rejected", () => {
+  const rawBody = "{}";
+  const signature = computeGitHubWebhookSignature(
+    GITHUB_WEBHOOK_SECRET,
+    rawBody
+  );
+
+  assert.equal(
+    authorizeGitHubWebhookRequest({
+      webhookSecret: undefined,
+      rawBody,
+      signature,
+      deliveryId: "delivery-1",
+    }).status,
+    503
+  );
+  assert.equal(
+    authorizeGitHubWebhookRequest({
+      webhookSecret: GITHUB_WEBHOOK_SECRET,
+      rawBody,
+      signature,
+      deliveryId: null,
+    }).status,
+    401
+  );
+  assert.equal(
+    authorizeGitHubWebhookRequest({
+      webhookSecret: GITHUB_WEBHOOK_SECRET,
+      rawBody,
+      signature: "sha256=bad",
+      deliveryId: "delivery-1",
+    }).status,
+    401
+  );
+});
 
 test("twilio: a correctly signed request is accepted", () => {
   const signature = computeTwilioSignature(TWILIO_TOKEN, URL_PATH, twilioParams);
