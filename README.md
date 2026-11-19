@@ -1,6 +1,6 @@
 # Velnor — Headless Personal AI Agent by Vectolith
 
-**Velnor** (engineered by **[Vectolith](https://github.com/vectolith)**) is a headless, messaging-only executive AI agent powered by the fine-tuned **`velnor-core-v1`** rsLoRA model (12-domain executive intelligence curriculum) and multi-provider AI routing. It operates strictly through native messaging channels (**Apple iMessage, SMS, Siri Shortcuts, and Slack**) with no web chat UI or frontend application.
+**Velnor** (engineered by **[Vectolith](https://github.com/vectolith)**) is a headless, messaging-only executive AI agent powered by multi-provider AI routing (Gemini, OpenAI, Anthropic). A fine-tuned **`velnor-core-v1`** rsLoRA adapter ships in this repo as an experimental pilot — trained on a 12-domain curriculum, evaluated at 1/6 rubrics passed versus 1/6 for its base model, and **not serving production traffic**. See [`training/README.md`](training/README.md) for the run, provenance and eval. It operates strictly through native messaging channels (**Apple iMessage, SMS, Siri Shortcuts, and Slack**) with no web chat UI or frontend application.
 
 ## Core Capabilities
 

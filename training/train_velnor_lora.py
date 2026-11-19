@@ -38,7 +38,12 @@ from grade_generations import CASES, grade_all
 SEED = 42
 random.seed(SEED)
 torch.manual_seed(SEED)
-torch.set_num_threads(os.cpu_count() or 4)
+# Respect an explicit thread cap (VELNOR_TORCH_THREADS / OMP_NUM_THREADS). On a
+# shared or oversubscribed box the default os.cpu_count() oversubscribes the
+# cores and OpenMP spin-waiting makes a 135M forward pass ~7x slower.
+torch.set_num_threads(
+    int(os.environ.get("VELNOR_TORCH_THREADS") or os.environ.get("OMP_NUM_THREADS") or os.cpu_count() or 4)
+)
 
 ROOT = Path(__file__).resolve().parent
 # The README contract is the specification: SmolLM2-135M-Instruct, 135.4M

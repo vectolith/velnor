@@ -14,7 +14,12 @@ export async function GET() {
     {
       status: "healthy",
       agent: "Velnor",
-      loraModel: "velnor-core-v1",
+          loraModel: "none-active",
+          loraPilot: {
+            id: "velnor-core-v1",
+            status: "experimental",
+            servingTraffic: false,
+          },
       service: process.env.K_SERVICE || "velnor-assistant",
       version: "2.0.0",
       timestamp: new Date().toISOString(),
