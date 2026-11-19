@@ -25,6 +25,10 @@ test("every variable the preflight asks for is forwarded by the deploy script", 
   assert.deepEqual(missing, [], `deploy/cloudrun/deploy-cloudrun.ps1 never passes: ${missing.join(", ")}`);
 });
 
+test("the Cloud Run deploy script does not forward a Blud-only integration", () => {
+  assert.doesNotMatch(script, /BLUD_INTERNAL_RPC_URL|BLUD_/);
+});
+
 test("the Slack credentials that make the installed app work are both forwarded", () => {
   for (const name of ["SLACK_BOT_TOKEN", "SLACK_SIGNING_SECRET", "SLACK_CHANNEL"]) {
     assert.ok(new RegExp(`"${name}"`).test(script), `${name} is not forwarded to Cloud Run`);
