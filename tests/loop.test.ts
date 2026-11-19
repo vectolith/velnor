@@ -87,6 +87,115 @@ test("stops at maxSteps and asks for a final answer without tools", async () => 
   assert.equal(provider.calls[1].tools.length, 0);
 });
 
+test("independent tool calls in one turn run concurrently", async () => {
+  const provider = new ScriptedProvider([
+    {
+      text: "",
+      toolCalls: [
+        { id: "1", name: "slow_a", args: {} },
+        { id: "2", name: "slow_b", args: {} },
+        { id: "3", name: "slow_c", args: {} },
+      ],
+      usage: { inputTokens: 1, outputTokens: 1 },
+      model: "m",
+    },
+    { text: "done", toolCalls: [], usage: { inputTokens: 1, outputTokens: 1 }, model: "m" },
+  ]);
+  const started = Date.now();
+  const res = await runAgentLoop({
+    ...base,
+    provider,
+    executeTool: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      return { payload: { ok: true } };
+    },
+  });
+  const elapsed = Date.now() - started;
+  assert.equal(res.toolCalls, 3);
+  assert.ok(elapsed < 150, "three 60ms tools should not take 180ms, took " + elapsed + "ms");
+});
+
+test("identical repeated tool calls are answered from cache", async () => {
+  const provider = new ScriptedProvider([
+    {
+      text: "",
+      toolCalls: [
+        { id: "1", name: "check", args: { b: 2, a: 1 } },
+        { id: "2", name: "check", args: { a: 1, b: 2 } },
+      ],
+      usage: { inputTokens: 1, outputTokens: 1 },
+      model: "m",
+    },
+    { text: "done", toolCalls: [], usage: { inputTokens: 1, outputTokens: 1 }, model: "m" },
+  ]);
+  let executions = 0;
+  const res = await runAgentLoop({
+    ...base,
+    provider,
+    executeTool: async () => {
+      executions++;
+      return { payload: { value: 42 } };
+    },
+  });
+  assert.equal(executions, 1);
+  assert.equal(res.cachedToolCalls, 1);
+  const toolTurns = provider.calls[1].messages.filter((m) => m.role === "tool");
+  assert.equal(toolTurns.length, 2);
+  assert.match((toolTurns[1] as any).content, /42/);
+});
+
+test("a failed tool call is not cached, so a retry really runs again", async () => {
+  const provider = new ScriptedProvider([
+    {
+      text: "",
+      toolCalls: [{ id: "1", name: "flaky", args: {} }],
+      usage: { inputTokens: 1, outputTokens: 1 },
+      model: "m",
+    },
+    {
+      text: "",
+      toolCalls: [{ id: "2", name: "flaky", args: {} }],
+      usage: { inputTokens: 1, outputTokens: 1 },
+      model: "m",
+    },
+    { text: "ok", toolCalls: [], usage: { inputTokens: 1, outputTokens: 1 }, model: "m" },
+  ]);
+  let attempts = 0;
+  const res = await runAgentLoop({
+    ...base,
+    provider,
+    executeTool: async () => {
+      attempts++;
+      if (attempts === 1) throw new Error("transient");
+      return { payload: { ok: true } };
+    },
+  });
+  assert.equal(attempts, 2);
+  assert.equal(res.cachedToolCalls, 0);
+});
+
+test("oversized tool payloads stay valid JSON and are flagged", async () => {
+  const provider = new ScriptedProvider([
+    {
+      text: "",
+      toolCalls: [{ id: "1", name: "big", args: {} }],
+      usage: { inputTokens: 1, outputTokens: 1 },
+      model: "m",
+    },
+    { text: "done", toolCalls: [], usage: { inputTokens: 1, outputTokens: 1 }, model: "m" },
+  ]);
+  const res = await runAgentLoop({
+    ...base,
+    provider,
+    executeTool: async () => ({ payload: { body: "x".repeat(40_000) } }),
+  });
+  assert.equal(res.text, "done");
+  const toolTurn = provider.calls[1].messages.find((m) => m.role === "tool") as any;
+  const parsed = JSON.parse(toolTurn.content);
+  assert.equal(parsed.truncated, true);
+  assert.equal(parsed.originalBytes > 40_000, true);
+});
+
 test("empty replies are an error so the caller can fall back", async () => {
   const provider = new ScriptedProvider([
     { text: "   ", toolCalls: [], usage: { inputTokens: 1, outputTokens: 0 }, model: "m" },
