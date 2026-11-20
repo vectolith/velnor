@@ -11,7 +11,12 @@ export async function GET(req: NextRequest) {
     service: "Velnor",
     mode: "headless-messaging-only",
     webInterface: false,
-    model: "velnor-core-v1",
+    model: "multi-provider-router",
+    loraPilot: {
+      id: "velnor-core-v1",
+      status: "experimental",
+      servingTraffic: false,
+    },
     endpoints: {
       imessageWebhook: `${origin}/api/webhooks/imessage`,
       slackWebhook: `${origin}/api/webhooks/slack`,

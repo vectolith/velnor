@@ -10,6 +10,7 @@ import { test } from "node:test";
 
 const script = readFileSync(new URL("../deploy/cloudrun/deploy-cloudrun.ps1", import.meta.url), "utf8");
 const preflight = readFileSync(new URL("../scripts/preflight-deploy.mjs", import.meta.url), "utf8");
+const rootStatus = readFileSync(new URL("../src/app/route.ts", import.meta.url), "utf8");
 
 /** Names in the REQUIRED and RECOMMENDED tables: the operator's checklist. */
 function contractVariables(source: string): string[] {
@@ -23,6 +24,12 @@ test("every variable the preflight asks for is forwarded by the deploy script", 
   // the optional loop, so match the name rather than one particular spelling.
   const missing = wanted.filter((name) => !new RegExp(`\\b${name}\\b`).test(script));
   assert.deepEqual(missing, [], `deploy/cloudrun/deploy-cloudrun.ps1 never passes: ${missing.join(", ")}`);
+});
+
+test("public status reports the router and does not claim the experimental LoRA is serving", () => {
+  assert.match(rootStatus, /model: "multi-provider-router"/);
+  assert.match(rootStatus, /servingTraffic: false/);
+  assert.doesNotMatch(rootStatus, /model: "velnor-core-v1"/);
 });
 
 test("the Slack credentials that make the installed app work are both forwarded", () => {
