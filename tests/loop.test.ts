@@ -205,3 +205,25 @@ test("empty replies are an error so the caller can fall back", async () => {
     /empty reply/
   );
 });
+
+
+test("does not invoke tools after cancellation is signalled", async () => {
+  const provider = new ScriptedProvider([
+    {
+      text: "",
+      toolCalls: [{ id: "1", name: "must_not_run", args: {} }],
+      usage: { inputTokens: 1, outputTokens: 1 },
+      model: "m",
+    },
+  ]);
+  const controller = new AbortController();
+  controller.abort();
+  let executions = 0;
+  await assert.rejects(() => runAgentLoop({
+    ...base,
+    provider,
+    signal: controller.signal,
+    executeTool: async () => { executions++; return { payload: {} }; },
+  }), /cancelled/);
+  assert.equal(executions, 0);
+});
