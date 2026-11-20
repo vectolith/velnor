@@ -130,6 +130,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
 
   const runOne = async (name: string, args: Record<string, any>) => {
     try {
+      if (opts.signal?.aborted) throw new Error("Agent execution cancelled before tool execution");
       const ran = await withTimeout(opts.executeTool(name, args), toolTimeoutMs, name);
       return { payload: ran.payload ?? {}, ok: true as const };
     } catch (err) {
@@ -138,6 +139,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
   };
 
   for (let step = 0; step < maxSteps; step++) {
+    if (opts.signal?.aborted) throw new Error("Agent execution cancelled");
     const req: CompletionRequest = {
       model,
       system: opts.system,
@@ -206,6 +208,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
 
     const jobs = [...unique.entries()];
     for (let i = 0; i < jobs.length; i += maxParallel) {
+      if (opts.signal?.aborted) throw new Error("Agent execution cancelled before remaining tools");
       const batch = jobs.slice(i, i + maxParallel);
       const settled = await Promise.all(batch.map(([, job]) => runOne(job.name, job.args)));
       settled.forEach((outcome, n) => {
@@ -225,6 +228,8 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
       });
     });
   }
+
+  if (opts.signal?.aborted) throw new Error("Agent execution cancelled before final response");
 
   // Out of steps: ask once more so the user still gets an answer built from
   // what the model already learned.
