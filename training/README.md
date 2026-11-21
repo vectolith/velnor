@@ -95,3 +95,9 @@ Checkpoint selection starts with the resumed adapter's measured loss on the curr
 The notebook stores model artifacts in a timestamped Google Drive run directory. It does not store GitHub tokens, force-push, create duplicate pull requests, or commit adapter weights to the repository. The existing 1.5B baseline and historical run records remain unchanged.
 
 The E2 promotion gate is a screening signal only: it requires a newly selected checkpoint, no held-out loss regression, and no regression on the deterministic generation rubric against the resumed adapter for continuation runs (or the unadapted base for fresh runs) before human review. The report preserves the legacy base/tuned rubric fields while recording all three arms explicitly. It is not production certification. No GPU training is claimed until the notebook is actually run on an eligible free CUDA runtime.
+
+
+## Historical pilot records
+
+- `pilot_report.json`: the historical Qwen2.5-Coder run described above.
+- `pilot_report_smollm2_135m_preserved.json`: a separately preserved report from the superseded PR #43 branch. It reports 1/6 rubric checks for both base and tuned conditions (no measured improvement). Its provenance and reported results are retained as supplied, but were not independently verified in the preservation change. Neither pilot is a production model or evidence of serving traffic.
