@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sendSendblueMessage } from "../src/lib/channels/sendblue";
 import { getLoopMessageStatus, sendLoopMessage } from "../src/lib/channels/loopmessage";
 import { buildSlackBlocks, postSlackMessage } from "../src/lib/channels/slack";
 import { sendTwilioSms } from "../src/lib/channels/twilio";
@@ -13,68 +12,6 @@ function stubFetch(handler: (input: RequestInfo | URL, init?: RequestInit) => Re
     globalThis.fetch = original;
   };
 }
-
-test("sendblue sends the documented headers and body", async () => {
-  let seen: { url: string; headers: any; body: any } | null = null;
-  const restore = stubFetch((input, init) => {
-    seen = { url: String(input), headers: init?.headers, body: JSON.parse(String(init?.body)) };
-    return new Response(JSON.stringify({ status: "QUEUED", message_handle: "handle-1" }), { status: 200, headers: { "content-type": "application/json" } });
-  });
-  try {
-    const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+15550100", content: "hi" });
-    assert.equal(result.ok, true);
-    assert.equal(result.provider, "sendblue");
-    assert.equal(seen!.url, "https://api.sendblue.co/api/send-message");
-    assert.equal(seen!.headers["sb-api-key-id"], "key");
-    assert.equal(seen!.headers["sb-api-secret-key"], "secret");
-    assert.deepEqual(seen!.body, { number: "+15550100", content: "hi" });
-    assert.equal(result.messageId, "handle-1");
-    assert.equal(result.sendCertainty, "accepted");
-  } finally {
-    restore();
-  }
-});
-
-test("sendblue treats a 2xx without a message handle as ambiguous, not sent", async () => {
-  const restore = stubFetch(() => new Response(JSON.stringify({ status: "QUEUED" }), { status: 200, headers: { "content-type": "application/json" } }));
-  try {
-    const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+15550100", content: "hi" });
-    assert.equal(result.ok, false);
-    assert.equal(result.sendCertainty, "ambiguous");
-  } finally {
-    restore();
-  }
-});
-
-test("sendblue treats an error payload on a 2xx as an explicit rejection", async () => {
-  const restore = stubFetch(() => new Response(JSON.stringify({ status: "ERROR", error_message: "from number not allowed" }), { status: 200, headers: { "content-type": "application/json" } }));
-  try {
-    const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+15550100", content: "hi" });
-    assert.equal(result.ok, false);
-    assert.equal(result.sendCertainty, "rejected");
-    assert.match(String(result.detail), /from number not allowed/);
-  } finally {
-    restore();
-  }
-});
-
-test("sendblue reports a provider rejection instead of claiming success", async () => {
-  const restore = stubFetch(() => new Response("bad key", { status: 401 }));
-  try {
-    const result = await sendSendblueMessage({ apiKeyId: "key", apiSecretKey: "secret", number: "+1555", content: "hi" });
-    assert.equal(result.ok, false);
-    assert.equal(result.status, 401);
-    assert.match(String(result.detail), /bad key/);
-  } finally {
-    restore();
-  }
-});
-
-test("sendblue refuses to run without credentials", async () => {
-  const result = await sendSendblueMessage({ apiKeyId: "", apiSecretKey: "", number: "+1555", content: "hi" });
-  assert.equal(result.ok, false);
-  assert.match(String(result.detail), /not configured/);
-});
 
 test("loopmessage sends Apple ID email recipients through the configured email sender ID", async () => {
   let body: any = null;

@@ -61,7 +61,6 @@ function buildSnapshot(state: VelnorState) {
       discordConfigured: Boolean(process.env.DISCORD_PUBLIC_KEY),
       imessageConfigured: Boolean(
         state.config.twilioAccountSid ||
-          state.config.sendblueApiKey ||
           state.config.loopMessageAuthKey
       ),
     },

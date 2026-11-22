@@ -16,7 +16,6 @@ This is a staged migration, not a drop-in redeployment. Keep the current Node.js
 - src/lib/security/secretBox.ts uses Node crypto AES-256-GCM with authenticated additional data and a keyring. Ciphertext must remain decryptable across the migration; keys must not be rotated or discarded as part of deployment.
 - API handlers include explicit runtime = "nodejs" declarations and Node built-in imports. These require runtime compatibility checks and route-by-route testing.
 - OAuth state is tenant-bound and one-time; the Google callback is public and must remain reachable without interactive Access login.
-- Slack, Twilio, Sendblue, and LoopMessage callbacks perform provider-specific authentication. Those checks must remain at the origin and must not be bypassed by gateway routing.
 - The identity gateway currently mints short-lived tenant identity tokens and provisions tenants through a separate provisioning secret. The Cloudflare implementation must preserve those separate trust boundaries.
 
 ## Main migration blockers

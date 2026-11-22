@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getStore, saveStore, withVelnorUser } from "../src/lib/store";
-import { sendSendblueMessage } from "../src/lib/channels/sendblue";
 import { sendLoopMessage } from "../src/lib/channels/loopmessage";
 import { getGoogleAccessTokenAsync } from "../src/lib/auth/googleTokenAsync";
 import { getNodeTenantRepositoryContext } from "../src/lib/storage/currentTenantRepository";
@@ -130,30 +129,6 @@ test("Gmail organization uses the provider modify endpoint", async () => {
       assert.equal(result.updatedCount, 1);
     });
     assert.equal(urls.length, 2);
-  });
-});
-
-test("Sendblue uses the documented send-message contract and sender line", async () => {
-  await withFetchMock(async (input, init) => {
-    assert.equal(String(input), "https://api.sendblue.co/api/send-message");
-    const body = JSON.parse(String(init?.body));
-    assert.equal(body.number, "+15551234567");
-    assert.equal(body.from_number, "+15557654321");
-    assert.equal(body.content, "Hello");
-    assert.equal((init?.headers as Record<string, string>)["sb-api-key-id"], "key-id");
-    return new Response(JSON.stringify({ status: "QUEUED", message_handle: "sendblue-handle" }), { status: 200 });
-  }, async () => {
-    const result = await sendSendblueMessage({
-      apiKeyId: "key-id",
-      apiSecretKey: "secret",
-      number: "+15551234567",
-      fromNumber: "+15557654321",
-      content: "Hello",
-    });
-    assert.equal(result.ok, true);
-    assert.equal(result.messageId, "sendblue-handle");
-    assert.equal(result.sendCertainty, "accepted");
-    assert.equal(result.deliveryStatus, "queued");
   });
 });
 

@@ -8,7 +8,7 @@
 export type OutboundSendCertainty = "accepted" | "rejected" | "ambiguous";
 
 export interface SendResult {
-  provider: "sendblue" | "loopmessage" | "slack" | "twilio";
+  provider: "loopmessage" | "slack" | "twilio";
   ok: boolean;
   status?: number;
   detail?: string;

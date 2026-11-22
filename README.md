@@ -74,7 +74,6 @@ Dataset quality, provenance, licensing, privacy, deduplication, contamination ch
 - **Root Status**: `GET /` — Returns headless service status and active webhook URLs.
 - **Apple iMessage & SMS Webhook**: `POST /api/webhooks/imessage`
   - **Twilio SMS/MMS**: Accepts `application/x-www-form-urlencoded` (`From`, `Body`, `NumMedia`, `MediaUrl0`) and returns valid TwiML XML.
-  - **Sendblue**: Accepts JSON (`number`, `content`, `media_url`) and dispatches replies via `https://api.sendblue.co/api/send-message`.
   - **LoopMessage**: Accepts JSON (`recipient`, `text`) and dispatches replies via `https://server.loopmessage.com/api/v1/message/send/`.
 - **Slack Bot Webhook**: `POST /api/webhooks/slack`
   - Handles `url_verification`, `event_callback` (`app_mention`, `message.im`), `x-slack-signature` verification, and `/velnor` slash commands with Slack Block Kit formatting.
@@ -160,12 +159,11 @@ Circulation rather than monolith.
 
 ## Channel integrations, execution and operations
 
-Velnor owns its own task lifecycle, channel authentication, delivery state and operational controls. Messaging providers are optional integrations; no other Vectolith product is required for Velnor's core operation. A fresh installation can run the core dashboard, task engine and local orchestration without Discord, iMessage, LoopMessage, Sendblue, Twilio or any other external channel configured.
+Velnor owns its own task lifecycle, channel authentication, delivery state and operational controls. Messaging providers are optional integrations; no other Vectolith product is required for Velnor's core operation. A fresh installation can run the core dashboard, task engine and local orchestration without Discord, iMessage, LoopMessage, Twilio or any other external channel configured.
 
 - [Discord integration](docs/DISCORD-INTEGRATION.md)
 - [Execution tasks and cancellation](docs/EXECUTION-TASKS.md)
 - [iMessage and Apple ID email identities](docs/IMESSAGE-EMAIL-IDENTITIES.md)
-- [Sendblue channel configuration](docs/SENDBLUE.md)
 - [Outbound delivery guarantees and retry policy](docs/DELIVERY_RELIABILITY.md)
 - [Operations and deployment notes](docs/OPERATIONS.md)
 

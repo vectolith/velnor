@@ -34,9 +34,7 @@ function buildSettings(state: VelnorState) {
     hasOpenaiKey: Boolean(keys.openaiApiKey),
     hasAnthropicKey: Boolean(keys.anthropicApiKey),
     twilioFromNumber: state.config.twilioFromNumber || "",
-    sendblueFromNumber: state.config.sendblueFromNumber || "",
     hasTwilio: Boolean(state.config.twilioAccountSid),
-    hasSendblue: Boolean(state.config.sendblueApiKey),
     hasLoopMessage: Boolean(state.config.loopMessageAuthKey),
     hasSlack: Boolean(state.config.slackBotToken || process.env.SLACK_BOT_TOKEN),
     slackChannel: resolveSlackChannel(state),
@@ -100,9 +98,6 @@ async function updateSettings(body: Record<string, unknown>) {
       if (typeof body.twilioAccountSid === "string") state.config.twilioAccountSid = body.twilioAccountSid.trim();
       if (typeof body.twilioAuthToken === "string") state.config.twilioAuthToken = body.twilioAuthToken.trim();
       if (typeof body.twilioFromNumber === "string") state.config.twilioFromNumber = body.twilioFromNumber.trim();
-      if (typeof body.sendblueApiKey === "string") state.config.sendblueApiKey = body.sendblueApiKey.trim();
-      if (typeof body.sendblueApiSecret === "string") state.config.sendblueApiSecret = body.sendblueApiSecret.trim();
-      if (typeof body.sendblueFromNumber === "string") state.config.sendblueFromNumber = body.sendblueFromNumber.trim();
       if (typeof body.loopMessageAuthKey === "string") state.config.loopMessageAuthKey = body.loopMessageAuthKey.trim();
       if (typeof body.loopMessageSecretKey === "string") state.config.loopMessageSecretKey = body.loopMessageSecretKey.trim();
       if (typeof body.slackBotToken === "string") state.config.slackBotToken = body.slackBotToken.trim();

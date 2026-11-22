@@ -3,7 +3,7 @@ import { getSqliteDb } from "../sqliteDb";
 import type { OutboundSendCertainty } from "./types";
 
 /**
- * Durable outbound attempt ledger for iMessage providers (LoopMessage, Sendblue).
+ * Durable outbound attempt ledger for iMessage delivery through LoopMessage.
  *
  * A row is written before the provider request, so an attempt that fails
  * without a provider message ID still has a recoverable record. States:
@@ -14,7 +14,7 @@ import type { OutboundSendCertainty } from "./types";
  *   established (timeout, 5xx, 2xx without a message ID, crashed worker).
  *   A retry is allowed but may duplicate a message that actually landed.
  */
-export type IMessageProvider = "loopmessage" | "sendblue";
+export type IMessageProvider = "loopmessage";
 
 export type LoopMessageAttemptState =
   | "pending_send" | "queued" | "processing" | "delivered" | "failed" | "unknown" | "unconfirmed";
@@ -105,14 +105,6 @@ export function beginLoopMessageAttempt(input: {
     ).get(input.tenantId, input.taskId, provider) as { state: LoopMessageAttemptState; error_detail?: string | null } | undefined;
     if (previous) {
       const state = previous.state;
-      const smsDowngrade = provider === "sendblue" &&
-        /downgraded(?: this message)? to SMS/i.test(previous.error_detail || "");
-      if (smsDowngrade && !input.allowAmbiguousRetry) {
-        throw new LoopMessageAttemptBlockedError(
-          state,
-          "A previous Sendblue attempt may have reached the recipient as SMS; an explicit, reconciled retry is required.",
-        );
-      }
       if (state === "pending_send" || state === "queued" || state === "processing" || state === "delivered") {
         throw new LoopMessageAttemptBlockedError(state);
       }

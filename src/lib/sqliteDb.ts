@@ -154,15 +154,6 @@ export function getSqliteDb() {
         CREATE INDEX IF NOT EXISTS inbound_webhook_events_received
           ON inbound_webhook_events(received_at);
 
-        -- Delivery callbacks can arrive before the outbound attempt has stored
-        -- its message handle. Buffer them by handle and apply on persistence.
-        CREATE TABLE IF NOT EXISTS sendblue_status_events (
-          message_handle TEXT PRIMARY KEY,
-          state TEXT NOT NULL CHECK (state IN ('processing', 'delivered', 'failed', 'unknown')),
-          error_code INTEGER,
-          error_detail TEXT,
-          received_at TEXT NOT NULL
-        );
 
         CREATE TABLE IF NOT EXISTS reminder_dispatch_claims (
           tenant_id TEXT NOT NULL,

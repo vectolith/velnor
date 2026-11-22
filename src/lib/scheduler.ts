@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getStore, saveStore, resolveSlackChannel, listUserIds, withVelnorUser, currentUserId } from "./store";
 import { claimReminderDispatch, completeReminderDispatch, releaseReminderDispatch } from "./sqliteDb";
-import { sendTrackedSendblueMessage } from "./channels/trackedSendblueSend";
-import { resolveSendblueConfig } from "./channels/sendblueConfig";
 import { sendTrackedLoopMessage } from "./channels/trackedLoopMessageSend";
 import { postSlackMessage } from "./channels/slack";
 import { sendTwilioSms } from "./channels/twilio";
@@ -52,30 +50,6 @@ async function dispatchTenantReminderNotification(
 
     if (rem.channel === "imessage" && rem.recipient) {
       deliveryAccepted = false;
-      const sendblue = resolveSendblueConfig(state.config as unknown as Record<string, unknown>);
-      if (sendblue.configured) {
-        // Reminders use the same durable attempt ledger as task replies, so a
-        // timeout or crash leaves a retryable record instead of a lost reminder.
-        const tracked = await sendTrackedSendblueMessage({
-          tenantId,
-          taskId: "reminder_" + rem.id,
-          recipient: rem.recipient,
-          senderId: sendblue.config.fromNumber,
-          config: {
-            apiKeyId: sendblue.config.apiKeyId,
-            apiSecret: sendblue.config.apiSecret,
-            fromNumber: sendblue.config.fromNumber,
-          },
-          text: `🔔 Reminder from Velnor: ${rem.text}`,
-        });
-        if (!tracked.result.ok) {
-          console.warn(`Sendblue reminder attempt recorded as ${tracked.attempt.state} (${tracked.attempt.attemptId}): ${tracked.result.detail}`);
-        }
-        if (tracked.result.ok) {
-          deliveryAccepted = true;
-          channelsUsed.push("sendblue-imessage");
-        }
-      }
       if (state.config.loopMessageAuthKey) {
         // Reminders get the same durable attempt ledger as tasks so a reminder
         // that fails without a provider message ID is not silently lost.

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { resolveSendblueConfig } from "@/lib/channels/sendblueConfig";
 import { authorizeCronRequest } from "@/lib/security/webhookAuth";
 import { withVelnorTenantScope } from "@/lib/store";
 import { getNodeTenantRepositoryContext } from "@/lib/storage/currentTenantRepository";
@@ -14,6 +13,8 @@ export const dynamic = "force-dynamic";
  * channels. When VELNOR_HEALTH_SECRET is set the caller must present it and
  * receives the issue list; without a secret only a coarse status is returned.
  * No secret value is ever echoed.
+ *
+ * iMessage delivery runs through LoopMessage, VELNOR's only SMS/iMessage provider.
  */
 export async function GET(req: Request) {
   let config: Record<string, unknown> = {};
@@ -36,28 +37,22 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const sendblue = resolveSendblueConfig(config);
   const loopMessage = Boolean(
-    (typeof config.loopMessageAuthKey === "string" ? config.loopMessageAuthKey : "") || process.env.LOOPMESSAGE_AUTH_KEY,
+    (typeof config.loopMessageAuthKey === "string" ? config.loopMessageAuthKey : "") ||
+      process.env.LOOPMESSAGE_AUTH_KEY,
   );
-  const issues = [
-    ...sendblue.issues,
-    ...(sendblue.config.webhookSecret ? [] : ["SENDBLUE_WEBHOOK_SECRET is missing; receipts are rejected in production."]),
-    ...(sendblue.config.publicUrl ? [] : ["VELNOR_PUBLIC_URL is missing; webhook URLs cannot be canonicalised."]),
-  ];
 
   const channels = {
-    sendblue: sendblue.configured && issues.length === 0 ? "ready" : sendblue.configured ? "degraded" : "unconfigured",
     loopmessage: loopMessage ? "ready" : "unconfigured",
   } as const;
-  const healthy = storage === "ok" && (channels.sendblue === "ready" || channels.loopmessage === "ready");
+  const healthy = storage === "ok" && channels.loopmessage === "ready";
 
   return NextResponse.json(
     {
       status: healthy ? "ok" : "degraded",
       storage,
       channels,
-      ...(authorized && healthSecret ? { issues } : {}),
+      ...(authorized && healthSecret ? { issues: [] } : {}),
       time: new Date().toISOString(),
     },
     { status: healthy ? 200 : 503, headers: { "cache-control": "no-store" } },

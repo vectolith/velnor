@@ -245,14 +245,14 @@ test("Twilio signature URL ignores spoofable forwarded and Host headers", () => 
 });
 
 
-test("JSON provider secrets are isolated: LoopMessage credentials cannot authenticate Sendblue", () => {
+test("JSON provider secrets are isolated: one provider secret cannot authenticate another", () => {
   const loopMessageSecret = "loopmessage-test-secret";
-  const sendblueSecret = "sendblue-test-secret";
+  const otherProviderSecret = "other-provider-test-secret";
   assert.equal(authorizeJsonWebhook({
-    secrets: [sendblueSecret], provided: loopMessageSecret, simulator: false,
+    secrets: [otherProviderSecret], provided: loopMessageSecret, simulator: false,
   }).status, 401);
   assert.equal(authorizeJsonWebhook({
-    secrets: [loopMessageSecret], provided: sendblueSecret, simulator: false,
+    secrets: [loopMessageSecret], provided: otherProviderSecret, simulator: false,
   }).status, 401);
   assert.deepEqual(authorizeJsonWebhook({
     secrets: [loopMessageSecret], provided: loopMessageSecret, simulator: false,

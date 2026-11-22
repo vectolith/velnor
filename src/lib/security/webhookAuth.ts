@@ -161,7 +161,7 @@ export function authorizeSlackRequest(input: {
 }
 
 /**
- * Sendblue and LoopMessage post JSON and have no signing scheme of their own, so
+ * LoopMessage posts JSON and has no signing scheme of its own, so
  * they authenticate with a shared secret header that the provider is configured
  * to send. Any configured secret is accepted.
  */
@@ -178,7 +178,7 @@ export function authorizeJsonWebhook(input: {
     if (isProduction()) {
       return deny(
         503,
-        "JSON webhook auth is not configured: set SENDBLUE_WEBHOOK_SECRET or LOOPMESSAGE_WEBHOOK_SECRET."
+        "JSON webhook auth is not configured: set LOOPMESSAGE_WEBHOOK_SECRET."
       );
     }
     // Outside production an unconfigured secret stays usable for local testing.

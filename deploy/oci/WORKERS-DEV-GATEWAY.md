@@ -47,7 +47,7 @@ The application-path rule must be more specific than the protected `/api/*` appl
 
 - Set `VELNOR_PUBLIC_URL=https://velnor-identity-gateway.ganiyusail101.workers.dev` on the OCI service.
 - Set the Google OAuth authorized redirect URI to `https://velnor-identity-gateway.ganiyusail101.workers.dev/api/auth/google/callback`.
-- Point Slack, Twilio, Sendblue, and LoopMessage webhooks at the corresponding paths on the gateway URL.
+- Point Slack, Twilio, and LoopMessage webhooks at the corresponding paths on the gateway URL.
 - Keep the OCI application port bound to `127.0.0.1:8080`; expose only Caddy's HTTPS endpoint.
 - Use long, unique secrets generated on the origin and copy them into the Worker's secret store through Wrangler. Do not reuse the provider credential-encryption key as an authentication secret.
 

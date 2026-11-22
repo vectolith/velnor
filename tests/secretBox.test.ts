@@ -63,7 +63,7 @@ test("credential field detection matches the config keys Velnor actually stores"
     "googleAccessToken",
     "slackSigningSecret",
     "twilioAuthToken",
-    "sendblueApiSecret",
+    "loopMessageSecretKey",
     "loopMessageAuthKey",
     "loopMessageSecretKey",
   ]) {

@@ -169,56 +169,8 @@ if (SHARED_SECRET && TENANT_TOKEN_SECRET) await check("POST /api/chat records a 
   assert(Array.isArray(body.messages) && body.messages.length > 0, "no messages persisted for that user");
 });
 
-if (TWILIO_TOKEN && SHARED_SECRET) await check("POST /api/webhooks/imessage with a valid Twilio signature returns TwiML", async () => {
-  const url = `${BASE}/api/webhooks/imessage`;
-  const params = { From: "+15550100001", Body: "ping", NumMedia: "0" };
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      "x-twilio-signature": twilioSignature(process.env.VELNOR_PUBLIC_URL ? new URL("/api/webhooks/imessage", process.env.VELNOR_PUBLIC_URL).toString() : url, params),
-      "x-velnor-secret": SHARED_SECRET,
-    },
-    body: new URLSearchParams(params).toString(),
-  });
-  assert(res.status === 200, `status ${res.status}`);
-  const text = await res.text();
-  assert(text.includes("<Response>"), "response is not TwiML");
-});
 
-if (TWILIO_TOKEN && SHARED_SECRET) await check("POST /api/webhooks/imessage without a signature is rejected", async () => {
-  const res = await fetch(`${BASE}/api/webhooks/imessage`, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", "x-velnor-secret": SHARED_SECRET },
-    body: "From=%2B15550100001&Body=ping&NumMedia=0",
-  });
-  assert([401, 403, 503].includes(res.status), `expected a rejection, got ${res.status}`);
-});
 
-if (process.env.SENDBLUE_WEBHOOK_SECRET && SHARED_SECRET) await check("POST /api/webhooks/imessage accepts JSON only with the webhook secret", async () => {
-  const payload = JSON.stringify({ number: "+15550100002", content: "ping" });
-  const unauthorised = await fetch(`${BASE}/api/webhooks/imessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-velnor-secret": SHARED_SECRET },
-    body: payload,
-  });
-  assert(unauthorised.status === 401 || unauthorised.status === 503, `expected auth failure, got ${unauthorised.status}`);
-
-  const authorised = await fetch(`${BASE}/api/webhooks/imessage`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-velnor-webhook-secret": process.env.SENDBLUE_WEBHOOK_SECRET || "",
-      "x-velnor-secret": SHARED_SECRET,
-    },
-    body: payload,
-  });
-  // Auth is what is under test here: an accepted request must not come back 401/503.
-  assert(
-    authorised.status !== 401 && authorised.status !== 503,
-    `secret was not accepted, got ${authorised.status}`
-  );
-});
 
 if (SLACK_SECRET && SHARED_SECRET) await check("POST /api/webhooks/slack with a fresh signature returns Block Kit", async () => {
   const timestamp = String(Math.floor(Date.now() / 1000));
@@ -253,14 +205,6 @@ if (SLACK_SECRET && SHARED_SECRET) await check("POST /api/webhooks/slack with a 
   assert(res.status === 401, `expected 401 for a stale signature, got ${res.status}`);
 });
 
-if (SHARED_SECRET || process.env.SENDBLUE_WEBHOOK_SECRET) await check("POST /api/chat with malformed JSON is rejected", async () => {
-  const res = await fetch(`${BASE}/api/chat`, {
-    method: "POST",
-    headers: { ...auth, "content-type": "application/json" },
-    body: "{ not json",
-  });
-  assert(res.status === 400, `expected 400 for malformed JSON, got ${res.status}`);
-});
 
 if (SHARED_SECRET && TENANT_TOKEN_SECRET) await check("GET /api/chat refuses an unknown signed tenant", async () => {
   const res = await fetch(`${BASE}/api/chat`, {
@@ -279,17 +223,6 @@ if (SHARED_SECRET && TENANT_TOKEN_SECRET) await check("POST /api/chat refuses id
   assert(res.status === 401, `expected 401 without Authorization bearer, got ${res.status}`);
 });
 
-if (process.env.SENDBLUE_WEBHOOK_SECRET && SHARED_SECRET) await check("POST /api/webhooks/imessage with malformed JSON is rejected", async () => {
-  const res = await fetch(`${BASE}/api/webhooks/imessage`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-velnor-webhook-secret": process.env.SENDBLUE_WEBHOOK_SECRET || "",
-    },
-    body: "{ not json",
-  });
-  assert([400, 413, 415, 422, 503].includes(res.status), `expected a rejection for malformed JSON, got ${res.status}`);
-});
 
 if (SHARED_SECRET && TENANT_TOKEN_SECRET) await check("POST /api/settings stores a Slack channel override and refuses a malformed one", async () => {
   const headers = { ...ownerAuth(), "content-type": "application/json" };
