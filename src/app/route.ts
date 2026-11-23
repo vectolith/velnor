@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Headless root status endpoint for Velnor.
- * Velnor operates strictly via native messaging webhooks (iMessage, SMS, Slack, Siri)
- * with no web chat UI or frontend application.
+ * Root status endpoint for Velnor.
+ * Velnor runs on native messaging webhooks (iMessage, SMS, Slack, Siri) and, since
+ * the IDE shipped, a browser code editor at /ide. The editor is local-first: its
+ * files never leave the browser unless the user asks the assistant about them.
  */
 export async function GET(req: NextRequest) {
   const origin = req.nextUrl.origin;
   return NextResponse.json({
     service: "Velnor",
-    mode: "headless-messaging-only",
-    webInterface: false,
+    mode: "messaging-and-ide",
+    webInterface: true,
+    ide: "/ide",
     model: "velnor-core-v1",
     endpoints: {
       imessageWebhook: `${origin}/api/webhooks/imessage`,

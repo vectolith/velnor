@@ -12,7 +12,9 @@
   },
   "dependencies": {
     "@google/genai": "^2.3.0",
+    "@monaco-editor/react": "^4.7.0",
     "lucide-react": "^1.16.0",
+    "monaco-editor": "^0.52.2",
     "next": "^15.2.0",
     "openai": "^4.86.0",
     "react": "^19.0.0",
