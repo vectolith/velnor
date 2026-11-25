@@ -16,6 +16,7 @@ type PreviewPaneProps = {
 export default function PreviewPane({ files, reloadKey, onConsole, onClearConsole }: PreviewPaneProps) {
   const [nonce, setNonce] = useState(0);
   const onConsoleRef = useRef(onConsole);
+  const frameRef = useRef<HTMLIFrameElement>(null);
   onConsoleRef.current = onConsole;
 
   const document = useMemo(() => {
@@ -30,8 +31,11 @@ export default function PreviewPane({ files, reloadKey, onConsole, onClearConsol
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
       const data = event.data;
+      if (event.source !== frameRef.current?.contentWindow) return;
       if (!data || data.source !== "velnor-ide-console") return;
-      onConsoleRef.current({ level: String(data.level || "log"), text: String(data.text ?? "") });
+      const allowedLevels = new Set(["log", "info", "warn", "error", "debug"]);
+      const level = allowedLevels.has(String(data.level)) ? String(data.level) : "log";
+      onConsoleRef.current({ level, text: String(data.text ?? "").slice(0, 8_000) });
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
@@ -57,7 +61,8 @@ export default function PreviewPane({ files, reloadKey, onConsole, onClearConsol
           key={String(reloadKey) + ":" + String(nonce)}
           className="ide-preview-frame"
           title="Workspace preview"
-          sandbox="allow-scripts allow-forms allow-modals"
+          ref={frameRef}
+          sandbox="allow-scripts"
           srcDoc={document.html}
         />
       )}
