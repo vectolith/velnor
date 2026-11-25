@@ -5,6 +5,7 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,7 +29,7 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run unit tests
         run: npm test
@@ -36,14 +37,26 @@ jobs:
       - name: TypeScript typecheck
         run: npm run typecheck
 
-      - name: Build production Next.js standalone bundle
+      - name: Build production Next.js bundle
         run: npm run build
 
       - name: Verify the IDE against a production server
         run: |
           nohup npm run start > server.log 2>&1 &
           SERVER_PID=$!
-          npm run verify
+          VELNOR_URL=http://localhost:3000 npm run verify
           kill $SERVER_PID || true
           echo "--- server.log ---"
           tail -50 server.log
+
+      - name: Build Cloudflare Worker with OpenNext
+        run: npm run cf:build
+
+      - name: Smoke-test the Worker runtime
+        run: |
+          nohup npx wrangler dev --local --port 8787 > worker.log 2>&1 &
+          WORKER_PID=$!
+          VELNOR_URL=http://localhost:8787 npm run verify
+          kill $WORKER_PID || true
+          echo "--- worker.log ---"
+          tail -80 worker.log
