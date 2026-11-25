@@ -1,0 +1,32 @@
+name: Dispatch validation on current branch
+
+on:
+  push:
+    branches:
+      - deploy/cloudflare-ide
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: deploy/cloudflare-ide
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Remove this one-time dispatch workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/dispatch-checks.yml
+          git commit -m "Remove one-time CI dispatch workflow"
+          git push origin deploy/cloudflare-ide
+      - name: Dispatch CI and dependency audit on the latest branch commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run ci.yml --ref deploy/cloudflare-ide
+          gh workflow run security-audit.yml --ref deploy/cloudflare-ide
