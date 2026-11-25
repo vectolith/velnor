@@ -435,6 +435,59 @@ textarea {
   }
 
   .ide-assistant {
+    display: flex;
+    position: absolute;
+    inset: 44px 0 0 auto;
+    width: min(94vw, 360px);
+    z-index: 30;
+    box-shadow: -18px 0 40px rgba(0, 0, 0, 0.45);
+  }
+
+  .ide-body {
+    position: relative;
+  }
+
+  .ide-sidebar {
+    width: min(80vw, 216px);
+  }
+
+  .ide-topbar {
+    padding-left: max(0.5rem, env(safe-area-inset-left));
+    padding-right: max(0.5rem, env(safe-area-inset-right));
+  }
+
+  .ide-path {
     display: none;
+  }
+
+  .ide-topbar-actions {
+    gap: 0.25rem;
+  }
+
+  .ide-console {
+    height: 110px;
+  }
+}
+
+@media (max-width: 600px) {
+  .ide-topbar {
+    gap: 0.4rem;
+  }
+
+  .ide-brand {
+    font-size: 0.7rem;
+  }
+
+  .ide-run-button {
+    padding: 0 0.45rem;
+  }
+
+  .ide-icon-button {
+    min-width: 34px;
+    min-height: 34px;
+  }
+
+  .ide-panes {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 0.8fr);
   }
 }
