@@ -52,6 +52,9 @@ jobs:
       - name: Build Cloudflare Worker with OpenNext
         run: npm run cf:build
 
+      - name: Wrangler deploy dry-run (no upload)
+        run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
+
       - name: Smoke-test the Worker runtime
         run: |
           nohup npx wrangler dev --local --port 8787 > worker.log 2>&1 &
