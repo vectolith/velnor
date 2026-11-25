@@ -45,16 +45,25 @@ function readWorkspace(): Workspace {
     if (!parsed || !Array.isArray(parsed.files) || parsed.files.length === 0) {
       return createDefaultWorkspace();
     }
-    const files: IdeFile[] = parsed.files
-      .filter((file) => file && typeof file.path === "string" && typeof file.content === "string")
-      .map((file) => ({
-        id: typeof file.id === "string" && file.id ? file.id : makeFileId([]),
-        path: normalizePath(file.path),
-        content: file.content,
-      }));
+    const files: IdeFile[] = [];
+    const seenPaths = new Set<string>();
+    const seenIds = new Set<string>();
+    for (const candidate of parsed.files) {
+      if (!candidate || typeof candidate.path !== "string" || typeof candidate.content !== "string") continue;
+      if (candidate.content.length > 512 * 1024 || files.length >= 40) continue;
+      const path = normalizePath(candidate.path);
+      const pathKey = path.toLowerCase();
+      if (seenPaths.has(pathKey)) continue;
+      let id = typeof candidate.id === "string" && candidate.id ? candidate.id : makeFileId(files);
+      if (seenIds.has(id)) id = makeFileId(files);
+      seenPaths.add(pathKey);
+      seenIds.add(id);
+      files.push({ id, path, content: candidate.content });
+    }
     if (!files.length) return createDefaultWorkspace();
     const activeId = files.some((file) => file.id === parsed.activeId) ? parsed.activeId : files[0].id;
-    return { files, entry: parsed.entry ?? "index.html", activeId };
+    const entry = typeof parsed.entry === "string" ? normalizePath(parsed.entry) : "index.html";
+    return { files, entry, activeId };
   } catch {
     return createDefaultWorkspace();
   }
@@ -85,6 +94,18 @@ export function IdeShell() {
   const notify = useCallback((text: string, tone: Toast["tone"] = "info") => {
     setToast({ text, tone });
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    const timer = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(WORKSPACE_KEY, JSON.stringify(workspace));
+      } catch {
+        notify("Autosave failed: browser storage is full or blocked.", "error");
+      }
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [ready, workspace, notify]);
 
   useEffect(() => {
     if (!toast) return;
