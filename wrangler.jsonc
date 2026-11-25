@@ -2,10 +2,20 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "velnor-ide",
   "main": ".open-next/worker.js",
+  "upload_source_maps": true,
   "compatibility_date": "2026-11-25",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "velnor-ide"
+    }
+  ],
+  "observability": {
+    "enabled": true
   }
 }
