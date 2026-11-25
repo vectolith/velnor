@@ -10,7 +10,10 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
-    "verify": "node scripts/verify-ide.mjs"
+    "verify": "node scripts/verify-ide.mjs",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
@@ -27,7 +30,9 @@
     "@types/react-dom": "^19.0.0",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.23.15",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "@opennextjs/cloudflare": "^1.14.6",
+    "wrangler": "^4.45.0"
   },
   "overrides": {
     "next": {
