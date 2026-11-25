@@ -16,6 +16,29 @@ export const runtime = "nodejs";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_MODEL = "gpt-4o-mini";
 const MAX_PROMPT_CHARS = 24_000;
+const MAX_MODEL_CHARS = 120;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_REQUESTS = 12;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function rateLimitKey(req: NextRequest): string {
+  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || req.headers.get("x-real-ip") || "unknown";
+}
+
+function isRateLimited(key: string): boolean {
+  const now = Date.now();
+  const current = rateBuckets.get(key);
+  if (!current || current.resetAt <= now) {
+    rateBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    if (rateBuckets.size > 10_000) {
+      for (const [bucketKey, bucket] of rateBuckets) if (bucket.resetAt <= now) rateBuckets.delete(bucketKey);
+    }
+    return false;
+  }
+  current.count += 1;
+  return current.count > RATE_LIMIT_REQUESTS;
+}
 
 const SYSTEM_PROMPT =
   "You are Velnor, an assistant embedded in a browser code editor. Answer with code or short explanations. When the user names a file, assume it is the file they have open. Do not claim to have changed files: the user applies your reply manually.";
@@ -41,6 +64,10 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  if (isRateLimited(rateLimitKey(req))) {
+    return NextResponse.json({ error: "Too many requests. Please wait before retrying." }, { status: 429 });
+  }
+
   let body: ChatBody;
   try {
     body = (await req.json()) as ChatBody;
@@ -68,10 +95,11 @@ export async function POST(req: NextRequest) {
   }
 
   const baseUrl = (process.env.VELNOR_AI_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
-  const model =
-    typeof body.model === "string" && body.model.trim()
-      ? body.model.trim()
-      : process.env.VELNOR_AI_MODEL || DEFAULT_MODEL;
+  const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
+  if (requestedModel.length > MAX_MODEL_CHARS) {
+    return NextResponse.json({ error: "Model identifier is too long." }, { status: 400 });
+  }
+  const model = requestedModel || process.env.VELNOR_AI_MODEL || DEFAULT_MODEL;
 
   let upstream: Response;
   try {
@@ -92,9 +120,8 @@ export async function POST(req: NextRequest) {
       }),
       signal: AbortSignal.timeout(90_000),
     });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown network error";
-    return NextResponse.json({ error: "Could not reach the model provider: " + message }, { status: 502 });
+  } catch {
+    return NextResponse.json({ error: "Could not reach the model provider. Check the endpoint and try again." }, { status: 502 });
   }
 
   const raw = await upstream.text();
