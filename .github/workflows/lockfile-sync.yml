@@ -1,0 +1,39 @@
+name: Sync Cloudflare deployment lockfile
+
+on:
+  push:
+    branches:
+      - deploy/cloudflare-ide
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: deploy/cloudflare-ide
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Regenerate package lock
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Commit lockfile update
+        run: |
+          if git diff --quiet package-lock.json; then
+            echo "package-lock.json already synced"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "Sync lockfile for Cloudflare adapter"
+            git push origin deploy/cloudflare-ide
+          fi
+      - name: Trigger CI on the updated branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run ci.yml --ref deploy/cloudflare-ide
