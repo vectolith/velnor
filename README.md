@@ -57,3 +57,20 @@ scripts/verify-ide.mjs   production smoke check
 ```
 
 Model training notebooks and run artifacts live in Models-by-vectolith, not here.
+
+
+## Cloudflare Workers deployment
+
+This repository can deploy the browser IDE separately from the existing Velnor headless service. The Worker name is `velnor-ide` and its URL is `https://velnor-ide.<account-subdomain>.workers.dev`.
+
+Deployment uses the OpenNext Cloudflare adapter and Wrangler. From a Node.js 22 environment:
+
+```bash
+npm install
+npm run cf:build
+npm run cf:preview
+# deploy when credentials are configured:
+npm run cf:deploy
+```
+
+For GitHub Actions deployment, configure repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token should be scoped to the account with Workers Scripts write permissions. The deployment workflow is triggered by main-branch changes to application/deployment files or manually.
