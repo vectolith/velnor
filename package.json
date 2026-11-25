@@ -1,20 +1,22 @@
 {
   "name": "velnor",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
+  "description": "Velnor IDE — a local-first, VS Code-class code editor that runs in the browser.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "verify": "node scripts/verify-ide.mjs"
   },
   "dependencies": {
-    "@google/genai": "^2.3.0",
+    "@monaco-editor/react": "^4.7.0",
     "lucide-react": "^1.76.0",
+    "monaco-editor": "^0.52.2",
     "next": "^15.2.0",
-    "openai": "^4.86.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
