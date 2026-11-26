@@ -48,7 +48,7 @@ jobs:
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           npm run verify
-          echo "--- server.log ---
+          echo "--- server.log ---"
           tail -50 server.log
 
       - name: Build Node 26 Alpine Docker image
