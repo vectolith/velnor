@@ -39,11 +39,25 @@ jobs:
       - name: Build production Next.js standalone bundle
         run: npm run build
 
-      - name: Verify the IDE against a production server
+      - name: Verify the IDE against the standalone production server
         run: |
-          nohup npm run start > server.log 2>&1 &
+          mkdir -p .next/standalone/.next
+          cp -R .next/static .next/standalone/.next/static
+          if [ -d public ]; then cp -R public .next/standalone/public; fi
+          PORT=3000 HOSTNAME=127.0.0.1 nohup node .next/standalone/server.js > server.log 2>&1 &
           SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           npm run verify
-          kill $SERVER_PID || true
-          echo "--- server.log ---"
+          echo "--- server.log ---
           tail -50 server.log
+
+      - name: Build Node 26 Alpine Docker image
+        run: docker build --tag velnor-ci:latest .
+
+      - name: Smoke-test the Node 26 Alpine Docker image
+        run: |
+          docker run --detach --name velnor-ci --publish 8080:8080 velnor-ci:latest
+          trap 'docker rm --force velnor-ci >/dev/null 2>&1 || true' EXIT
+          VELNOR_URL=http://localhost:8080 npm run verify
+          echo "--- container logs ---"
+          docker logs --tail=50 velnor-ci
