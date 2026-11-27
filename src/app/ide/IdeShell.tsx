@@ -248,6 +248,7 @@ export function IdeShell() {
         return [{ path: file.name, content: text }];
       }));
       const flattened = incoming.flat();
+      checkpoint();
       setWorkspace((current) => {
         let files = [...current.files];
         for (const item of flattened) {
@@ -346,6 +347,7 @@ export function IdeShell() {
       { id: "rename", label: "Rename current file", run: renameCurrent },
       { id: "delete", label: "Delete current file", run: deleteCurrent },
       { id: "export", label: "Export workspace as JSON", run: exportWorkspace },
+      { id: "import", label: "Import files", run: () => importInputRef.current?.click() },
       {
         id: "sidebar",
         label: "Toggle file tree",
@@ -362,7 +364,7 @@ export function IdeShell() {
         run: () => setConsoleLines([]),
       },
     ],
-    [addNewFile, checkpoint, deleteCurrent, exportWorkspace, renameCurrent, restoreCheckpoint, run, save]
+    [addNewFile, checkpoint, deleteCurrent, exportWorkspace, importWorkspaceFiles, renameCurrent, restoreCheckpoint, run, save]
   );
 
   useEffect(() => {
