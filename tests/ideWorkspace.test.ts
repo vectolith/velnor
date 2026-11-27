@@ -103,3 +103,9 @@ test("preview includes restrictive CSP to block network and external resource ac
   assert.ok(html.includes("frame-src 'none'"));
   assert.ok(html.includes("form-action 'none'"));
 });
+
+test("file size limit is measured in UTF-8 bytes", () => {
+  const workspace = createDefaultWorkspace();
+  const multibyte = "é".repeat(262_145);
+  assert.throws(() => addFile(workspace.files, "large.txt", multibyte), WorkspaceError);
+});

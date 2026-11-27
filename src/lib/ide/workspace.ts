@@ -105,7 +105,7 @@ function assertCapacity(files: IdeFile[]) {
 }
 
 function assertSize(content: string) {
-  if (content.length > MAX_FILE_BYTES) {
+  if (new TextEncoder().encode(content).byteLength > MAX_FILE_BYTES) {
     throw new WorkspaceError("That file is larger than 512 KB.");
   }
 }
