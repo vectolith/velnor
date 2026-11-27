@@ -34,7 +34,7 @@ export default function AiPanel({ token, onTokenChange, contextPath, workspaceCo
     setDraft("");
     setEntries((list) => [...list, { role: "user", text }]);
     try {
-      const prompt = `Workspace context (read-only snapshot):\n${workspaceContext}\n\nActive file: ${contextPath ?? "none"}\n\nUser request:\n${text}`;
+      const history = entries\n        .filter((entry) => entry.role !== "error")\n        .slice(-10)\n        .map((entry) => `${entry.role.toUpperCase()}: ${entry.text.slice(0, 4_000)}`)\n        .join("\\n\\n");\n      const prompt = `Workspace context (read-only snapshot):\\n${workspaceContext}\\n\\nActive file: ${contextPath ?? "none"}\\n\\nRecent conversation:\\n${history || "(none)"}\\n\\nUser request:\\n${text}`;
           const response = await fetch("/api/ide/chat", {
         method: "POST",
         headers: {
