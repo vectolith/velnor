@@ -116,3 +116,21 @@ test("assistant route caps streamed provider response bytes", async () => {
     }
   });
 });
+
+test("assistant route enforces request size even without Content-Length", async () => {
+  await withEnv({ VELNOR_AI_API_KEY: undefined, VELNOR_AI_BASE_URL: "https://provider.example/v1" }, async () => {
+    const oversized = new NextRequest("http://localhost/api/ide/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-real-ip": "test-stream-limit-1", authorization: "Bearer test-provider-key" },
+      body: JSON.stringify({ prompt: "x".repeat(130_000) }),
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => { throw new Error("must not reach provider"); };
+    try {
+      const response = await POST(oversized);
+      assert.equal(response.status, 413);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
