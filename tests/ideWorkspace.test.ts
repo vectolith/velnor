@@ -94,3 +94,12 @@ test("sortFiles orders by path and keeps every file", () => {
   const sorted = sortFiles(workspace.files);
   assert.deepEqual(sorted.map((file) => file.path), ["app.js", "index.html", "styles.css"]);
 });
+
+test("preview includes restrictive CSP to block network and external resource access", () => {
+  const html = buildPreviewDocument(createDefaultWorkspace().files);
+  assert.ok(html.includes("default-src 'none'"));
+  assert.ok(html.includes("connect-src 'none'"));
+  assert.ok(html.includes("object-src 'none'"));
+  assert.ok(html.includes("frame-src 'none'"));
+  assert.ok(html.includes("form-action 'none'"));
+});
