@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Download,
+  History,
   FilePlus2,
   PanelLeft,
   Play,
@@ -30,9 +31,10 @@ import {
   type IdeFile,
   type Workspace,
 } from "@/lib/ide/workspace";
+import { createSnapshot, restoreSnapshot, retainSnapshots, type WorkspaceSnapshot } from "@/lib/ide/snapshots";
 
 const WORKSPACE_KEY = "velnor.ide.workspace.v1";
-const TOKEN_KEY = "velnor.ide.token.v1";
+const TOKEN_KEY = "velnor.ide.token.v1";\nconst SNAPSHOTS_KEY = "velnor.ide.snapshots.v1";
 
 type Toast = { text: string; tone: "info" | "error" };
 
@@ -79,7 +81,7 @@ export function IdeShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(true);
   const [token, setToken] = useState("");
-  const [ready, setReady] = useState(false);
+  const [ready, setReady] = useState(false);\n  const [snapshots, setSnapshots] = useState<WorkspaceSnapshot[]>([]);
 
   useEffect(() => {
     setWorkspace(readWorkspace());
@@ -265,7 +267,7 @@ export function IdeShell() {
   const commands = useMemo<PaletteCommand[]>(
     () => [
       { id: "run", label: "Run preview", hint: "Cmd+Enter", run },
-      { id: "save", label: "Save workspace", hint: "Cmd+S", run: save },
+      { id: "save", label: "Save workspace", hint: "Cmd+S", run: save },\n      { id: "checkpoint", label: "Create workspace checkpoint", run: checkpoint },\n      { id: "restore", label: "Restore workspace checkpoint", run: restoreCheckpoint },
       { id: "new", label: "New file", run: addNewFile },
       { id: "rename", label: "Rename current file", run: renameCurrent },
       { id: "delete", label: "Delete current file", run: deleteCurrent },
@@ -286,7 +288,7 @@ export function IdeShell() {
         run: () => setConsoleLines([]),
       },
     ],
-    [addNewFile, deleteCurrent, exportWorkspace, renameCurrent, run, save]
+    [addNewFile, checkpoint, deleteCurrent, exportWorkspace, renameCurrent, restoreCheckpoint, run, save]
   );
 
   useEffect(() => {
@@ -336,7 +338,7 @@ export function IdeShell() {
           <button type="button" className="ide-icon-button" onClick={save} aria-label="Save workspace">
             <Save size={16} strokeWidth={1.6} />
           </button>
-          <button type="button" className="ide-icon-button" onClick={exportWorkspace} aria-label="Export workspace">
+          <button type="button" className="ide-icon-button" onClick={checkpoint} aria-label="Create checkpoint" title="Create checkpoint">\n            <History size={16} strokeWidth={1.6} />\n          </button>\n          <button type="button" className="ide-icon-button" onClick={restoreCheckpoint} aria-label="Restore checkpoint" title="Restore checkpoint">\n            <History size={16} strokeWidth={1.6} />\n          </button>\n          <button type="button" className="ide-icon-button" onClick={exportWorkspace} aria-label="Export workspace">
             <Download size={16} strokeWidth={1.6} />
           </button>
           <button type="button" className="ide-run-button" onClick={run}>
