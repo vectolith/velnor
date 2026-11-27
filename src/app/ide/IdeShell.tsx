@@ -248,7 +248,6 @@ export function IdeShell() {
         return [{ path: file.name, content: text }];
       }));
       const flattened = incoming.flat();
-      checkpoint();
       setWorkspace((current) => {
         let files = [...current.files];
         for (const item of flattened) {
@@ -265,7 +264,7 @@ export function IdeShell() {
     } finally {
       if (importInputRef.current) importInputRef.current.value = "";
     }
-  }, [checkpoint, notify, persist]);
+  }, [notify, persist]);
 
   const updateToken = useCallback((value: string) => {
     setToken(value);
