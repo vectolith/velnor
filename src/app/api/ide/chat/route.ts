@@ -22,8 +22,11 @@ const RATE_LIMIT_REQUESTS = 12;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function rateLimitKey(req: NextRequest): string {
+  // Forwarded headers are only trustworthy when the deployment proxy strips
+  // client-supplied values and injects its own. Otherwise use a shared fallback.
   const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return forwarded || req.headers.get("x-real-ip") || "unknown";
+  const candidate = forwarded || req.headers.get("x-real-ip") || "unknown";
+  return candidate.slice(0, 128);
 }
 
 function isRateLimited(key: string): boolean {
@@ -33,6 +36,11 @@ function isRateLimited(key: string): boolean {
     rateBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     if (rateBuckets.size > 10_000) {
       for (const [bucketKey, bucket] of rateBuckets) if (bucket.resetAt <= now) rateBuckets.delete(bucketKey);
+      // Bound memory even if an attacker supplies a stream of unique IP values.
+      if (rateBuckets.size > 10_000) {
+        const oldest = rateBuckets.keys().next().value;
+        if (oldest) rateBuckets.delete(oldest);
+      }
     }
     return false;
   }
@@ -94,7 +102,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const baseUrl = (process.env.VELNOR_AI_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const configuredBaseUrl = process.env.VELNOR_AI_BASE_URL || DEFAULT_BASE_URL;
+  let parsedBaseUrl: URL;
+  try {
+    parsedBaseUrl = new URL(configuredBaseUrl);
+  } catch {
+    return NextResponse.json({ error: "The configured provider endpoint is invalid." }, { status: 500 });
+  }
+  if (!["https:", "http:"].includes(parsedBaseUrl.protocol) || parsedBaseUrl.username || parsedBaseUrl.password) {
+    return NextResponse.json({ error: "The configured provider endpoint must use HTTP(S) without embedded credentials." }, { status: 500 });
+  }
+  const baseUrl = parsedBaseUrl.toString().replace(/\/+$/, "");
   const requestedModel = typeof body.model === "string" ? body.model.trim() : "";
   if (requestedModel.length > MAX_MODEL_CHARS) {
     return NextResponse.json({ error: "Model identifier is too long." }, { status: 400 });
@@ -124,7 +142,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not reach the model provider. Check the endpoint and try again." }, { status: 502 });
   }
 
-  const raw = await upstream.text();
+  let raw: string;
+  try {
+    raw = await upstream.text();
+  } catch {
+    return NextResponse.json({ error: "The provider response could not be read." }, { status: 502 });
+  }
+  if (raw.length > 2_000_000) {
+    return NextResponse.json({ error: "The provider response exceeded the allowed size." }, { status: 502 });
+  }
   let payload: unknown = null;
   try {
     payload = JSON.parse(raw);
@@ -133,19 +159,9 @@ export async function POST(req: NextRequest) {
   }
 
   if (!upstream.ok) {
-    const detail =
-      payload && typeof payload === "object"
-        ? (() => {
-            const err = (payload as { error?: unknown }).error;
-            if (typeof err === "string") return err;
-            if (err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string") {
-              return (err as { message: string }).message;
-            }
-            return raw.slice(0, 500);
-          })()
-        : raw.slice(0, 500);
+    // Avoid echoing raw provider bodies: they may contain sensitive diagnostics.
     return NextResponse.json(
-      { error: "Provider error " + upstream.status + ": " + detail },
+      { error: "The model provider returned HTTP " + upstream.status + ". Check provider configuration and credentials." },
       { status: 502 },
     );
   }
