@@ -31,7 +31,8 @@ import {
   type IdeFile,
   type Workspace,
 } from "@/lib/ide/workspace";
-import { createSnapshot, restoreSnapshot, retainSnapshots, type WorkspaceSnapshot } from "@/lib/ide/snapshots";\nimport { buildAssistantWorkspaceContext } from "@/lib/ide/inventory";
+import { createSnapshot, restoreSnapshot, retainSnapshots, type WorkspaceSnapshot } from "@/lib/ide/snapshots";
+import { buildAssistantWorkspaceContext } from "@/lib/ide/inventory";
 
 const WORKSPACE_KEY = "velnor.ide.workspace.v1";
 const TOKEN_KEY = "velnor.ide.token.v1";
