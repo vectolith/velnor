@@ -51,9 +51,9 @@ if (malformed.status !== 400) fail("assistant endpoint should reject malformed J
 
 const oversized = await fetch(base + "/api/ide/chat", {
   method: "POST", headers: { "content-type": "application/json" },
-  body: JSON.stringify({ prompt: "x".repeat(24_001) }),
+  body: JSON.stringify({ prompt: "x".repeat(96_001) }),
 });
-if (oversized.status !== 413) fail("assistant endpoint should reject oversized prompts, got " + oversized.status);
+if (oversized.status !== 413) fail("assistant endpoint should reject oversized prompts (96 KB UTF-8 limit), got " + oversized.status);
 
 const meta = await fetch(base + "/api/ide/chat");
 if (!meta.ok) fail("/api/ide/chat GET returned " + meta.status);
