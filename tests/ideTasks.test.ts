@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createTask, transitionTask, addTaskNote, canTransitionTask } from "../src/lib/ide/tasks";
+import { createTask, transitionTask, completeTask, addTaskNote, canTransitionTask } from "../src/lib/ide/tasks";
 
 test("task creation records initial event and queued state", () => {
   const task = createTask("t1", "Implement feature", "2026-01-01T00:00:00Z");
@@ -14,7 +14,7 @@ test("task workflow allows planning, execution, validation and completion", () =
   task = transitionTask(task, "planning", "b");
   task = transitionTask(task, "executing", "c");
   task = transitionTask(task, "validating", "d");
-  task = transitionTask(task, "completed", "e", "All acceptance checks passed");
+  task = completeTask(task, { at: "e", checks: [{ name: "unit tests", passed: true }, { name: "typecheck", passed: true }], summary: "All acceptance checks passed" });
   assert.equal(task.status, "completed");
   assert.equal(task.events.length, 5);
 });
@@ -23,7 +23,7 @@ test("invalid transitions and terminal completion are rejected", () => {
   const task = createTask("t3", "Build", "a");
   assert.throws(() => transitionTask(task, "completed", "b"), /Invalid task transition/);
   const done = transitionTask(transitionTask(transitionTask(task, "planning", "b"), "executing", "c"), "validating", "d");
-  const completed = transitionTask(done, "completed", "e");
+  const completed = completeTask(done, { at: "e", checks: [{ name: "tests", passed: true }] });
   assert.throws(() => transitionTask(completed, "executing", "f"), /Invalid task transition/);
 });
 
