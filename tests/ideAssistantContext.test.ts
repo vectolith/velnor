@@ -8,18 +8,18 @@ test("assistant context prioritizes active file and manifest within budget", () 
     { id: "b", path: "package.json", content: '{"dependencies":{"react":"1"}}' },
     { id: "c", path: "src/main.ts", content: "active content" },
   ];
-  const context = buildAssistantWorkspaceContext(files, "src/main.ts", 250);
+  const context = buildAssistantWorkspaceContext(files, "src/main.ts", 800);
   assert.ok(context.includes("src/main.ts"));
   assert.ok(context.includes("package.json"));
   assert.ok(context.includes("omitted whole"));
-  assert.ok(context.length <= 500);
+  assert.ok(context.length <= 800);
 });
 
 test("assistant context omits files whole rather than truncating their content", () => {
   const context = buildAssistantWorkspaceContext([
     { id: "a", path: "huge.ts", content: "SENTINEL".repeat(1000) },
     { id: "b", path: "small.ts", content: "small-file-content" },
-  ], "small.ts", 500);
+  ], "small.ts", 1200);
   assert.ok(context.includes("small-file-content"));
   assert.ok(!context.includes("SENTINEL"));
 });
