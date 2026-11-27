@@ -454,6 +454,7 @@ export function IdeShell() {
             token={token}
             onTokenChange={updateToken}
             contextPath={active ? active.path : null}
+            workspaceContext={workspace.files.map((file) => `--- ${file.path} ---\n${file.content}`).join("\n\n").slice(0, 48_000)}
             onInsertReply={insertReply}
           />
         ) : null}
