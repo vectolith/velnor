@@ -34,8 +34,18 @@ Everything is optional and read from the environment:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `VELNOR_AI_API_KEY` | unset | Model key used when the browser does not paste one |
-| `VELNOR_AI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible chat-completions base URL |
+| `VELNOR_AI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible chat-completions base URL |
 | `VELNOR_AI_MODEL` | `gpt-4o-mini` | Model name sent to the endpoint |
+
+## Security
+
+- Workspace content and pasted provider tokens are stored in browser local storage; local storage is not a secure vault.
+- Configure HTTPS, secrets management, edge rate limits and trustworthy proxy IP handling in production.
+- The assistant endpoint's in-memory rate limit is process-local and is not a distributed abuse control.
+- The server-configured provider base URL should be trusted and controlled.
+- Preview code runs in a sandboxed iframe.
+
+Read [SECURITY.md](SECURITY.md) for vulnerability reporting and [the security readiness guide](docs/SECURITY-READINESS.md) for deployment and testing limits.
 
 ## Verify
 
@@ -43,7 +53,7 @@ Everything is optional and read from the environment:
 npm test          # node:test unit suite
 npm run typecheck # tsc --noEmit
 npm run build     # next build
-npm run verify    # boots nothing itself: checks a running server on :3000
+npm run verify    # checks a running server on :3000
 ```
 
 ## Layout
@@ -54,6 +64,7 @@ src/app/api/ide/    chat-completions proxy used by the assistant panel
 src/lib/ide/        workspace model: files, language detection, preview document builder
 tests/              unit tests for the workspace model
 scripts/verify-ide.mjs   production smoke check
+docs/SECURITY-READINESS.md security review and deployment checklist
 ```
 
 Model training notebooks and run artifacts live in Models-by-vectolith, not here.
