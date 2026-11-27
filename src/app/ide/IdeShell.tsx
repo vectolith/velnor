@@ -34,7 +34,8 @@ import {
 import { createSnapshot, restoreSnapshot, retainSnapshots, type WorkspaceSnapshot } from "@/lib/ide/snapshots";
 
 const WORKSPACE_KEY = "velnor.ide.workspace.v1";
-const TOKEN_KEY = "velnor.ide.token.v1";\nconst SNAPSHOTS_KEY = "velnor.ide.snapshots.v1";
+const TOKEN_KEY = "velnor.ide.token.v1";
+const SNAPSHOTS_KEY = "velnor.ide.snapshots.v1";
 
 type Toast = { text: string; tone: "info" | "error" };
 
@@ -81,7 +82,8 @@ export function IdeShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(true);
   const [token, setToken] = useState("");
-  const [ready, setReady] = useState(false);\n  const [snapshots, setSnapshots] = useState<WorkspaceSnapshot[]>([]);
+  const [ready, setReady] = useState(false);
+  const [snapshots, setSnapshots] = useState<WorkspaceSnapshot[]>([]);
 
   useEffect(() => {
     setWorkspace(readWorkspace());
@@ -245,7 +247,9 @@ export function IdeShell() {
         notify("Open a file before inserting a reply.", "error");
         return;
       }
-      const next = active.content ? active.content.replace(/\s*$/, "\n\n") + reply : reply;
+      const next = active.content ? active.content.replace(/\s*$/, "
+
+") + reply : reply;
       try {
         setWorkspace((current) => ({
           ...current,
@@ -264,10 +268,47 @@ export function IdeShell() {
     [active, notify]
   );
 
+  const checkpoint = useCallback(() => {
+    try {
+      const existing = JSON.parse(window.localStorage.getItem(SNAPSHOTS_KEY) ?? "[]") as WorkspaceSnapshot[];
+      const next = createSnapshot(workspace, String(Date.now()), "Checkpoint " + new Date().toLocaleString(), new Date().toISOString());
+      const retained = retainSnapshots(existing, next, 20);
+      window.localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(retained));
+      setSnapshots(retained);
+      notify("Workspace checkpoint created.");
+    } catch {
+      notify("Could not create checkpoint.", "error");
+    }
+  }, [notify, workspace]);
+
+  const restoreCheckpoint = useCallback(() => {
+    try {
+      const history = JSON.parse(window.localStorage.getItem(SNAPSHOTS_KEY) ?? "[]") as WorkspaceSnapshot[];
+      setSnapshots(history);
+      if (!history.length) { notify("No checkpoints available."); return; }
+      const choices = history.map((item, index) => index + ": " + item.label + " (" + item.createdAt + ")").join("\n");
+      const selected = window.prompt("Choose checkpoint index to restore:\n" + choices, String(history.length - 1));
+      if (selected === null) return;
+      const index = Number(selected);
+      if (!Number.isInteger(index) || index < 0 || index >= history.length) { notify("Invalid checkpoint selection.", "error"); return; }
+      if (!window.confirm("Restore this checkpoint? Current workspace changes may be overwritten.")) return;
+      const restored = restoreSnapshot(history[index]);
+      setWorkspace(restored);
+      setDirtyIds(new Set(restored.files.map((file) => file.id)));
+      persist(restored);
+      setReloadKey((value) => value + 1);
+      notify("Checkpoint restored.");
+    } catch {
+      notify("Could not restore checkpoint.", "error");
+    }
+  }, [notify, persist]);
+
   const commands = useMemo<PaletteCommand[]>(
     () => [
       { id: "run", label: "Run preview", hint: "Cmd+Enter", run },
-      { id: "save", label: "Save workspace", hint: "Cmd+S", run: save },\n      { id: "checkpoint", label: "Create workspace checkpoint", run: checkpoint },\n      { id: "restore", label: "Restore workspace checkpoint", run: restoreCheckpoint },
+      { id: "save", label: "Save workspace", hint: "Cmd+S", run: save },
+      { id: "checkpoint", label: "Create workspace checkpoint", run: checkpoint },
+      { id: "restore", label: "Restore workspace checkpoint", run: restoreCheckpoint },
       { id: "new", label: "New file", run: addNewFile },
       { id: "rename", label: "Rename current file", run: renameCurrent },
       { id: "delete", label: "Delete current file", run: deleteCurrent },
@@ -338,7 +379,13 @@ export function IdeShell() {
           <button type="button" className="ide-icon-button" onClick={save} aria-label="Save workspace">
             <Save size={16} strokeWidth={1.6} />
           </button>
-          <button type="button" className="ide-icon-button" onClick={checkpoint} aria-label="Create checkpoint" title="Create checkpoint">\n            <History size={16} strokeWidth={1.6} />\n          </button>\n          <button type="button" className="ide-icon-button" onClick={restoreCheckpoint} aria-label="Restore checkpoint" title="Restore checkpoint">\n            <History size={16} strokeWidth={1.6} />\n          </button>\n          <button type="button" className="ide-icon-button" onClick={exportWorkspace} aria-label="Export workspace">
+          <button type="button" className="ide-icon-button" onClick={checkpoint} aria-label="Create checkpoint" title="Create checkpoint">
+            <History size={16} strokeWidth={1.6} />
+          </button>
+          <button type="button" className="ide-icon-button" onClick={restoreCheckpoint} aria-label="Restore checkpoint" title="Restore checkpoint">
+            <History size={16} strokeWidth={1.6} />
+          </button>
+          <button type="button" className="ide-icon-button" onClick={exportWorkspace} aria-label="Export workspace">
             <Download size={16} strokeWidth={1.6} />
           </button>
           <button type="button" className="ide-run-button" onClick={run}>
