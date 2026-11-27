@@ -12,10 +12,11 @@ type AiPanelProps = {
   token: string;
   onTokenChange: (token: string) => void;
   contextPath: string | null;
+  workspaceContext: string;
   onInsertReply: (reply: string) => void;
 };
 
-export default function AiPanel({ token, onTokenChange, contextPath, onInsertReply }: AiPanelProps) {
+export default function AiPanel({ token, onTokenChange, contextPath, workspaceContext, onInsertReply }: AiPanelProps) {
   const [draft, setDraft] = useState("");
   const [entries, setEntries] = useState<ChatEntry[]>([]);
   const [busy, setBusy] = useState(false);
@@ -33,7 +34,7 @@ export default function AiPanel({ token, onTokenChange, contextPath, onInsertRep
     setDraft("");
     setEntries((list) => [...list, { role: "user", text }]);
     try {
-      const prompt = contextPath ? "File: " + contextPath + "\n\n" + text : text;
+      const prompt = `Workspace context (read-only snapshot):\n${workspaceContext}\n\nActive file: ${contextPath ?? "none"}\n\nUser request:\n${text}`;
           const response = await fetch("/api/ide/chat", {
         method: "POST",
         headers: {
