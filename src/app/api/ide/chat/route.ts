@@ -85,7 +85,27 @@ export async function POST(req: NextRequest) {
 
   let body: ChatBody;
   try {
-    body = (await req.json()) as ChatBody;
+    if (!req.body) return NextResponse.json({ error: "Request body must be JSON." }, { status: 400 });
+    const reader = req.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_REQUEST_BYTES) {
+        await reader.cancel();
+        return NextResponse.json({ error: "Request body is too large." }, { status: 413 });
+      }
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    body = JSON.parse(new TextDecoder().decode(bytes)) as ChatBody;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Request body must be JSON." }, { status: 400 });
+    }
   } catch {
     return NextResponse.json({ error: "Request body must be JSON." }, { status: 400 });
   }
