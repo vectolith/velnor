@@ -225,3 +225,23 @@ export function buildPreviewDocument(files: IdeFile[]): string {
 export function sortFiles(files: IdeFile[]): IdeFile[] {
   return [...files].sort((a, b) => a.path.localeCompare(b.path, "en", { sensitivity: "base" }));
 }
+
+export type ProposedFileChange = { path: string; content: string };
+/** Extract explicit path-labelled code blocks from assistant output for review. */
+export function parseProposedFileChanges(reply: string): ProposedFileChange[] {
+  const changes: ProposedFileChange[] = [];
+  const pattern = /^\s*```(?:[\w.+-]+)?\s+([^\n]+)\n([\s\S]*?)^\s*```\s*$/gm;
+  const seen = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(reply)) !== null) {
+    const rawPath = match[1].trim();
+    if (!rawPath || rawPath.startsWith("//") || rawPath.startsWith("#")) continue;
+    let path: string;
+    try { path = normalizePath(rawPath); } catch { continue; }
+    const key = path.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    changes.push({ path, content: match[2].replace(/\n$/, "") });
+  }
+  return changes;
+}
