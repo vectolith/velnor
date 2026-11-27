@@ -4,7 +4,7 @@ Velnor is a single-file-workspace, VS Code-class code editor that runs in the br
 The root path redirects to `/ide`; there is no messaging, chat-agent, or Cloudflare
 deployment surface in this repository anymore.
 
-## What it does
+## Product direction\n\nVELNOR is being developed as an evidence-driven engineering IDE: intent-to-implementation planning, preflight impact analysis, durable execution, project memory, bounded repair and provider independence. See [the product thesis](docs/PRODUCT-THESIS.md) for the proposed differentiating architecture. This direction is a roadmap, not a claim that all capabilities are implemented.\n\n## What it does
 
 - File tree for a local workspace with per-file language detection
 - Monaco editor pane with tabs, dirty state and syntax highlighting
