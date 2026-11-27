@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Download,
+  Upload,
   History,
   FilePlus2,
   PanelLeft,
@@ -84,6 +85,7 @@ export function IdeShell() {
   const [aiOpen, setAiOpen] = useState(true);
   const [token, setToken] = useState("");
   const [ready, setReady] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [snapshots, setSnapshots] = useState<WorkspaceSnapshot[]>([]);
 
   useEffect(() => {
@@ -232,6 +234,38 @@ export function IdeShell() {
     notify("Exported velnor-workspace.json");
   }, [notify, workspace]);
 
+  const importWorkspaceFiles = useCallback(async (selected: FileList | null) => {
+    if (!selected?.length) return;
+    try {
+      const incoming = await Promise.all(Array.from(selected).map(async (file) => {
+        const text = await file.text();
+        if (file.name.toLowerCase().endsWith(".json")) {
+          try {
+            const parsed = JSON.parse(text) as { files?: Array<{ path?: unknown; content?: unknown }>; entry?: unknown };
+            if (Array.isArray(parsed.files)) return parsed.files.map((item) => ({ path: String(item.path ?? ""), content: String(item.content ?? "") }));
+          } catch { /* import as a regular file if not a workspace bundle */ }
+        }
+        return [{ path: file.name, content: text }];
+      }));
+      const flattened = incoming.flat();
+      setWorkspace((current) => {
+        let files = [...current.files];
+        for (const item of flattened) {
+          if (!item.path.trim()) continue;
+          files = [...files, addFile(files, item.path, item.content)];
+        }
+        const next = { ...current, files, activeId: files.at(-1)?.id ?? current.activeId };
+        persist(next);
+        return next;
+      });
+      notify("Imported " + flattened.length + " file(s).");
+    } catch (error) {
+      notify(error instanceof WorkspaceError ? error.message : "Import failed. Check the file format and workspace limits.", "error");
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  }, [notify, persist]);
+
   const updateToken = useCallback((value: string) => {
     setToken(value);
     try {
@@ -368,9 +402,13 @@ export function IdeShell() {
         <span className="ide-brand">velnor ide</span>
         <span className="ide-path">{active ? active.path : "no file open"}</span>
         {dirtyIds.size > 0 ? <span className="ide-dirty">unsaved</span> : null}
+        <input ref={importInputRef} type="file" multiple hidden accept=".json,.html,.htm,.css,.js,.jsx,.ts,.tsx,.md,.txt,.svg,.xml,.csv" onChange={(event) => void importWorkspaceFiles(event.target.files)} />
         <div className="ide-topbar-actions">
           <button type="button" className="ide-icon-button" onClick={() => setPaletteOpen(true)} aria-label="Commands">
             <Search size={16} strokeWidth={1.6} />
+          </button>
+          <button type="button" className="ide-icon-button" onClick={() => importInputRef.current?.click()} aria-label="Import files" title="Import files">
+            <Upload size={16} strokeWidth={1.6} />
           </button>
           <button type="button" className="ide-icon-button" onClick={addNewFile} aria-label="New file">
             <FilePlus2 size={16} strokeWidth={1.6} />
