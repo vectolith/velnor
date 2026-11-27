@@ -44,9 +44,20 @@ const chat = await fetch(base + "/api/ide/chat", {
 });
 if (chat.status !== 400) fail("/api/ide/chat should reject an empty prompt with 400, got " + chat.status);
 
+const malformed = await fetch(base + "/api/ide/chat", {
+  method: "POST", headers: { "content-type": "application/json" }, body: "{",
+});
+if (malformed.status !== 400) fail("assistant endpoint should reject malformed JSON, got " + malformed.status);
+
+const oversized = await fetch(base + "/api/ide/chat", {
+  method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ prompt: "x".repeat(24_001) }),
+});
+if (oversized.status !== 413) fail("assistant endpoint should reject oversized prompts, got " + oversized.status);
+
 const meta = await fetch(base + "/api/ide/chat");
 if (!meta.ok) fail("/api/ide/chat GET returned " + meta.status);
 const metaBody = await meta.json();
 if (typeof metaBody.model !== "string") fail("/api/ide/chat GET is missing the model field");
 
-console.log("OK: / -> /ide, editor renders, assistant endpoint validates input");
+console.log("OK: root redirect, editor rendering, assistant empty/malformed/oversized-input validation and metadata");
