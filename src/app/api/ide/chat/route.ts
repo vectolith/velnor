@@ -15,7 +15,9 @@ export const runtime = "nodejs";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_MODEL = "gpt-4o-mini";
-const MAX_PROMPT_CHARS = 24_000;
+const MAX_PROMPT_BYTES = 96_000;
+const MAX_REQUEST_BYTES = 128_000;
+const MAX_PROVIDER_RESPONSE_BYTES = 2_000_000;
 const MAX_MODEL_CHARS = 120;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_REQUESTS = 12;
@@ -76,6 +78,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Too many requests. Please wait before retrying." }, { status: 429 });
   }
 
+  const declaredLength = Number(req.headers.get('content-length') || 0);
+  if (declaredLength > MAX_REQUEST_BYTES) {
+    return NextResponse.json({ error: 'Request body is too large.' }, { status: 413 });
+  }
+
   let body: ChatBody;
   try {
     body = (await req.json()) as ChatBody;
@@ -87,11 +94,9 @@ export async function POST(req: NextRequest) {
   if (!prompt) {
     return NextResponse.json({ error: "Send a non-empty prompt." }, { status: 400 });
   }
-  if (prompt.length > MAX_PROMPT_CHARS) {
-    return NextResponse.json(
-      { error: "Prompt is too long (" + prompt.length + " chars, limit " + MAX_PROMPT_CHARS + ")." },
-      { status: 413 },
-    );
+  const promptBytes = new TextEncoder().encode(prompt).byteLength;
+  if (promptBytes > MAX_PROMPT_BYTES) {
+    return NextResponse.json({ error: 'Prompt is too long (96 KB UTF-8 limit).' }, { status: 413 });
   }
 
   const apiKey = bearerToken(req) || process.env.VELNOR_AI_API_KEY || "";
@@ -142,14 +147,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not reach the model provider. Check the endpoint and try again." }, { status: 502 });
   }
 
+  const declaredResponseLength = Number(upstream.headers.get('content-length') || 0);
+  if (declaredResponseLength > MAX_PROVIDER_RESPONSE_BYTES) {
+    return NextResponse.json({ error: 'The provider response exceeded the allowed size.' }, { status: 502 });
+  }
   let raw: string;
   try {
-    raw = await upstream.text();
+    if (!upstream.body) throw new Error('empty body');
+    const reader = upstream.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_PROVIDER_RESPONSE_BYTES) {
+        await reader.cancel();
+        return NextResponse.json({ error: 'The provider response exceeded the allowed size.' }, { status: 502 });
+      }
+      chunks.push(value);
+    }
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { merged.set(chunk, offset); offset += chunk.byteLength; }
+    raw = new TextDecoder().decode(merged);
   } catch {
-    return NextResponse.json({ error: "The provider response could not be read." }, { status: 502 });
-  }
-  if (raw.length > 2_000_000) {
-    return NextResponse.json({ error: "The provider response exceeded the allowed size." }, { status: 502 });
+    return NextResponse.json({ error: 'The provider response could not be read.' }, { status: 502 });
   }
   let payload: unknown = null;
   try {
