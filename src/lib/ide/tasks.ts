@@ -26,7 +26,13 @@ export function transitionTask(task: IdeTask, next: TaskStatus, at: string, deta
   return { ...task, status: next, updatedAt: at, events: [...task.events, { type: "status", at, detail: note, status: next }] };
 }
 
-export function completeTask(task: IdeTask, evidence: ValidationEvidence): IdeTask {\n  if (task.status !== "validating") throw new Error("Tasks must be validating before completion.");\n  if (!evidence.checks.length || evidence.checks.some((check) => !check.name.trim() || !check.passed)) throw new Error("Completion requires non-empty validation evidence with all checks passing.");\n  return { ...task, status: "completed", updatedAt: evidence.at, events: [...task.events, { type: "validation", at: evidence.at, detail: evidence.summary?.trim() || "All recorded validation checks passed.", status: "completed", evidence }] };\n}\n\nexport function addTaskNote(task: IdeTask, detail: string, at: string): IdeTask {
+export function completeTask(task: IdeTask, evidence: ValidationEvidence): IdeTask {
+  if (task.status !== "validating") throw new Error("Tasks must be validating before completion.");
+  if (!evidence.checks.length || evidence.checks.some((check) => !check.name.trim() || !check.passed)) throw new Error("Completion requires non-empty validation evidence with all checks passing.");
+  return { ...task, status: "completed", updatedAt: evidence.at, events: [...task.events, { type: "validation", at: evidence.at, detail: evidence.summary?.trim() || "All recorded validation checks passed.", status: "completed", evidence }] };
+}
+
+export function addTaskNote(task: IdeTask, detail: string, at: string): IdeTask {
   const note = detail.trim();
   if (!note) throw new Error("Task notes cannot be empty.");
   return { ...task, updatedAt: at, events: [...task.events, { type: "note", at, detail: note }] };

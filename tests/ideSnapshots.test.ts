@@ -15,7 +15,7 @@ test("snapshot copies workspace and restore recreates files", () => {
 test("snapshot comparison reports additions removals and changes", () => {
   const base = createDefaultWorkspace();
   const snapshot = createSnapshot(base, "s2", "baseline", "a");
-  let next = { ...base, files: addFile(base.files, "extra.txt", "new") };
+  let next = { ...base, files: [...base.files, addFile(base.files, "extra.txt", "new")] };
   next = { ...next, files: updateContent(next.files, base.activeId, "changed") };
   const diff = compareSnapshot(snapshot, next);
   assert.deepEqual(diff.added, ["extra.txt"]);
