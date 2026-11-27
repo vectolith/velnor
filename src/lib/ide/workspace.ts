@@ -212,10 +212,14 @@ export function buildPreviewDocument(files: IdeFile[]): string {
   }
   const withStyles = inlineStyles(entry.content, files);
   const withScripts = inlineScripts(withStyles, files);
+  // Preview executes workspace code in an opaque-origin sandbox and applies a
+  // restrictive CSP. Workspace scripts cannot make network requests or load
+  // arbitrary remote assets; only inline scripts/styles and data/blob media.
+  const csp = '<meta http-equiv="Content-Security-Policy" content="default-src \\'none\\'; script-src \\'unsafe-inline\\'; style-src \\'unsafe-inline\\'; img-src data: blob:; font-src data:; connect-src \\'none\\'; media-src data: blob:; object-src \\'none\\'; frame-src \\'none\\'; base-uri \\'none\\'; form-action \\'none\\'">';
   if (/<head[^>]*>/i.test(withScripts)) {
-    return withScripts.replace(/<head([^>]*)>/i, (match) => match + "\n" + CONSOLE_BRIDGE);
+    return withScripts.replace(/<head([^>]*)>/i, (match) => match + "\\n" + csp + "\\n" + CONSOLE_BRIDGE);
   }
-  return CONSOLE_BRIDGE + "\n" + withScripts;
+  return csp + "\\n" + CONSOLE_BRIDGE + "\\n" + withScripts;
 }
 
 export function sortFiles(files: IdeFile[]): IdeFile[] {
