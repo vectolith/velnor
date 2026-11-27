@@ -4,7 +4,12 @@ Velnor is a single-file-workspace, VS Code-class code editor that runs in the br
 The root path redirects to `/ide`; there is no messaging, chat-agent, or Cloudflare
 deployment surface in this repository anymore.
 
-## Product direction\n\nVELNOR is being developed as an evidence-driven engineering IDE: intent-to-implementation planning, preflight impact analysis, durable execution, project memory, bounded repair and provider independence. See [the product thesis](docs/PRODUCT-THESIS.md) for the proposed differentiating architecture. This direction is a roadmap, not a claim that all capabilities are implemented.\n\n## What it does
+## Product direction\n\nVELNOR is being developed as an evidence-driven engineering IDE: intent-to-implementation planning, preflight impact analysis, durable execution, project memory, bounded repair and provider independence. See [the product thesis](docs/PRODUCT-THESIS.md) for the proposed differentiating architecture. This direction is a roadmap, not a claim that all capabilities are implemented.\n\n
+## Hosted preview (zero-cost option)
+
+A Render free-tier Docker blueprint is included in `render.yaml`. See [deployment instructions](docs/DEPLOY-FREE.md) or [deploy using Render](https://render.com/deploy?repo=https://github.com/vectolith/velnor). Free services may sleep and are intended for preview use.
+
+## What it does
 
 - File tree for a local workspace with per-file language detection
 - Monaco editor pane with tabs, dirty state and syntax highlighting
