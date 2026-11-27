@@ -265,7 +265,7 @@ export function IdeShell() {
     } finally {
       if (importInputRef.current) importInputRef.current.value = "";
     }
-  }, [notify, persist]);
+  }, [checkpoint, notify, persist]);
 
   const updateToken = useCallback((value: string) => {
     setToken(value);
