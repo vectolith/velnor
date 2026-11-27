@@ -95,3 +95,24 @@ test("assistant route rejects provider URLs with embedded credentials", async ()
     }
   });
 });
+
+test("assistant route rejects UTF-8 prompts above the byte limit", async () => {
+  await withEnv({ VELNOR_AI_API_KEY: undefined, VELNOR_AI_BASE_URL: "https://provider.example/v1" }, async () => {
+    const response = await POST(request("é".repeat(48_001), "test-large-prompt-1"));
+    assert.equal(response.status, 413);
+  });
+});
+
+test("assistant route caps streamed provider response bytes", async () => {
+  await withEnv({ VELNOR_AI_API_KEY: undefined, VELNOR_AI_BASE_URL: "https://provider.example/v1" }, async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("x".repeat(2_000_001), { status: 200 });
+    try {
+      const response = await POST(request("hello", "test-large-response-1"));
+      assert.equal(response.status, 502);
+      assert.match((await response.json()).error, /exceeded the allowed size/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
