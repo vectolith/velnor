@@ -247,9 +247,7 @@ export function IdeShell() {
         notify("Open a file before inserting a reply.", "error");
         return;
       }
-      const next = active.content ? active.content.replace(/\s*$/, "
-
-") + reply : reply;
+      const next = active.content ? active.content.replace(/\s*$/, "\\n\\n") + reply : reply;
       try {
         setWorkspace((current) => ({
           ...current,
