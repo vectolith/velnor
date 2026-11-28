@@ -1,4 +1,4 @@
-import { addFile, normalizePath, WorkspaceError, type IdeFile } from "./workspace";
+import { addFile, normalizePath, WorkspaceError, type IdeFile, type Workspace } from "./workspace";
 
 export type WorkspaceBundle = { schemaVersion: 1; files: Array<{ path: string; content: string }>; entry: string };
 
@@ -11,7 +11,7 @@ export function parseWorkspaceBundle(raw: string): WorkspaceBundle {
   try { value = JSON.parse(raw); } catch { throw new WorkspaceError("Workspace backup is not valid JSON."); }
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new WorkspaceError("Workspace backup must be an object.");
   const record = value as Record<string, unknown>;
-  if (record.schemaVersion !== 1 || !Array.isArray(record.files) || typeof record.entry !== "string") throw new WorkspaceError("Unsupported workspace backup format.");
+  if ((record.schemaVersion !== 1 && record.schemaVersion !== undefined) || !Array.isArray(record.files) || typeof record.entry !== "string") throw new WorkspaceError("Unsupported workspace backup format.");
   if (record.files.length < 1 || record.files.length > MAX_IMPORT_FILES) throw new WorkspaceError("Workspace backup must contain 1–40 files.");
   const paths = new Set<string>();
   let total = 0;
@@ -40,4 +40,13 @@ export function stageWorkspaceImport(existing: IdeFile[], bundle: WorkspaceBundl
   let staged = [...existing];
   for (const file of bundle.files) staged = [...staged, addFile(staged, file.path, file.content)];
   return staged;
+}
+
+/** Restore a validated bundle as a complete workspace, preserving its entry path. */
+export function createWorkspaceFromBundle(bundle: WorkspaceBundle): Workspace {
+  let files: IdeFile[] = [];
+  for (const file of bundle.files) files = [...files, addFile(files, file.path, file.content)];
+  const entry = normalizePath(bundle.entry);
+  const activeId = files.find((file) => file.path.toLowerCase() === entry.toLowerCase())?.id ?? files[0]?.id ?? "";
+  return { files, entry, activeId };
 }
