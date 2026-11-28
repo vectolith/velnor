@@ -185,19 +185,29 @@ export const CONSOLE_BRIDGE =
   "})();\n" +
   "</script>";
 
-function inlineStyles(document: string, files: IdeFile[]): string {
+function resolvePreviewAsset(entryPath: string, reference: string): string | null {
+  const ref = reference.trim();
+  if (!ref || /^[a-z][a-z0-9+.-]*:/i.test(ref) || ref.startsWith("//") || ref.startsWith("#")) return null;
+  const clean = ref.split(/[?#]/, 1)[0].replace(/^\//, "");
+  const base = entryPath.includes("/") ? entryPath.slice(0, entryPath.lastIndexOf("/") + 1) : "";
+  try { return normalizePath(base + clean); } catch { return null; }
+}
+
+function inlineStyles(document: string, files: IdeFile[], entryPath: string): string {
   return document.replace(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href: string) => {
-    const target = files.find((file) => file.path === String(href).replace(/^\.?\//, ""));
+    const resolved = resolvePreviewAsset(entryPath, String(href));
+    const target = resolved ? files.find((file) => file.path === resolved) : undefined;
     if (!target) return match;
     return "<style>\n" + target.content + "\n</style>";
   });
 }
 
-function inlineScripts(document: string, files: IdeFile[]): string {
+function inlineScripts(document: string, files: IdeFile[], entryPath: string): string {
   return document.replace(
     /<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi,
     (match, src: string) => {
-      const target = files.find((file) => file.path === String(src).replace(/^\.?\//, ""));
+      const resolved = resolvePreviewAsset(entryPath, String(src));
+      const target = resolved ? files.find((file) => file.path === resolved) : undefined;
       if (!target) return match;
       const safe = target.content.replace(/<\/script/gi, "<\\/script");
       return "<script>\n" + safe + "\n</script>";
@@ -210,8 +220,8 @@ export function buildPreviewDocument(files: IdeFile[]): string {
   if (!entry) {
     throw new WorkspaceError("Add an index.html file to see a preview.");
   }
-  const withStyles = inlineStyles(entry.content, files);
-  const withScripts = inlineScripts(withStyles, files);
+  const withStyles = inlineStyles(entry.content, files, entry.path);
+  const withScripts = inlineScripts(withStyles, files, entry.path);
   // Preview executes workspace code in an opaque-origin sandbox and applies a
   // restrictive CSP. Workspace scripts cannot make network requests or load
   // arbitrary remote assets; only inline scripts/styles and data/blob media.
