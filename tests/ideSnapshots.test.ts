@@ -41,13 +41,13 @@ test("checkpoint history loads from validated JSON and trims old entries to the 
   assert.deepEqual(parseSnapshotHistory(JSON.stringify(retained)).map((item) => item.id), ["new"]);
 });
 
-test("checkpoint history rejects malformed JSON, duplicate ids, paths and missing entry files", () => {
+test("checkpoint history rejects malformed JSON, duplicate ids, paths and invalid entry paths", () => {
   const snapshot = createSnapshot(createDefaultWorkspace(), "s1", "baseline", "a");
   assert.throws(() => parseSnapshotHistory("{invalid"), /valid JSON/);
   assert.throws(() => parseSnapshotHistory(JSON.stringify([snapshot, snapshot])), /ids must be unique/);
   const duplicatePaths = { ...snapshot, files: [...snapshot.files, { ...snapshot.files[0], id: "other" }] };
   assert.throws(() => parseSnapshotHistory(JSON.stringify([duplicatePaths])), /duplicate file paths/);
-  assert.throws(() => parseSnapshotHistory(JSON.stringify([{ ...snapshot, entry: "missing.html" }])), /entry file is missing/);
+  assert.throws(() => parseSnapshotHistory(JSON.stringify([{ ...snapshot, entry: "../escape.html" }])), /Paths cannot escape/);
 });
 
 test("a checkpoint larger than the configured history budget is rejected", () => {
