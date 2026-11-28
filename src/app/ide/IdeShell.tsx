@@ -21,7 +21,7 @@ import EditorPane from "./EditorPane";
 import FileTree from "./FileTree";
 import PreviewPane, { type ConsoleLine } from "./PreviewPane";
 import AiPanel from "./AiPanel";
-import TaskPanel from "./TaskPanel";
+import TaskPanel from "./TaskPanel";\nimport PreflightPanel from "./PreflightPanel";
 import GitHubPanel from "./GitHubPanel";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
 import {
@@ -90,7 +90,7 @@ export function IdeShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(true);
   const [githubOpen, setGithubOpen] = useState(false);
-  const [tasksOpen, setTasksOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);\n  const [preflightOpen, setPreflightOpen] = useState(false);
   const [token, setToken] = useState("");
   const [ready, setReady] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -405,7 +405,7 @@ setReady(true);
         <span className="ide-brand">velnor</span>
         <nav className="ide-menu-bar" aria-label="Application menus">
           <details className="ide-menu"><summary>File <ChevronDown size={12}/></summary><div className="ide-menu-popover"><button onClick={addNewFile}><FilePlus2/>New file</button><button onClick={() => importInputRef.current?.click()}><Upload/>Import files</button><button onClick={save}><Save/>Save workspace <kbd>⌘S</kbd></button><button onClick={renameCurrent}>Rename file</button><button onClick={deleteCurrent}>Delete file</button><button onClick={exportWorkspace}><Download/>Export workspace</button><button onClick={checkpoint}><History/>Create checkpoint</button><button onClick={restoreCheckpoint}><History/>Restore checkpoint</button></div></details>
-          <details className="ide-menu"><summary>View <ChevronDown size={12}/></summary><div className="ide-menu-popover"><button onClick={() => setSidebarOpen(v=>!v)}><PanelLeft/>Toggle Explorer</button><button onClick={() => setPaletteOpen(true)}><Search/>Search / Commands <kbd>⌘K</kbd></button><button onClick={() => setAiOpen(v=>!v)}><Sparkles/>Toggle Assistant</button><button onClick={() => setReloadKey(v=>v+1)}><Eye/>Refresh preview</button><button onClick={() => setConsoleLines([])}><Terminal/>Clear console</button></div></details>
+          <details className="ide-menu"><summary>View <ChevronDown size={12}/></summary><div className="ide-menu-popover"><button onClick={() => setSidebarOpen(v=>!v)}><PanelLeft/>Toggle Explorer</button><button onClick={() => setPaletteOpen(true)}><Search/>Search / Commands <kbd>⌘K</kbd></button><button onClick={() => {setTasksOpen(true);setPreflightOpen(false);}}><ListTodo/>Task ledger</button><button onClick={() => {setPreflightOpen(true);setTasksOpen(false);}}><FileCheck/>Change preflight</button><button onClick={() => setAiOpen(v=>!v)}><Sparkles/>Toggle Assistant</button><button onClick={() => setReloadKey(v=>v+1)}><Eye/>Refresh preview</button><button onClick={() => setConsoleLines([])}><Terminal/>Clear console</button></div></details>
           <details className="ide-menu"><summary>Settings <ChevronDown size={12}/></summary><div className="ide-menu-popover"><button onClick={() => setAiOpen(true)}><Settings/>Assistant panel</button><button onClick={() => setPaletteOpen(true)}><Settings/>Commands and shortcuts</button></div></details>
         </nav>
         <span className="ide-path">{active ? active.path : "no file open"}</span>
@@ -418,7 +418,7 @@ setReady(true);
         <nav className="ide-activity-rail" aria-label="IDE activity">
           <button type="button" className={"ide-rail-button"+(sidebarOpen ? " is-active":"")} onClick={() => setSidebarOpen(v => !v)} aria-label="Explorer" title="Explorer"><PanelLeft size={18}/></button>
           <button type="button" className="ide-rail-button" onClick={() => setPaletteOpen(true)} aria-label="Search" title="Search"><Search size={18}/></button>
-          <button type="button" className="ide-rail-button" onClick={() => setGithubOpen(true)} aria-label="Source control and GitHub" title="Source control"><GitBranch size={18}/></button>
+          <button type="button" className="ide-rail-button" onClick={() => setGithubOpen(true)} aria-label="Source control and GitHub" title="Source control"><GitBranch size={18}/></button>\n          <button type="button" className="ide-rail-button" onClick={() => {setTasksOpen(true);setPreflightOpen(false);}} aria-label="Task ledger" title="Task ledger"><ListTodo size={18}/></button>\n          <button type="button" className="ide-rail-button" onClick={() => {setPreflightOpen(true);setTasksOpen(false);}} aria-label="Change preflight" title="Change preflight"><FileCheck size={18}/></button>
           <div className="ide-rail-divider"/>
           <button type="button" className="ide-rail-button ide-rail-run" onClick={run} aria-label="Run project" title="Run"><Play size={18}/></button>
           <div className="ide-rail-spacer"/>
@@ -471,7 +471,7 @@ setReady(true);
           onClearConsole={() => setConsoleLines([])}
         />
 
-        {tasksOpen ? <TaskPanel onClose={() => setTasksOpen(false)} /> : null}
+        {tasksOpen ? <TaskPanel onClose={() => setTasksOpen(false)} /> : null}\n        {preflightOpen ? <PreflightPanel workspace={workspace} snapshots={snapshots} onCreateBaseline={checkpoint} onClose={() => setPreflightOpen(false)} /> : null}
 
         {aiOpen ? (
           <AiPanel
