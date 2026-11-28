@@ -16,12 +16,15 @@ import {
   ChevronDown,
   Settings,
   Eye,
+  FileCheck,
+  ListTodo,
 } from "lucide-react";
 import EditorPane from "./EditorPane";
 import FileTree from "./FileTree";
 import PreviewPane, { type ConsoleLine } from "./PreviewPane";
 import AiPanel from "./AiPanel";
-import TaskPanel from "./TaskPanel";\nimport PreflightPanel from "./PreflightPanel";
+import TaskPanel from "./TaskPanel";
+import PreflightPanel from "./PreflightPanel";
 import GitHubPanel from "./GitHubPanel";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
 import {
@@ -90,7 +93,8 @@ export function IdeShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(true);
   const [githubOpen, setGithubOpen] = useState(false);
-  const [tasksOpen, setTasksOpen] = useState(false);\n  const [preflightOpen, setPreflightOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
+  const [preflightOpen, setPreflightOpen] = useState(false);
   const [token, setToken] = useState("");
   const [ready, setReady] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -418,7 +422,9 @@ setReady(true);
         <nav className="ide-activity-rail" aria-label="IDE activity">
           <button type="button" className={"ide-rail-button"+(sidebarOpen ? " is-active":"")} onClick={() => setSidebarOpen(v => !v)} aria-label="Explorer" title="Explorer"><PanelLeft size={18}/></button>
           <button type="button" className="ide-rail-button" onClick={() => setPaletteOpen(true)} aria-label="Search" title="Search"><Search size={18}/></button>
-          <button type="button" className="ide-rail-button" onClick={() => setGithubOpen(true)} aria-label="Source control and GitHub" title="Source control"><GitBranch size={18}/></button>\n          <button type="button" className="ide-rail-button" onClick={() => {setTasksOpen(true);setPreflightOpen(false);}} aria-label="Task ledger" title="Task ledger"><ListTodo size={18}/></button>\n          <button type="button" className="ide-rail-button" onClick={() => {setPreflightOpen(true);setTasksOpen(false);}} aria-label="Change preflight" title="Change preflight"><FileCheck size={18}/></button>
+          <button type="button" className="ide-rail-button" onClick={() => setGithubOpen(true)} aria-label="Source control and GitHub" title="Source control"><GitBranch size={18}/></button>
+          <button type="button" className="ide-rail-button" onClick={() => {setTasksOpen(true);setPreflightOpen(false);}} aria-label="Task ledger" title="Task ledger"><ListTodo size={18}/></button>
+          <button type="button" className="ide-rail-button" onClick={() => {setPreflightOpen(true);setTasksOpen(false);}} aria-label="Change preflight" title="Change preflight"><FileCheck size={18}/></button>
           <div className="ide-rail-divider"/>
           <button type="button" className="ide-rail-button ide-rail-run" onClick={run} aria-label="Run project" title="Run"><Play size={18}/></button>
           <div className="ide-rail-spacer"/>
@@ -471,7 +477,8 @@ setReady(true);
           onClearConsole={() => setConsoleLines([])}
         />
 
-        {tasksOpen ? <TaskPanel onClose={() => setTasksOpen(false)} /> : null}\n        {preflightOpen ? <PreflightPanel workspace={workspace} snapshots={snapshots} onCreateBaseline={checkpoint} onClose={() => setPreflightOpen(false)} /> : null}
+        {tasksOpen ? <TaskPanel onClose={() => setTasksOpen(false)} /> : null}
+        {preflightOpen ? <PreflightPanel workspace={workspace} snapshots={snapshots} onCreateBaseline={checkpoint} onClose={() => setPreflightOpen(false)} /> : null}
 
         {aiOpen ? (
           <AiPanel
