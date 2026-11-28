@@ -290,21 +290,21 @@ function resolvePreviewAsset(entryPath: string, reference: string): string | nul
 }
 
 function inlineStyles(document: string, files: IdeFile[], entryPath: string): string {
-  return document.replace(/<link\\b[^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href: string) => {
+  return document.replace(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href: string) => {
     const resolved = resolvePreviewAsset(entryPath, String(href));
     const target = resolved ? files.find((file) => file.path === resolved) : undefined;
     if (!target) return match;
-    return `<style>\\n${target.content}\\n</style>`;
+    return "<style>\n" + target.content + "\n</style>";
   });
 }
 
 function inlineScripts(document: string, files: IdeFile[], entryPath: string): string {
-  return document.replace(/<script\\b[^>]*\\bsrc=["']([^"']+)["'][^>]*><\\/script>/gi, (match, src: string) => {
+  return document.replace(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi, (match, src: string) => {
     const resolved = resolvePreviewAsset(entryPath, String(src));
     const target = resolved ? files.find((file) => file.path === resolved) : undefined;
     if (!target) return match;
-    const safe = target.content.replace(/<\\/script/gi, "<\\\\/script");
-    return `<script>\\n${safe}\\n</script>`;
+    const safe = target.content.replace(/<\/script/gi, "<\\/script");
+    return "<script>\n" + safe + "\n</script>";
   });
 }
 
@@ -313,9 +313,9 @@ export function buildPreviewDocument(files: IdeFile[]): string {
   if (!entry) throw new WorkspaceError("Add an index.html file to see a preview.");
   const withStyles = inlineStyles(entry.content, files, entry.path);
   const withScripts = inlineScripts(withStyles, files, entry.path);
-  const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; media-src data: blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">`;
-  if (/<head[^>]*>/i.test(withScripts)) return withScripts.replace(/<head([^>]*)>/i, (match) => match + "\\n" + csp + "\\n" + CONSOLE_BRIDGE);
-  return csp + "\\n" + CONSOLE_BRIDGE + "\\n" + withScripts;
+  const csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; media-src data: blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'\">";
+  if (/<head[^>]*>/i.test(withScripts)) return withScripts.replace(/<head([^>]*)>/i, (match) => match + "\n" + csp + "\n" + CONSOLE_BRIDGE);
+  return csp + "\n" + CONSOLE_BRIDGE + "\n" + withScripts;
 }
 
 export function sortFiles(files: IdeFile[]): IdeFile[] {
@@ -326,9 +326,7 @@ export type ProposedFileChange = { path: string; content: string };
 /** Extract explicit path-labelled code blocks from assistant output for review. */
 export function parseProposedFileChanges(reply: string): ProposedFileChange[] {
   const changes: ProposedFileChange[] = [];
-  const pattern = /^\s*```(?:[\w.+-]+)?\s+([^
-]+)
-([\s\S]*?)^\s*```\s*$/gm;
+  const pattern = /^\s*[\x60]{3}(?:[\w.+-]+)?\s+([^\n]+)\n([\s\S]*?)^\s*[\x60]{3}\s*$/gm;
   const seen = new Set<string>();
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(reply)) !== null) {
@@ -339,8 +337,7 @@ export function parseProposedFileChanges(reply: string): ProposedFileChange[] {
     const key = path.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    changes.push({ path, content: match[2].replace(/
-$/, "") });
+    changes.push({ path, content: match[2].replace(/\n$/, "") });
   }
   return changes;
 }
