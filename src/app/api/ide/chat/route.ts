@@ -22,6 +22,7 @@ const MAX_MODEL_CHARS = 120;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_REQUESTS = 12;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+let requestsSinceSweep = 0;
 
 function rateLimitKey(req: NextRequest): string {
   // Forwarded headers are only trustworthy when the deployment proxy strips
@@ -33,6 +34,12 @@ function rateLimitKey(req: NextRequest): string {
 
 function isRateLimited(key: string): boolean {
   const now = Date.now();
+  requestsSinceSweep += 1;
+  // Opportunistically sweep expired buckets to keep memory bounded during normal traffic.
+  if (requestsSinceSweep >= 256) {
+    requestsSinceSweep = 0;
+    for (const [bucketKey, bucket] of rateBuckets) if (bucket.resetAt <= now) rateBuckets.delete(bucketKey);
+  }
   const current = rateBuckets.get(key);
   if (!current || current.resetAt <= now) {
     rateBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
@@ -76,6 +83,11 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   if (isRateLimited(rateLimitKey(req))) {
     return NextResponse.json({ error: "Too many requests. Please wait before retrying." }, { status: 429 });
+  }
+
+  const contentType = req.headers.get("content-type") || "";
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) {
+    return NextResponse.json({ error: "Content-Type must be application/json." }, { status: 415 });
   }
 
   const declaredLength = Number(req.headers.get('content-length') || 0);

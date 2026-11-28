@@ -135,3 +135,12 @@ test("assistant route enforces request size even without Content-Length", async 
     }
   });
 });
+
+
+test("assistant route rejects non-JSON content types", async () => {
+  await withEnv({ VELNOR_AI_API_KEY: undefined, VELNOR_AI_BASE_URL: "https://provider.example/v1" }, async () => {
+    const badRequest = new NextRequest("http://localhost/api/ide/chat", { method: "POST", headers: { "content-type": "text/plain", "x-real-ip": "test-content-type-1" }, body: JSON.stringify({ prompt: "hello" }) });
+    const response = await POST(badRequest);
+    assert.equal(response.status, 415);
+  });
+});
