@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createDefaultWorkspace, updateContent, addFile } from "../src/lib/ide/workspace";
-import { createSnapshot, restoreSnapshot, compareSnapshot, retainSnapshots } from "../src/lib/ide/snapshots";
+import { createSnapshot, restoreSnapshot, compareSnapshot, retainSnapshots, parseSnapshotHistory } from "../src/lib/ide/snapshots";
 
 test("snapshot copies workspace and restore recreates files", () => {
   const workspace = createDefaultWorkspace();
@@ -29,4 +29,29 @@ test("snapshot history is bounded and deduplicates ids", () => {
   const newer = createSnapshot(workspace, "s1", "replacement", "4");
   assert.deepEqual(retainSnapshots(history, newer, 2).map((item) => item.id), ["s2", "s1"]);
   assert.throws(() => retainSnapshots(history, newer, 0), /positive integer/);
+});
+
+test("checkpoint history loads from validated JSON and trims old entries to the byte budget", () => {
+  const workspace = createDefaultWorkspace();
+  const old = createSnapshot({ ...workspace, files: updateContent(workspace.files, workspace.activeId, "x".repeat(2000)) }, "old", "old", "1");
+  const newest = createSnapshot(workspace, "new", "new", "2");
+  const budget = new TextEncoder().encode(JSON.stringify([newest])).byteLength + 10;
+  const retained = retainSnapshots([old], newest, 20, budget);
+  assert.deepEqual(retained.map((item) => item.id), ["new"]);
+  assert.deepEqual(parseSnapshotHistory(JSON.stringify(retained)).map((item) => item.id), ["new"]);
+});
+
+test("checkpoint history rejects malformed JSON, duplicate ids, paths and invalid entry paths", () => {
+  const snapshot = createSnapshot(createDefaultWorkspace(), "s1", "baseline", "a");
+  assert.throws(() => parseSnapshotHistory("{invalid"), /valid JSON/);
+  assert.throws(() => parseSnapshotHistory(JSON.stringify([snapshot, snapshot])), /ids must be unique/);
+  const duplicatePaths = { ...snapshot, files: [...snapshot.files, { ...snapshot.files[0], id: "other" }] };
+  assert.throws(() => parseSnapshotHistory(JSON.stringify([duplicatePaths])), /duplicate file paths/);
+  assert.throws(() => parseSnapshotHistory(JSON.stringify([{ ...snapshot, entry: "../escape.html" }])), /Paths cannot escape/);
+});
+
+test("a checkpoint larger than the configured history budget is rejected", () => {
+  const workspace = createDefaultWorkspace();
+  const large = createSnapshot({ ...workspace, files: updateContent(workspace.files, workspace.activeId, "x".repeat(3000)) }, "large", "large", "a");
+  assert.throws(() => retainSnapshots([], large, 20, 1000), /exceeds the checkpoint-history byte limit/);
 });
