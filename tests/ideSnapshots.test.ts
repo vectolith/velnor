@@ -53,5 +53,5 @@ test("checkpoint history rejects malformed JSON, duplicate ids, paths and invali
 test("a checkpoint larger than the configured history budget is rejected", () => {
   const workspace = createDefaultWorkspace();
   const large = createSnapshot({ ...workspace, files: updateContent(workspace.files, workspace.activeId, "x".repeat(3000)) }, "large", "large", "a");
-  assert.throws(() => retainSnapshots([], large, 20, 1000), /exceeds the 4 MB checkpoint-history limit/);
+  assert.throws(() => retainSnapshots([], large, 20, 1000), /exceeds the checkpoint-history byte limit/);
 });
