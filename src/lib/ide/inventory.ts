@@ -12,7 +12,7 @@ export type ProjectInventory = {
 const sourceExtensions: Record<string, string> = {
   ".ts": "TypeScript", ".tsx": "TypeScript/React", ".js": "JavaScript",
   ".jsx": "JavaScript/React", ".mjs": "JavaScript", ".css": "CSS",
-  ".html": "HTML", ".json": "JSON", ".md": "Markdown",
+  ".html": "HTML", ".json": "JSON", ".md": "Markdown",\n  ".py": "Python", ".php": "PHP", ".java": "Java", ".c": "C", ".h": "C/header", ".cpp": "C++", ".cc": "C++", ".cs": "C#", ".go": "Go", ".rs": "Rust", ".sql": "SQL", ".yaml": "YAML", ".yml": "YAML", ".xml": "XML", ".sh": "Shell", ".toml": "TOML",
 };
 
 function extension(path: string): string {
