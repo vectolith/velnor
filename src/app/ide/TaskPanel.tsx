@@ -33,9 +33,14 @@ export default function TaskPanel({ onClose }: Props) {
   }, []);
 
   function commit(next: TaskLedger) {
+    const raw = JSON.stringify(next);
+    if (new TextEncoder().encode(raw).byteLength > TASK_LEDGER_MAX_BYTES) {
+      setNotice("Task ledger exceeds the 1 MB limit. Export a backup or remove older tasks/events.");
+      return;
+    }
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      setLedger(next);
+      window.localStorage.setItem(STORAGE_KEY, raw);
+      setLedger(parseTaskLedger(raw));
       setNotice("Saved in this browser.");
     } catch {
       setNotice("Storage write failed. The change is not persisted; export a backup or free browser storage.");
@@ -104,6 +109,7 @@ export default function TaskPanel({ onClose }: Props) {
 
   async function importLedger(file: File | undefined) {
     if (!file) return;
+    if (file.size > TASK_LEDGER_MAX_BYTES) { setNotice("Task ledger backup exceeds the 1 MB limit."); if (importRef.current) importRef.current.value = ""; return; }
     try {
       const next = parseTaskLedger(await file.text());
       commit(next);
@@ -151,7 +157,7 @@ export default function TaskPanel({ onClose }: Props) {
             {task.status === "validating" ? (
               <div className="ide-task-evidence">
                 <label>Validation checks, one per line</label>
-                <textarea className="ide-textarea" rows={3} value={evidence[task.id] ?? ""} onChange={(event) => setEvidence((current) => ({ ...current, [task.id]: event.target.value }))} placeholder="Unit tests passed\nTypecheck passed\nBuild passed" />
+                <textarea className="ide-textarea" rows={3} value={evidence[task.id] ?? ""} onChange={(event) => setEvidence((current) => ({ ...current, [task.id]: event.target.value }))} placeholder="Unit tests passed\nTypecheck passed\nBuild passed" maxLength={4_200} />
                 <label className="ide-task-confirm"><input type="checkbox" checked={confirmed[task.id] ?? false} onChange={(event) => setConfirmed((current) => ({ ...current, [task.id]: event.target.checked }))} /> I confirm each listed check passed</label>
                 <button className="ide-button" data-primary="true" onClick={() => finish(task)} disabled={!confirmed[task.id] || !(evidence[task.id] ?? "").trim()}><CheckCircle2 size={13} /> Record completion</button>
               </div>
