@@ -28,7 +28,7 @@ function historySize(history: WorkspaceSnapshot[]): number {
 function trimHistory(history: WorkspaceSnapshot[], limit: number, maxBytes: number): WorkspaceSnapshot[] {
   const retained = history.slice(-limit);
   while (retained.length && historySize(retained) > maxBytes) retained.shift();
-  if (history.length && !retained.length) throw new Error("The newest checkpoint exceeds the 4 MB checkpoint-history limit.");
+  if (history.length && !retained.length) throw new Error("The newest checkpoint exceeds the checkpoint-history byte limit.");
   return retained;
 }
 
