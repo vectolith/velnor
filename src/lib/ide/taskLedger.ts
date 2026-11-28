@@ -2,12 +2,14 @@ import { createTask, retainTaskEvents, type IdeTask, type TaskStatus, TASK_EVENT
 
 export const TASK_LEDGER_SCHEMA = 1;
 export const TASK_LEDGER_LIMIT = 50;
+export const TASK_LEDGER_MAX_BYTES = 1_000_000;
 export type TaskLedger = { schemaVersion: 1; tasks: IdeTask[] };
 const validStatuses: TaskStatus[] = ["queued", "planning", "executing", "validating", "completed", "blocked", "cancelled"];
 
 export function emptyTaskLedger(): TaskLedger { return { schemaVersion: TASK_LEDGER_SCHEMA, tasks: [] }; }
 
 export function parseTaskLedger(raw: string): TaskLedger {
+  if (new TextEncoder().encode(raw).byteLength > TASK_LEDGER_MAX_BYTES) throw new Error("Task ledger backup exceeds the 1 MB limit.");
   const parsed: unknown = JSON.parse(raw);
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Task ledger must be an object.");
   const value = parsed as { schemaVersion?: unknown; tasks?: unknown };
