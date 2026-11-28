@@ -1,8 +1,7 @@
 # Velnor IDE
 
 Velnor is a single-file-workspace, VS Code-class code editor that runs in the browser.
-The root path redirects to `/ide`; there is no messaging, chat-agent, or Cloudflare
-deployment surface in this repository anymore.
+The root path redirects to `/ide`; 
 
 ## What it does
 
@@ -16,7 +15,7 @@ deployment surface in this repository anymore.
 ## Run it
 
 ```bash
-npm install
+npm ci
 npm run dev      # http://localhost:3000/ide
 ```
 
@@ -66,11 +65,11 @@ This repository can deploy the browser IDE separately from the existing Velnor h
 Deployment uses the OpenNext Cloudflare adapter and Wrangler. From a Node.js 22 environment:
 
 ```bash
-npm install
+npm ci
 npm run cf:build
 npm run cf:preview
 # deploy when credentials are configured:
 npm run cf:deploy
 ```
 
-For GitHub Actions deployment, configure repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token should be scoped to the account with Workers Scripts write permissions. The deployment workflow is triggered by main-branch changes to application/deployment files or manually.
+For GitHub Actions deployment, configure repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token should be scoped to the account with Workers Scripts write permissions. GitHub Actions deployment is manual only (workflow dispatch); it validates and deploys the main branch after the credentials are configured.
