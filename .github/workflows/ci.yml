@@ -2,8 +2,7 @@ name: Velnor IDE CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
 
 permissions:
@@ -16,7 +15,7 @@ concurrency:
 jobs:
   build-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -24,42 +23,46 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node-version }}
-          cache: "npm"
-
+          cache: npm
       - name: Install dependencies
         run: npm ci
-
       - name: Run unit tests
         run: npm test
-
       - name: TypeScript typecheck
         run: npm run typecheck
-
-      - name: Build production Next.js standalone bundle
+      - name: Build production Next.js bundle
         run: npm run build
-
-      - name: Verify the IDE against the standalone production server
+      - name: Verify the production server
         run: |
-          mkdir -p .next/standalone/.next
-          cp -R .next/static .next/standalone/.next/static
-          if [ -d public ]; then cp -R public .next/standalone/public; fi
-          PORT=3000 HOSTNAME=127.0.0.1 nohup node .next/standalone/server.js > server.log 2>&1 &
+          PORT=3000 HOSTNAME=127.0.0.1 nohup npm run start -- -p 3000 > server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-          npm run verify
+          VELNOR_URL=http://localhost:3000 npm run verify
           echo "--- server.log ---"
           tail -50 server.log
-
+      - name: Build Cloudflare Worker with OpenNext
+        if: matrix.node-version == 26
+        run: npm run cf:build
+      - name: Wrangler deploy dry-run (no upload)
+        if: matrix.node-version == 26
+        run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
+      - name: Smoke-test local Worker runtime
+        if: matrix.node-version == 26
+        run: |
+          nohup npx wrangler dev --local --port 8787 > worker.log 2>&1 &
+          WORKER_PID=$!
+          trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+          VELNOR_URL=http://localhost:8787 npm run verify
+          echo "--- worker.log ---"
+          tail -80 worker.log
       - name: Build Node 26 Alpine Docker image
         if: matrix.node-version == 26
         run: docker build --tag velnor-ci:latest .
-
-      - name: Smoke-test the Node 26 Alpine Docker image
+      - name: Smoke-test Docker image
         if: matrix.node-version == 26
         run: |
           docker run --detach --name velnor-ci --publish 8080:8080 velnor-ci:latest

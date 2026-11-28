@@ -1,8 +1,7 @@
 # Velnor IDE
 
 Velnor is a single-file-workspace, VS Code-class code editor that runs in the browser.
-The root path redirects to `/ide`; there is no messaging, chat-agent, or Cloudflare
-deployment surface in this repository anymore.
+The root path redirects to `/ide`; the IDE can be deployed independently to Cloudflare Workers.
 
 ## Product direction
 
@@ -77,3 +76,19 @@ docs/SECURITY-READINESS.md security review and deployment checklist
 ```
 
 Model training notebooks and run artifacts live in Models-by-vectolith, not here.
+
+## Cloudflare Workers deployment
+
+The separate IDE Worker is named `velnor` and uses **https://velnor.vectolith.workers.dev**. It does not replace the headless service.
+
+From a Node.js 26 environment:
+
+```bash
+npm ci
+npm run cf:build
+npm run cf:preview
+# deploy only after credentials are configured:
+npm run cf:deploy
+```
+
+The GitHub Actions deployment is manual (`workflow_dispatch`). Configure repository secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` with Workers Scripts write permissions before running it. CI validates the Next.js production server and the OpenNext/Wrangler runtime before deployment.
