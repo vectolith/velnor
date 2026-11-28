@@ -26,3 +26,18 @@ function FileIcon({ path }: { path: string }) {
   return <FileText size={15} strokeWidth={1.7} />;
 }
 
+export default function FileTree({ files, activeId, onSelect, onAdd }: FileTreeProps) {
+  const ordered = sortFiles(files);
+  return (
+    <aside className="ide-file-tree" aria-label="File explorer">
+      <div className="ide-file-tree-head"><span>EXPLORER</span><button type="button" onClick={onAdd} title="New file" aria-label="New file"><Plus size={15}/></button></div>
+      <div className="ide-file-tree-list">
+        {ordered.map((file) => (
+          <button type="button" key={file.id} className={"ide-file-tree-item"+(file.id===activeId ? " is-active":"")} onClick={() => onSelect(file.id)} title={file.path}>
+            <FileIcon path={file.path}/><span>{file.path}</span>
+          </button>
+        ))}
+      </div>
+    </aside>
+  );
+}
