@@ -180,6 +180,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not reach the model provider. Check the endpoint and try again." }, { status: 502 });
   }
 
+  if (!upstream.ok) {
+    try { await upstream.body?.cancel(); } catch {}
+    return NextResponse.json(
+      { error: "The model provider returned HTTP " + upstream.status + ". Check provider configuration and credentials." },
+      { status: 502 },
+    );
+  }
+
+  const upstreamContentType = upstream.headers.get("content-type") || "";
+  if (!/^application\/json(?:\s*;|$)/i.test(upstreamContentType)) {
+    try { await upstream.body?.cancel(); } catch {}
+    return NextResponse.json({ error: "The provider returned an invalid response type." }, { status: 502 });
+  }
+
   const declaredResponseLength = Number(upstream.headers.get('content-length') || 0);
   if (declaredResponseLength > MAX_PROVIDER_RESPONSE_BYTES) {
     return NextResponse.json({ error: 'The provider response exceeded the allowed size.' }, { status: 502 });
@@ -212,14 +226,6 @@ export async function POST(req: NextRequest) {
     payload = JSON.parse(raw);
   } catch {
     payload = null;
-  }
-
-  if (!upstream.ok) {
-    // Avoid echoing raw provider bodies: they may contain sensitive diagnostics.
-    return NextResponse.json(
-      { error: "The model provider returned HTTP " + upstream.status + ". Check provider configuration and credentials." },
-      { status: 502 },
-    );
   }
 
   const choice = (payload as { choices?: { message?: { content?: unknown } }[] } | null)?.choices?.[0];
