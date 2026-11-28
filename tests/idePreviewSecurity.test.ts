@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildPreviewDocument } from "../src/lib/ide/workspace";
-import { createDefaultWorkspace, addFile, updateContent } from "../src/lib/ide/workspace";
+import { createDefaultWorkspace, updateContent } from "../src/lib/ide/workspace";
 
 test("preview inlines workspace-local assets but preserves unresolved references", () => {
   const workspace = createDefaultWorkspace();
@@ -41,9 +41,22 @@ test("preview escapes closing script sequence in user script content", () => {
   assert.doesNotMatch(html, /<script>\s*<\/script><script>alert\(1\)<\/script>/);
 });
 
-test("preview does not inline remote assets", () => {
-  let files = createDefaultWorkspace().files;
-  files = [...files, addFile(files, "remote.html", '<html><head><script src="https://example.invalid/x.js"></script><link href="https://example.invalid/x.css" rel="stylesheet"></head></html>')];
+test("preview preserves remote assets without attempting to inline them", () => {
+  const workspace = createDefaultWorkspace();
+  const index = workspace.files.find((f) => f.path === "index.html")!;
+  const remoteHtml = '<!doctype html><html><head><link rel="stylesheet" href="https://example.invalid/x.css"></head><body><script src="https://example.invalid/x.js"></script></body></html>';
+  const files = updateContent(workspace.files, index.id, remoteHtml);
   const html = buildPreviewDocument(files);
+  assert.match(html, /https:\\/\\/example\\.invalid\\/x\\.css/);
+  assert.match(html, /https:\\/\\/example\\.invalid\\/x\\.js/);
   assert.match(html, /connect-src 'none'/);
+});
+
+test("preview neutralizes a hostile closing style sequence in workspace CSS", () => {
+  const workspace = createDefaultWorkspace();
+  const hostile = "body{} </style><script>alert(1)</script>";
+  const files = updateContent(workspace.files, workspace.files.find((f) => f.path === "styles.css")!.id, hostile);
+  const html = buildPreviewDocument(files);
+  assert.doesNotMatch(html, /<style>\\s*body\\{\\}\\s*<\\/style><script>alert\\(1\\)<\\/script>/);
+  assert.match(html, /<\\\\\/style/);
 });
