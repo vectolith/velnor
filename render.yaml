@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: velnor-ide
-    runtime: docker
-    plan: free
-    region: singapore
-    dockerfilePath: ./Dockerfile
-    healthCheckPath: /ide
-    autoDeploy: true
