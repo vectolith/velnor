@@ -12,7 +12,8 @@ export type ProjectInventory = {
 const sourceExtensions: Record<string, string> = {
   ".ts": "TypeScript", ".tsx": "TypeScript/React", ".js": "JavaScript",
   ".jsx": "JavaScript/React", ".mjs": "JavaScript", ".css": "CSS",
-  ".html": "HTML", ".json": "JSON", ".md": "Markdown",\n  ".py": "Python", ".php": "PHP", ".java": "Java", ".c": "C", ".h": "C/header", ".cpp": "C++", ".cc": "C++", ".cs": "C#", ".go": "Go", ".rs": "Rust", ".sql": "SQL", ".yaml": "YAML", ".yml": "YAML", ".xml": "XML", ".sh": "Shell", ".toml": "TOML",
+  ".html": "HTML", ".json": "JSON", ".md": "Markdown",
+  ".py": "Python", ".php": "PHP", ".java": "Java", ".c": "C", ".h": "C/header", ".cpp": "C++", ".cc": "C++", ".cs": "C#", ".go": "Go", ".rs": "Rust", ".sql": "SQL", ".yaml": "YAML", ".yml": "YAML", ".xml": "XML", ".sh": "Shell", ".toml": "TOML",
 };
 
 function extension(path: string): string {
@@ -64,7 +65,11 @@ export function analyzeWorkspace(files: IdeFile[]): ProjectInventory {
 /** Build a bounded, file-aware assistant context. Never silently cut a file mid-content. */
 export function buildAssistantWorkspaceContext(files: IdeFile[], activePath?: string | null, maxChars = 48_000): string {
   const inventory = analyzeWorkspace(files);
-  const header = "Workspace inventory (heuristic, not a build):\\n" + JSON.stringify(inventory, null, 2) + "\\n\\nFiles:\\n";
+  const header = "Workspace inventory (heuristic, not a build):\
+" + JSON.stringify(inventory, null, 2) + "\
+\
+Files:\
+";
   if (header.length >= maxChars) return header.slice(0, maxChars);
   const ordered = [...files].sort((a, b) => {
     const priority = (file: IdeFile) => file.path === activePath ? 0 : file.path.toLowerCase() === "package.json" ? 1 : 2;
@@ -73,10 +78,14 @@ export function buildAssistantWorkspaceContext(files: IdeFile[], activePath?: st
   let output = header;
   let omitted = 0;
   for (const file of ordered) {
-    const section = "\\n--- " + file.path + " ---\\n" + file.content + "\\n";
+    const section = "\
+--- " + file.path + " ---\
+" + file.content + "\
+";
     if (output.length + section.length <= maxChars) output += section;
     else omitted += 1;
   }
-  if (omitted) output += "\\n[Context budget reached; " + omitted + " file(s) omitted whole. Ask to inspect specific files.]";
+  if (omitted) output += "\
+[Context budget reached; " + omitted + " file(s) omitted whole. Ask to inspect specific files.]";
   return output;
 }
