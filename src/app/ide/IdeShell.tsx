@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
-  Github,
+  GitBranch,
   Upload,
   History,
   FilePlus2,
@@ -401,7 +401,7 @@ setReady(true);
         {dirtyIds.size > 0 ? <span className="ide-dirty">unsaved</span> : null}
         <input ref={importInputRef} type="file" multiple hidden accept=".json,.html,.htm,.css,.js,.jsx,.ts,.tsx,.md,.txt,.svg,.xml,.csv" onChange={(event) => void importWorkspaceFiles(event.target.files)} />
         <div className="ide-topbar-actions">
-          <button type="button" className="ide-icon-button" onClick={() => setGithubOpen(true)} aria-label="GitHub repositories" title="GitHub"><Github size={16} strokeWidth={1.6} /></button>
+          <button type="button" className="ide-icon-button" onClick={() => setGithubOpen(true)} aria-label="GitHub repositories" title="GitHub"><GitBranch size={16} strokeWidth={1.6} /></button>
           <button type="button" className="ide-icon-button" onClick={() => setPaletteOpen(true)} aria-label="Commands">
             <Search size={16} strokeWidth={1.6} />
           </button>
