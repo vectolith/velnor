@@ -10,7 +10,7 @@ export type Workspace = {
   activeId: string;
 };
 
-export type IdeLanguage = "html" | "css" | "javascript" | "typescript" | "json" | "markdown" | "plaintext";
+export type IdeLanguage = "html" | "css" | "javascript" | "typescript" | "json" | "markdown" | "python" | "php" | "java" | "c" | "cpp" | "csharp" | "go" | "rust" | "sql" | "yaml" | "xml" | "shell" | "dockerfile" | "toml" | "plaintext";
 
 const MAX_FILES = 40;
 const MAX_FILE_BYTES = 512 * 1024;
@@ -47,7 +47,7 @@ export function detectLanguage(path: string): IdeLanguage {
   if (name.endsWith(".html") || name.endsWith(".htm")) return "html";
   if (name.endsWith(".css")) return "css";
   if (name.endsWith(".json")) return "json";
-  if (name.endsWith(".md") || name.endsWith(".markdown")) return "markdown";
+  if (name.endsWith(".md") || name.endsWith(".markdown")) return "markdown";\n  if (name.endsWith(".py")) return "python";\n  if (name.endsWith(".php")) return "php";\n  if (name.endsWith(".java")) return "java";\n  if (name.endsWith(".c")) return "c";\n  if (name.endsWith(".h")) return "c";\n  if (name.endsWith(".cpp") || name.endsWith(".cc") || name.endsWith(".cxx")) return "cpp";\n  if (name.endsWith(".cs")) return "csharp";\n  if (name.endsWith(".go")) return "go";\n  if (name.endsWith(".rs")) return "rust";\n  if (name.endsWith(".sql")) return "sql";\n  if (name.endsWith(".yaml") || name.endsWith(".yml")) return "yaml";\n  if (name.endsWith(".xml")) return "xml";\n  if (name.endsWith(".sh") || name.endsWith(".bash")) return "shell";\n  if (name === "dockerfile" || name.endsWith("/dockerfile")) return "dockerfile";\n  if (name.endsWith(".toml")) return "toml";
   if (name.endsWith(".ts") || name.endsWith(".tsx")) return "typescript";
   if (name.endsWith(".js") || name.endsWith(".jsx") || name.endsWith(".mjs")) return "javascript";
   return "plaintext";
