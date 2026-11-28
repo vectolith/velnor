@@ -401,7 +401,7 @@ setReady(true);
         {dirtyIds.size > 0 ? <span className="ide-dirty">unsaved</span> : null}
         <input ref={importInputRef} type="file" multiple hidden accept=".json,.html,.htm,.css,.js,.jsx,.ts,.tsx,.md,.txt,.svg,.xml,.csv" onChange={(event) => void importWorkspaceFiles(event.target.files)} />
         <div className="ide-topbar-actions"><span className="ide-topbar-status">Workspace</span></div>
-      </header>>
+      </header>
 
       <div className={"ide-body" + (sidebarOpen ? "" : " is-collapsed")}>
         <nav className="ide-activity-rail" aria-label="IDE activity">
