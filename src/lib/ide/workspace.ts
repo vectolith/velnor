@@ -294,7 +294,7 @@ function inlineStyles(document: string, files: IdeFile[], entryPath: string): st
     const resolved = resolvePreviewAsset(entryPath, String(href));
     const target = resolved ? files.find((file) => file.path === resolved) : undefined;
     if (!target) return match;
-    return "<style>\n" + target.content + "\n</style>";
+    const safe = target.content.replace(/<\\/style/gi, "<\\\\/style");\n    return "<style>\n" + safe + "\n</style>";
   });
 }
 
