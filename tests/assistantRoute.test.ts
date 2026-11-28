@@ -44,6 +44,7 @@ test("assistant route forwards valid prompts and returns provider content", asyn
       assert.equal(response.status, 200);
       assert.deepEqual(await response.json(), { reply: "generated reply", model: "test-model" });
       assert.equal(captured?.method, "POST");
+      assert.equal(captured?.redirect, "error");
       assert.equal(new Headers(captured?.headers).get("authorization"), "Bearer test-provider-key");
       assert.ok(String(captured?.body).includes('"prompt"') === false);
       assert.ok(String(captured?.body).includes('"content":"hello"'));

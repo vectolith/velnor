@@ -148,6 +148,7 @@ export async function POST(req: NextRequest) {
   try {
     upstream = await fetch(baseUrl + "/chat/completions", {
       method: "POST",
+      redirect: "error",
       headers: {
         "content-type": "application/json",
         authorization: "Bearer " + apiKey,
