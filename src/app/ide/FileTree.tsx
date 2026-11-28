@@ -1,6 +1,6 @@
 "use client";
 
-import { FileCode2, FileJson, FileText, FileType2, Plus } from "lucide-react";
+import { FileCode2, FileJson, FileText, FileType2, Plus, FileImage, FileSpreadsheet, FileTerminal, FileCog, FileSymlink, FileArchive } from "lucide-react";
 import { detectLanguage, sortFiles, type IdeFile } from "../../lib/ide/workspace";
 
 type FileTreeProps = {
@@ -11,38 +11,18 @@ type FileTreeProps = {
 };
 
 function FileIcon({ path }: { path: string }) {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
   const language = detectLanguage(path);
-  if (language === "json") return <FileJson size={14} strokeWidth={1.6} />;
-  if (language === "html" || language === "css") return <FileCode2 size={14} strokeWidth={1.6} />;
-  if (language === "javascript" || language === "typescript") return <FileType2 size={14} strokeWidth={1.6} />;
-  return <FileText size={14} strokeWidth={1.6} />;
+  if (language === "json" || ["json", "jsonc"].includes(ext)) return <FileJson size={15} strokeWidth={1.7} />;
+  if (["html", "htm", "css", "scss", "sass", "less"].includes(ext)) return <FileCode2 size={15} strokeWidth={1.7} />;
+  if (["js", "jsx", "ts", "tsx", "mjs", "cjs"].includes(ext)) return <FileType2 size={15} strokeWidth={1.7} />;
+  if (["md", "mdx", "txt", "rst"].includes(ext)) return <FileText size={15} strokeWidth={1.7} />;
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "ico"].includes(ext)) return <FileImage size={15} strokeWidth={1.7} />;
+  if (["csv", "xls", "xlsx"].includes(ext)) return <FileSpreadsheet size={15} strokeWidth={1.7} />;
+  if (["sh", "bash", "zsh", "ps1"].includes(ext)) return <FileTerminal size={15} strokeWidth={1.7} />;
+  if (["yml", "yaml", "toml", "ini", "env"].includes(ext)) return <FileCog size={15} strokeWidth={1.7} />;
+  if (["zip", "gz", "tar", "7z"].includes(ext)) return <FileArchive size={15} strokeWidth={1.7} />;
+  if (["lnk"].includes(ext)) return <FileSymlink size={15} strokeWidth={1.7} />;
+  return <FileText size={15} strokeWidth={1.7} />;
 }
 
-export default function FileTree({ files, activeId, onSelect, onAdd }: FileTreeProps) {
-  return (
-    <aside className="ide-sidebar">
-      <div className="ide-sidebar-head">
-        <span>Files</span>
-        <button className="ide-button" type="button" onClick={onAdd} aria-label="New file" title="New file">
-          <Plus size={13} strokeWidth={2} />
-        </button>
-      </div>
-      <div className="ide-file-list">
-        {files.length === 0 ? <div className="ide-empty">No files yet.</div> : null}
-        {sortFiles(files).map((file) => (
-          <button
-            key={file.id}
-            type="button"
-            className="ide-file"
-            data-active={file.id === activeId}
-            onClick={() => onSelect(file.id)}
-            title={file.path}
-          >
-            <FileIcon path={file.path} />
-            <span className="ide-file-name">{file.path}</span>
-          </button>
-        ))}
-      </div>
-    </aside>
-  );
-}
