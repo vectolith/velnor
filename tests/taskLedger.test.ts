@@ -1,33 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addLedgerTask, emptyTaskLedger, parseTaskLedger, replaceLedgerTask, TASK_LEDGER_LIMIT } from "../src/lib/ide/taskLedger";
-import { transitionTask } from "../src/lib/ide/tasks";
+import { addLedgerTask, emptyTaskLedger, parseTaskLedger, replaceLedgerTask, TASK_LEDGER_LIMIT, TASK_LEDGER_MAX_BYTES } from "../src/lib/ide/taskLedger";
+import { addTaskNote, completeTask, transitionTask, TASK_EVENT_LIMIT } from "../src/lib/ide/tasks";
 
-test("ledger creates tasks and rejects duplicate ids", () => {
-  const ledger = addLedgerTask(emptyTaskLedger(), "t1", "First task", "a");
-  assert.equal(ledger.tasks[0].status, "queued");
-  assert.throws(() => addLedgerTask(ledger, "t1", "Duplicate", "b"), /already exists/);
-});
-
-test("ledger schema rejects corrupted and unsupported payloads", () => {
-  assert.throws(() => parseTaskLedger("not-json"));
-  assert.throws(() => parseTaskLedger(JSON.stringify({ schemaVersion: 2, tasks: [] })), /Unsupported/);
-  const duplicate = { schemaVersion: 1, tasks: [{ id: "x", title: "a", status: "queued", createdAt: "a", updatedAt: "a", events: [] }, { id: "x", title: "b", status: "queued", createdAt: "a", updatedAt: "a", events: [] }] };
-  assert.throws(() => parseTaskLedger(JSON.stringify(duplicate)), /unique/);
-});
-
-test("ledger limits retained tasks and replaces an existing task", () => {
-  let ledger = emptyTaskLedger();
-  for (let i = 0; i < TASK_LEDGER_LIMIT + 5; i++) ledger = addLedgerTask(ledger, "t" + i, "Task " + i, String(i));
-  assert.equal(ledger.tasks.length, TASK_LEDGER_LIMIT);
-  assert.equal(ledger.tasks[0].id, "t" + (TASK_LEDGER_LIMIT + 4));
-  const changed = transitionTask(ledger.tasks[0], "planning", "later");
-  const next = replaceLedgerTask(ledger, changed);
-  assert.equal(next.tasks[0].status, "planning");
-  assert.throws(() => replaceLedgerTask(next, { ...changed, id: "missing" }), /not found/);
-});
-
-test("ledger validates task events and evidence shape", () => {
-  const bad = { schemaVersion: 1, tasks: [{ id: "x", title: "a", status: "queued", createdAt: "a", updatedAt: "a", events: [{ type: "validation", at: "a", detail: "bad", evidence: { at: "a", checks: [{ name: 3, passed: true }] } }] }] };
-  assert.throws(() => parseTaskLedger(JSON.stringify(bad)), /evidence/);
-});
+test("ledger creates tasks and rejects duplicate ids",()=>{const ledger=addLedgerTask(emptyTaskLedger(),"t1","First task","a");assert.equal(ledger.tasks[0].status,"queued");assert.throws(()=>addLedgerTask(ledger,"t1","Duplicate","b"),/already exists/);});
+test("ledger schema rejects corrupted and unsupported payloads",()=>{assert.throws(()=>parseTaskLedger("not-json"));assert.throws(()=>parseTaskLedger(JSON.stringify({schemaVersion:2,tasks:[]})),/Unsupported/);const duplicate={schemaVersion:1,tasks:[{id:"x",title:"a",status:"queued",createdAt:"a",updatedAt:"a",events:[]},{id:"x",title:"b",status:"queued",createdAt:"a",updatedAt:"a",events:[]}]};assert.throws(()=>parseTaskLedger(JSON.stringify(duplicate)),/unique/);});
+test("ledger limits retained tasks and replaces an existing task",()=>{let ledger=emptyTaskLedger();for(let i=0;i<TASK_LEDGER_LIMIT+5;i++)ledger=addLedgerTask(ledger,"t"+i,"Task "+i,String(i));assert.equal(ledger.tasks.length,TASK_LEDGER_LIMIT);assert.equal(ledger.tasks[0].id,"t"+(TASK_LEDGER_LIMIT+4));const changed=transitionTask(ledger.tasks[0],"planning","later");const next=replaceLedgerTask(ledger,changed);assert.equal(next.tasks[0].status,"planning");assert.throws(()=>replaceLedgerTask(next,{...changed,id:"missing"}),/not found/);});
+test("ledger validates task events and evidence shape",()=>{const bad={schemaVersion:1,tasks:[{id:"x",title:"a",status:"queued",createdAt:"a",updatedAt:"a",events:[{type:"validation",at:"a",detail:"bad",evidence:{at:"a",checks:[{name:3,passed:true}]}}]}]};assert.throws(()=>parseTaskLedger(JSON.stringify(bad)),/evidence/);});
+test("imported completed tasks without passing evidence are downgraded to blocked",()=>{const raw=JSON.stringify({schemaVersion:1,tasks:[{id:"x",title:"task",status:"completed",createdAt:"a",updatedAt:"b",events:[{type:"created",at:"a",detail:"task",status:"queued"}]}]});const ledger=parseTaskLedger(raw);assert.equal(ledger.tasks[0].status,"blocked");assert.ok(ledger.tasks[0].events.at(-1)?.detail.includes("downgraded"));});
+test("ledger event retention remains bounded after replacement",()=>{let task=addLedgerTask(emptyTaskLedger(),"x","task","a").tasks[0];for(let i=0;i<TASK_EVENT_LIMIT+5;i++)task=addTaskNote(task,"note "+i,String(i));const ledger=replaceLedgerTask({schemaVersion:1,tasks:[task]},task);assert.equal(ledger.tasks[0].events.length,TASK_EVENT_LIMIT);});
+test("oversized task ledger imports are rejected",()=>{assert.throws(()=>parseTaskLedger(" ".repeat(TASK_LEDGER_MAX_BYTES+1)),/1 MB/);});
+test("completed tasks with passing evidence survive import",()=>{let task=addLedgerTask(emptyTaskLedger(),"x","task","a").tasks[0];task=transitionTask(task,"planning","b");task=transitionTask(task,"executing","c");task=transitionTask(task,"validating","d");task=completeTask(task,{at:"e",checks:[{name:"tests",passed:true}]});const ledger=parseTaskLedger(JSON.stringify({schemaVersion:1,tasks:[task]}));assert.equal(ledger.tasks[0].status,"completed");});
