@@ -25,8 +25,9 @@ const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 let requestsSinceSweep = 0;
 
 function rateLimitKey(req: NextRequest): string {
-  // Forwarded headers are only trustworthy when the deployment proxy strips
-  // client-supplied values and injects its own. Otherwise use a shared fallback.
+  // Proxy headers are untrusted unless the deployment explicitly opts in and
+  // its ingress strips client-supplied values and injects normalized identity.
+  if (process.env.VELNOR_TRUST_PROXY_HEADERS !== "true") return "untrusted-proxy";
   const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const candidate = forwarded || req.headers.get("x-real-ip") || "unknown";
   return candidate.slice(0, 128);

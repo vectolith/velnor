@@ -10,7 +10,7 @@ Please do not disclose exploitable vulnerabilities in public issues. Contact the
 - Workspace data and provider keys are stored in the browser; local browser storage is not a secure vault.
 - The assistant API accepts provider keys from the client or uses deployment environment configuration.
 - The assistant endpoint's in-memory rate limiter is process-local and is not a substitute for edge-level or distributed abuse controls.
-- Deployments should use HTTPS, restrict secrets, and configure the hosting proxy so client IP handling is trustworthy.
+- Deployments should use HTTPS and restrict secrets. Assistant rate-limit identity ignores proxy headers unless `VELNOR_TRUST_PROXY_HEADERS=true`; only opt in when the ingress strips client-supplied headers and injects normalized identity.
 
 ## Supported security checks
 

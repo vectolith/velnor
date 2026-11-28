@@ -11,7 +11,8 @@ This document distinguishes automated checks from controls that must be configur
 - [x] Docker build and container smoke test
 - [x] Dependency audit for high/critical vulnerabilities
 - [x] Security headers configured in Next.js
-- [ ] API route adversarial integration tests (malformed JSON, size limits, abuse/rate-limit behavior, upstream timeout and error handling)
+- [x] API route adversarial integration tests (malformed JSON, size limits, abuse/rate-limit behavior, upstream timeout and error handling)
+- [x] Rate-limit identity ignores spoofable proxy headers by default; opt-in requires a normalized trusted ingress
 - [ ] Browser-level iframe preview security tests
 
 ## Deployment checklist
@@ -20,7 +21,7 @@ This document distinguishes automated checks from controls that must be configur
 - [ ] Secrets stored in deployment secret manager; never committed
 - [ ] Provider endpoint is trusted and controlled (server-configured base URL can direct server requests)
 - [ ] Edge/WAF rate limiting configured for assistant API
-- [ ] Proxy IP headers are configured and trustworthy; do not use client-supplied forwarded headers as identity without proxy normalization
+- [ ] Proxy IP headers are configured and trustworthy; do not enable `VELNOR_TRUST_PROXY_HEADERS` without proxy normalization
 - [ ] Monitoring and alerting configured for errors, abuse and resource consumption
 - [ ] Backup/restore and deployment rollback procedures exercised
 - [ ] Security reporting channel is enabled and monitored
