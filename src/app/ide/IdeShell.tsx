@@ -13,11 +13,13 @@ import {
   Search,
   Sparkles,
   Terminal,
+  ClipboardList,
 } from "lucide-react";
 import EditorPane from "./EditorPane";
 import FileTree from "./FileTree";
 import PreviewPane, { type ConsoleLine } from "./PreviewPane";
 import AiPanel from "./AiPanel";
+import TaskPanel from "./TaskPanel";
 import GitHubPanel from "./GitHubPanel";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
 import {
@@ -85,6 +87,7 @@ export function IdeShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(true);
   const [githubOpen, setGithubOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
   const [token, setToken] = useState("");
   const [ready, setReady] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -402,6 +405,7 @@ setReady(true);
         <input ref={importInputRef} type="file" multiple hidden accept=".json,.html,.htm,.css,.js,.jsx,.ts,.tsx,.md,.txt,.svg,.xml,.csv" onChange={(event) => void importWorkspaceFiles(event.target.files)} />
         <div className="ide-topbar-actions">
           <button type="button" className="ide-icon-button" onClick={() => setGithubOpen(true)} aria-label="GitHub repositories" title="GitHub"><GitBranch size={16} strokeWidth={1.6} /></button>
+          <button type="button" className="ide-icon-button" onClick={() => { setTasksOpen((value) => !value); setAiOpen(false); }} aria-label="Task ledger" title="Task ledger"><ClipboardList size={16} strokeWidth={1.6} /></button>
           <button type="button" className="ide-icon-button" onClick={() => setPaletteOpen(true)} aria-label="Commands">
             <Search size={16} strokeWidth={1.6} />
           </button>
@@ -430,7 +434,7 @@ setReady(true);
           <button
             type="button"
             className="ide-icon-button"
-            onClick={() => setAiOpen((value) => !value)}
+            onClick={() => { setAiOpen((value) => !value); setTasksOpen(false); }}
             aria-label="Toggle assistant"
           >
             <Sparkles size={16} strokeWidth={1.6} />
@@ -486,7 +490,7 @@ setReady(true);
           onClearConsole={() => setConsoleLines([])}
         />
 
-        {aiOpen ? (
+        {tasksOpen ? <TaskPanel onClose={() => setTasksOpen(false)} /> : null}\n\n        {aiOpen ? (
           <AiPanel
             token={token}
             onTokenChange={updateToken}
