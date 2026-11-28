@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createDefaultWorkspace, type IdeFile } from "../src/lib/ide/workspace";
-import { parseWorkspaceBundle, stageWorkspaceImport } from "../src/lib/ide/workspaceImport";
+import { createWorkspaceFromBundle, parseWorkspaceBundle, stageWorkspaceImport } from "../src/lib/ide/workspaceImport";
 
 const valid = JSON.stringify({schemaVersion:1,entry:"index.html",files:[{path:"index.html",content:"<html/>"},{path:"app.js",content:""}]});
 
@@ -22,4 +22,13 @@ test("import staging is atomic and respects file capacity",()=>{
   assert.equal(stageWorkspaceImport(current,bundle).length,5);
   const full: IdeFile[]=Array.from({length:39},(_,i)=>({id:String(i),path:"f"+i+".txt",content:""}));
   assert.throws(()=>stageWorkspaceImport(full,bundle),/40-file/);
+});
+
+test("legacy schema-less workspace bundles remain importable",()=>{
+  const legacy=JSON.stringify({entry:"src/main.html",files:[{path:"src/main.html",content:"<main/>"}]});
+  const parsed=parseWorkspaceBundle(legacy);
+  const restored=createWorkspaceFromBundle(parsed);
+  assert.equal(restored.entry,"src/main.html");
+  assert.equal(restored.files[0].path,"src/main.html");
+  assert.equal(restored.activeId,restored.files[0].id);
 });
