@@ -4,14 +4,14 @@ export type ValidationEvidence = { at: string; checks: ValidationCheck[]; summar
 export type TaskEvent = { type: "created" | "status" | "note" | "validation"; at: string; detail: string; status?: TaskStatus; evidence?: ValidationEvidence };
 export type IdeTask = { id: string; title: string; status: TaskStatus; createdAt: string; updatedAt: string; events: TaskEvent[] };
 
-export const TASK_EVENT_LIMIT = 200;
+export const TASK_EVENT_LIMIT = 100;
 export const TASK_TITLE_LIMIT = 500;
-export const TASK_NOTE_LIMIT = 2_000;
-export const TASK_EVENT_DETAIL_LIMIT = 2_000;
+export const TASK_NOTE_LIMIT = 1_000;
+export const TASK_EVENT_DETAIL_LIMIT = 1_000;
 export const TASK_VALIDATION_CHECK_LIMIT = 20;
 export const TASK_CHECK_NAME_LIMIT = 200;
-export const TASK_CHECK_DETAIL_LIMIT = 1_000;
-export const TASK_VALIDATION_SUMMARY_LIMIT = 1_000;
+export const TASK_CHECK_DETAIL_LIMIT = 500;
+export const TASK_VALIDATION_SUMMARY_LIMIT = 500;
 
 const transitions: Record<TaskStatus, readonly TaskStatus[]> = {
   queued: ["planning", "cancelled"], planning: ["executing", "blocked", "cancelled"],
@@ -32,7 +32,7 @@ export function transitionTask(task: IdeTask, next: TaskStatus, at: string, deta
   if (task.status === next) return task;
   if (!transitions[task.status].includes(next)) throw new Error("Invalid task transition: " + task.status + " → " + next);
   const note = detail?.trim() || ("Status changed to " + next);
-  if (note.length > TASK_EVENT_DETAIL_LIMIT) throw new Error("Task event details are limited to 2,000 characters.");
+  if (note.length > TASK_EVENT_DETAIL_LIMIT) throw new Error("Task event details are limited to 1,000 characters.");
   return { ...task, status: next, updatedAt: at, events: retainTaskEvents([...task.events, { type: "status", at, detail: note, status: next }]) };
 }
 
@@ -47,7 +47,7 @@ export function completeTask(task: IdeTask, evidence: ValidationEvidence): IdeTa
 export function addTaskNote(task: IdeTask, detail: string, at: string): IdeTask {
   const note = detail.trim();
   if (!note) throw new Error("Task notes cannot be empty.");
-  if (note.length > TASK_NOTE_LIMIT) throw new Error("Task notes are limited to 2,000 characters.");
+  if (note.length > TASK_NOTE_LIMIT) throw new Error("Task notes are limited to 1,000 characters.");
   return { ...task, updatedAt: at, events: retainTaskEvents([...task.events, { type: "note", at, detail: note }]) };
 }
 
