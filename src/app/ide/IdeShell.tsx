@@ -41,7 +41,7 @@ import {
   type IdeFile,
   type Workspace,
 } from "@/lib/ide/workspace";
-import { createSnapshot, restoreSnapshot, retainSnapshots, type WorkspaceSnapshot } from "@/lib/ide/snapshots";
+import { createSnapshot, parseSnapshotHistory, restoreSnapshot, retainSnapshots, type WorkspaceSnapshot } from "@/lib/ide/snapshots";
 import { buildAssistantWorkspaceContext } from "@/lib/ide/inventory";
 import { createWorkspaceFromBundle, parseWorkspaceBundle } from "@/lib/ide/workspaceImport";
 
@@ -102,7 +102,14 @@ export function IdeShell() {
 
   useEffect(() => {
     setWorkspace(readWorkspace());
-setReady(true);
+    try {
+      const raw = window.localStorage.getItem(SNAPSHOTS_KEY);
+      setSnapshots(raw ? parseSnapshotHistory(raw) : []);
+    } catch {
+      setSnapshots([]);
+      setToast({ text: "Saved checkpoint history could not be loaded. Create a new checkpoint after reviewing the stored data.", tone: "error" });
+    }
+    setReady(true);
   }, []);
 
   const notify = useCallback((text: string, tone: Toast["tone"] = "info") => {
@@ -317,20 +324,22 @@ setReady(true);
 
   const checkpoint = useCallback(() => {
     try {
-      const existing = JSON.parse(window.localStorage.getItem(SNAPSHOTS_KEY) ?? "[]") as WorkspaceSnapshot[];
+      const raw = window.localStorage.getItem(SNAPSHOTS_KEY);
+      const existing = raw ? parseSnapshotHistory(raw) : [];
       const next = createSnapshot(workspace, String(Date.now()), "Checkpoint " + new Date().toLocaleString(), new Date().toISOString());
-      const retained = retainSnapshots(existing, next, 20);
+      const retained = retainSnapshots(existing, next);
       window.localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(retained));
       setSnapshots(retained);
-      notify("Workspace checkpoint created.");
-    } catch {
-      notify("Could not create checkpoint.", "error");
+      notify(retained.length < existing.length + 1 ? "Checkpoint created; older checkpoints were trimmed to fit browser storage." : "Workspace checkpoint created.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not create checkpoint.", "error");
     }
   }, [notify, workspace]);
 
   const restoreCheckpoint = useCallback(() => {
     try {
-      const history = JSON.parse(window.localStorage.getItem(SNAPSHOTS_KEY) ?? "[]") as WorkspaceSnapshot[];
+      const raw = window.localStorage.getItem(SNAPSHOTS_KEY);
+      const history = raw ? parseSnapshotHistory(raw) : [];
       setSnapshots(history);
       if (!history.length) { notify("No checkpoints available."); return; }
       const choices = history.map((item, index) => index + ": " + item.label + " (" + item.createdAt + ")").join("\n");
@@ -345,8 +354,8 @@ setReady(true);
       persist(restored);
       setReloadKey((value) => value + 1);
       notify("Checkpoint restored.");
-    } catch {
-      notify("Could not restore checkpoint.", "error");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Could not restore checkpoint.", "error");
     }
   }, [notify, persist]);
 
