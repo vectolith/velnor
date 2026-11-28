@@ -37,7 +37,7 @@ test("assistant route forwards valid prompts and returns provider content", asyn
     let captured: RequestInit | undefined;
     globalThis.fetch = async (_input, init) => {
       captured = init;
-      return new Response(JSON.stringify({ choices: [{ message: { content: "  generated reply  " } }] }), { status: 200 });
+      return new Response(JSON.stringify({ choices: [{ message: { content: "  generated reply  " } }] }), { status: 200, headers: { "content-type": "application/json" } });
     };
     try {
       const response = await POST(request("hello", "test-success-1"));
@@ -72,7 +72,7 @@ test("assistant route does not disclose provider response bodies on upstream err
 test("assistant route rejects malformed successful provider payloads", async () => {
   await withEnv({ VELNOR_AI_API_KEY: undefined, VELNOR_AI_BASE_URL: "https://provider.example/v1" }, async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => new Response(JSON.stringify({ choices: [] }), { status: 200 });
+    globalThis.fetch = async () => new Response(JSON.stringify({ choices: [] }), { status: 200, headers: { "content-type": "application/json" } });
     try {
       const response = await POST(request("hello", "test-invalid-payload-1"));
       assert.equal(response.status, 502);
@@ -107,7 +107,7 @@ test("assistant route rejects UTF-8 prompts above the byte limit", async () => {
 test("assistant route caps streamed provider response bytes", async () => {
   await withEnv({ VELNOR_AI_API_KEY: undefined, VELNOR_AI_BASE_URL: "https://provider.example/v1" }, async () => {
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => new Response("x".repeat(2_000_001), { status: 200 });
+    globalThis.fetch = async () => new Response("x".repeat(2_000_001), { status: 200, headers: { "content-type": "application/json" } });
     try {
       const response = await POST(request("hello", "test-large-response-1"));
       assert.equal(response.status, 502);
