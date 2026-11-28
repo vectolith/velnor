@@ -47,7 +47,22 @@ export function detectLanguage(path: string): IdeLanguage {
   if (name.endsWith(".html") || name.endsWith(".htm")) return "html";
   if (name.endsWith(".css")) return "css";
   if (name.endsWith(".json")) return "json";
-  if (name.endsWith(".md") || name.endsWith(".markdown")) return "markdown";\n  if (name.endsWith(".py")) return "python";\n  if (name.endsWith(".php")) return "php";\n  if (name.endsWith(".java")) return "java";\n  if (name.endsWith(".c")) return "c";\n  if (name.endsWith(".h")) return "c";\n  if (name.endsWith(".cpp") || name.endsWith(".cc") || name.endsWith(".cxx")) return "cpp";\n  if (name.endsWith(".cs")) return "csharp";\n  if (name.endsWith(".go")) return "go";\n  if (name.endsWith(".rs")) return "rust";\n  if (name.endsWith(".sql")) return "sql";\n  if (name.endsWith(".yaml") || name.endsWith(".yml")) return "yaml";\n  if (name.endsWith(".xml")) return "xml";\n  if (name.endsWith(".sh") || name.endsWith(".bash")) return "shell";\n  if (name === "dockerfile" || name.endsWith("/dockerfile")) return "dockerfile";\n  if (name.endsWith(".toml")) return "toml";
+  if (name.endsWith(".md") || name.endsWith(".markdown")) return "markdown";
+  if (name.endsWith(".py")) return "python";
+  if (name.endsWith(".php")) return "php";
+  if (name.endsWith(".java")) return "java";
+  if (name.endsWith(".c")) return "c";
+  if (name.endsWith(".h")) return "c";
+  if (name.endsWith(".cpp") || name.endsWith(".cc") || name.endsWith(".cxx")) return "cpp";
+  if (name.endsWith(".cs")) return "csharp";
+  if (name.endsWith(".go")) return "go";
+  if (name.endsWith(".rs")) return "rust";
+  if (name.endsWith(".sql")) return "sql";
+  if (name.endsWith(".yaml") || name.endsWith(".yml")) return "yaml";
+  if (name.endsWith(".xml")) return "xml";
+  if (name.endsWith(".sh") || name.endsWith(".bash")) return "shell";
+  if (name === "dockerfile" || name.endsWith("/dockerfile")) return "dockerfile";
+  if (name.endsWith(".toml")) return "toml";
   if (name.endsWith(".ts") || name.endsWith(".tsx")) return "typescript";
   if (name.endsWith(".js") || name.endsWith(".jsx") || name.endsWith(".mjs")) return "javascript";
   return "plaintext";
@@ -72,11 +87,93 @@ export function languageLabel(language: IdeLanguage): string {
   }
 }
 
-const INDEX_HTML = '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <title>Velnor workspace</title>\n    <link rel="stylesheet" href="styles.css" />\n  </head>\n  <body>\n    <main class="card">\n      <h1>Hello from the Velnor IDE</h1>\n      <p id="clock">Loading…</p>\n      <button id="ping">Ping the console</button>\n    </main>\n    <script src="app.js"></script>\n  </body>\n</html>\n';
+const INDEX_HTML = '<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Velnor workspace</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="card">
+      <h1>Hello from the Velnor IDE</h1>
+      <p id="clock">Loading…</p>
+      <button id="ping">Ping the console</button>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>
+';
 
-const STYLES_CSS = ':root {\n  color-scheme: dark;\n  --ink: #e6edf3;\n  --muted: #8b98a5;\n  --accent: #7aa2f7;\n}\n\n* {\n  box-sizing: border-box;\n}\n\nbody {\n  margin: 0;\n  min-height: 100vh;\n  display: grid;\n  place-items: center;\n  background: radial-gradient(circle at 20% 20%, #1b2430, #0b0f14 70%);\n  color: var(--ink);\n  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;\n}\n\n.card {\n  padding: 2.5rem;\n  border-radius: 16px;\n  border: 1px solid #243042;\n  background: rgba(16, 22, 30, 0.85);\n  max-width: 32rem;\n}\n\nh1 {\n  margin: 0 0 0.75rem;\n  font-size: 1.5rem;\n}\n\np {\n  color: var(--muted);\n  margin: 0 0 1.5rem;\n}\n\nbutton {\n  appearance: none;\n  border: 1px solid var(--accent);\n  background: transparent;\n  color: var(--accent);\n  padding: 0.6rem 1rem;\n  border-radius: 8px;\n  font: inherit;\n  cursor: pointer;\n}\n\nbutton:hover {\n  background: rgba(122, 162, 247, 0.12);\n}\n';
+const STYLES_CSS = ':root {
+  color-scheme: dark;
+  --ink: #e6edf3;
+  --muted: #8b98a5;
+  --accent: #7aa2f7;
+}
 
-const APP_JS = 'const clock = document.getElementById("clock");\nconst ping = document.getElementById("ping");\n\nfunction tick() {\n  if (clock) clock.textContent = new Date().toLocaleTimeString();\n}\n\ntick();\nsetInterval(tick, 1000);\n\nping?.addEventListener("click", () => {\n  console.log("pong at", new Date().toISOString());\n});\n';
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(circle at 20% 20%, #1b2430, #0b0f14 70%);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.card {
+  padding: 2.5rem;
+  border-radius: 16px;
+  border: 1px solid #243042;
+  background: rgba(16, 22, 30, 0.85);
+  max-width: 32rem;
+}
+
+h1 {
+  margin: 0 0 0.75rem;
+  font-size: 1.5rem;
+}
+
+p {
+  color: var(--muted);
+  margin: 0 0 1.5rem;
+}
+
+button {
+  appearance: none;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  background: rgba(122, 162, 247, 0.12);
+}
+';
+
+const APP_JS = 'const clock = document.getElementById("clock");
+const ping = document.getElementById("ping");
+
+function tick() {
+  if (clock) clock.textContent = new Date().toLocaleTimeString();
+}
+
+tick();
+setInterval(tick, 1000);
+
+ping?.addEventListener("click", () => {
+  console.log("pong at", new Date().toISOString());
+});
+';
 
 function defaultEntryFiles(): IdeFile[] {
   return [
@@ -158,31 +255,56 @@ export function entryFile(files: IdeFile[]): IdeFile | undefined {
 }
 
 export const CONSOLE_BRIDGE =
-  "<script>\n" +
-  "(function () {\n" +
-  "  var send = function (level, args) {\n" +
-  "    try {\n" +
-  "      parent.postMessage({\n" +
-  "        source: \"velnor-ide-console\",\n" +
-  "        level: level,\n" +
-  "        text: Array.prototype.map.call(args, function (value) {\n" +
-  "          if (typeof value === \"string\") return value;\n" +
-  "          try { return JSON.stringify(value); } catch (e) { return String(value); }\n" +
-  "        }).join(\" \")\n" +
-  "      }, \"*\");\n" +
-  "    } catch (e) {}\n" +
-  "  };\n" +
-  "  [\"log\", \"info\", \"warn\", \"error\", \"debug\"].forEach(function (level) {\n" +
-  "    var original = console[level] ? console[level].bind(console) : function () {};\n" +
-  "    console[level] = function () {\n" +
-  "      send(level, arguments);\n" +
-  "      original.apply(console, arguments);\n" +
-  "    };\n" +
-  "  });\n" +
-  "  window.addEventListener(\"error\", function (event) {\n" +
-  "    send(\"error\", [event.message + (event.lineno ? \" (line \" + event.lineno + \")\" : \"\")]);\n" +
-  "  });\n" +
-  "})();\n" +
+  "<script>
+" +
+  "(function () {
+" +
+  "  var send = function (level, args) {
+" +
+  "    try {
+" +
+  "      parent.postMessage({
+" +
+  "        source: \"velnor-ide-console\",
+" +
+  "        level: level,
+" +
+  "        text: Array.prototype.map.call(args, function (value) {
+" +
+  "          if (typeof value === \"string\") return value;
+" +
+  "          try { return JSON.stringify(value); } catch (e) { return String(value); }
+" +
+  "        }).join(\" \")
+" +
+  "      }, \"*\");
+" +
+  "    } catch (e) {}
+" +
+  "  };
+" +
+  "  [\"log\", \"info\", \"warn\", \"error\", \"debug\"].forEach(function (level) {
+" +
+  "    var original = console[level] ? console[level].bind(console) : function () {};
+" +
+  "    console[level] = function () {
+" +
+  "      send(level, arguments);
+" +
+  "      original.apply(console, arguments);
+" +
+  "    };
+" +
+  "  });
+" +
+  "  window.addEventListener(\"error\", function (event) {
+" +
+  "    send(\"error\", [event.message + (event.lineno ? \" (line \" + event.lineno + \")\" : \"\")]);
+" +
+  "  });
+" +
+  "})();
+" +
   "</script>";
 
 function resolvePreviewAsset(entryPath: string, reference: string): string | null {
@@ -198,7 +320,9 @@ function inlineStyles(document: string, files: IdeFile[], entryPath: string): st
     const resolved = resolvePreviewAsset(entryPath, String(href));
     const target = resolved ? files.find((file) => file.path === resolved) : undefined;
     if (!target) return match;
-    return "<style>\n" + target.content + "\n</style>";
+    return "<style>
+" + target.content + "
+</style>";
   });
 }
 
@@ -210,7 +334,9 @@ function inlineScripts(document: string, files: IdeFile[], entryPath: string): s
       const target = resolved ? files.find((file) => file.path === resolved) : undefined;
       if (!target) return match;
       const safe = target.content.replace(/<\/script/gi, "<\\/script");
-      return "<script>\n" + safe + "\n</script>";
+      return "<script>
+" + safe + "
+</script>";
     }
   );
 }
@@ -227,9 +353,13 @@ export function buildPreviewDocument(files: IdeFile[]): string {
   // arbitrary remote assets; only inline scripts/styles and data/blob media.
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; media-src data: blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">`;
   if (/<head[^>]*>/i.test(withScripts)) {
-    return withScripts.replace(/<head([^>]*)>/i, (match) => match + "\\n" + csp + "\\n" + CONSOLE_BRIDGE);
+    return withScripts.replace(/<head([^>]*)>/i, (match) => match + "\
+" + csp + "\
+" + CONSOLE_BRIDGE);
   }
-  return csp + "\\n" + CONSOLE_BRIDGE + "\\n" + withScripts;
+  return csp + "\
+" + CONSOLE_BRIDGE + "\
+" + withScripts;
 }
 
 export function sortFiles(files: IdeFile[]): IdeFile[] {
@@ -240,7 +370,9 @@ export type ProposedFileChange = { path: string; content: string };
 /** Extract explicit path-labelled code blocks from assistant output for review. */
 export function parseProposedFileChanges(reply: string): ProposedFileChange[] {
   const changes: ProposedFileChange[] = [];
-  const pattern = /^\s*```(?:[\w.+-]+)?\s+([^\n]+)\n([\s\S]*?)^\s*```\s*$/gm;
+  const pattern = /^\s*```(?:[\w.+-]+)?\s+([^
+]+)
+([\s\S]*?)^\s*```\s*$/gm;
   const seen = new Set<string>();
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(reply)) !== null) {
@@ -251,7 +383,8 @@ export function parseProposedFileChanges(reply: string): ProposedFileChange[] {
     const key = path.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    changes.push({ path, content: match[2].replace(/\n$/, "") });
+    changes.push({ path, content: match[2].replace(/
+$/, "") });
   }
   return changes;
 }
