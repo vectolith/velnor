@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Download, FileText, Plus, RotateCcw, X } from "lucide-react";
 import { addTaskNote, completeTask, transitionTask, type IdeTask, type TaskStatus } from "@/lib/ide/tasks";
 import { addLedgerTask, emptyTaskLedger, parseTaskLedger, replaceLedgerTask, type TaskLedger, TASK_LEDGER_MAX_BYTES } from "@/lib/ide/taskLedger";
+import { loadTaskLedgerWithRecovery, TASK_LEDGER_STORAGE_KEY } from "@/lib/ide/taskLedgerRecovery";
 
-const STORAGE_KEY = "velnor.ide.tasks.v1";
+const STORAGE_KEY = TASK_LEDGER_STORAGE_KEY;
 const labels: Record<TaskStatus, string> = { queued: "Queued", planning: "Planning", executing: "Executing", validating: "Validating", completed: "Completed", blocked: "Blocked", cancelled: "Cancelled" };
 
 type Props = { onClose: () => void };
@@ -18,12 +19,18 @@ export default function TaskPanel({ onClose }: Props) {
   const [confirmed, setConfirmed] = useState<Record<string, boolean>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
+  const [recoveryBackup, setRecoveryBackup] = useState<string | null>(null);
+  const [recoveryBackupStored, setRecoveryBackupStored] = useState(false);
+  const [recoveryExported, setRecoveryExported] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) setLedger(parseTaskLedger(raw));
+      const result = loadTaskLedgerWithRecovery(window.localStorage);
+      setLedger(result.ledger);
+      setRecoveryBackup(result.recoveryBackup);
+      setRecoveryBackupStored(result.recoveryStored);
+      setNotice(result.notice);
     } catch {
       setLedger(emptyTaskLedger());
       setNotice("Saved task data could not be read. A clean ledger is shown; export/import backups can help recover older data.");
@@ -32,18 +39,28 @@ export default function TaskPanel({ onClose }: Props) {
     }
   }, []);
 
-  function commit(next: TaskLedger) {
+  function commit(next: TaskLedger): boolean {
+    if (recoveryBackup && !recoveryBackupStored && !recoveryExported) {
+      setNotice("Export the recovery copy before overwriting corrupted task data.");
+      return false;
+    }
     const raw = JSON.stringify(next);
     if (new TextEncoder().encode(raw).byteLength > TASK_LEDGER_MAX_BYTES) {
       setNotice("Task ledger exceeds the 1 MB limit. Export a backup or remove older tasks/events.");
-      return;
+      return false;
     }
     try {
       window.localStorage.setItem(STORAGE_KEY, raw);
       setLedger(parseTaskLedger(raw));
       setNotice("Saved in this browser.");
+      if (recoveryBackup && !recoveryBackupStored && recoveryExported) {
+        setRecoveryBackup(null);
+        setRecoveryExported(false);
+      }
+      return true;
     } catch {
       setNotice("Storage write failed. The change is not persisted; export a backup or free browser storage.");
+      return false;
     }
   }
 
@@ -54,8 +71,7 @@ export default function TaskPanel({ onClose }: Props) {
       const at = new Date().toISOString();
       const id = "task-" + at.replace(/[^0-9]/g, "") + "-" + Math.random().toString(36).slice(2, 7);
       const next = addLedgerTask(ledger, id, value, at);
-      commit(next);
-      setTitle("");
+      if (commit(next)) setTitle("");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Task could not be created.");
     }
@@ -73,8 +89,7 @@ export default function TaskPanel({ onClose }: Props) {
     const value = (notes[task.id] ?? "").trim();
     if (!value) return;
     try {
-      commit(replaceLedgerTask(ledger, addTaskNote(task, value, new Date().toISOString())));
-      setNotes((current) => ({ ...current, [task.id]: "" }));
+      if (commit(replaceLedgerTask(ledger, addTaskNote(task, value, new Date().toISOString())))) setNotes((current) => ({ ...current, [task.id]: "" }));
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Note could not be saved.");
     }
@@ -89,9 +104,10 @@ export default function TaskPanel({ onClose }: Props) {
     try {
       const at = new Date().toISOString();
       const next = completeTask(task, { at, checks: checks.map((name) => ({ name, passed: true })), summary: "Checks manually recorded and confirmed in the task ledger." });
-      commit(replaceLedgerTask(ledger, next));
-      setEvidence((current) => ({ ...current, [task.id]: "" }));
-      setConfirmed((current) => ({ ...current, [task.id]: false }));
+      if (commit(replaceLedgerTask(ledger, next))) {
+        setEvidence((current) => ({ ...current, [task.id]: "" }));
+        setConfirmed((current) => ({ ...current, [task.id]: false }));
+      }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Task could not be completed.");
     }
@@ -107,13 +123,25 @@ export default function TaskPanel({ onClose }: Props) {
     URL.revokeObjectURL(url);
   }
 
+  function exportRecoveryBackup() {
+    if (!recoveryBackup) return;
+    const blob = new Blob([recoveryBackup], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "velnor-task-ledger-recovery.json";
+    link.click();
+    URL.revokeObjectURL(url);
+    setRecoveryExported(true);
+    setNotice("Recovery copy exported. You can now replace the corrupted ledger if it was not saved separately.");
+  }
+
   async function importLedger(file: File | undefined) {
     if (!file) return;
     if (file.size > TASK_LEDGER_MAX_BYTES) { setNotice("Task ledger backup exceeds the 1 MB limit."); if (importRef.current) importRef.current.value = ""; return; }
     try {
       const next = parseTaskLedger(await file.text());
-      commit(next);
-      setNotice("Imported task ledger. It remains stored locally in this browser.");
+      if (commit(next)) setNotice("Imported task ledger. It remains stored locally in this browser.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Task ledger import failed.");
     } finally {
@@ -134,6 +162,7 @@ export default function TaskPanel({ onClose }: Props) {
         </form>
         <div className="ide-task-tools">
           <button className="ide-button" type="button" onClick={exportLedger}><Download size={13} /> Export backup</button>
+          {recoveryBackup ? <button className="ide-button" type="button" onClick={exportRecoveryBackup}><Download size={13} /> Export recovery copy</button> : null}
           <button className="ide-button" type="button" onClick={() => importRef.current?.click()}>Import backup</button>
           <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={(event) => void importLedger(event.target.files?.[0])} />
         </div>
