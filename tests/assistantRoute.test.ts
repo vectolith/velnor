@@ -9,6 +9,7 @@ function request(prompt: unknown, ip: string, token = "test-provider-key", model
     headers: {
       "content-type": "application/json",
       "x-real-ip": ip,
+      "x-forwarded-for": ip,
       ...(token ? { authorization: "Bearer " + token } : {}),
     },
     body: JSON.stringify({ prompt, ...(model ? { model } : {}) }),
@@ -16,8 +17,9 @@ function request(prompt: unknown, ip: string, token = "test-provider-key", model
 }
 
 async function withEnv(values: Record<string, string | undefined>, run: () => Promise<void>) {
-  const previous = Object.fromEntries(Object.keys(values).map((key) => [key, process.env[key]]));
-  for (const [key, value] of Object.entries(values)) {
+  const configured = { VELNOR_TRUST_PROXY_HEADERS: "true", ...values };
+  const previous = Object.fromEntries(Object.keys(configured).map((key) => [key, process.env[key]]));
+  for (const [key, value] of Object.entries(configured)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
@@ -202,6 +204,28 @@ test("assistant route rate-limits after twelve requests in the same bucket", asy
         assert.equal(response.status, 200);
       }
       const limited = await POST(request("hello", "test-rate-limit-bucket-1"));
+      assert.equal(limited.status, 429);
+      assert.equal(calls, 12);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("assistant rate limit ignores spoofed proxy headers unless trust is explicitly enabled", async () => {
+  await withEnv({ VELNOR_TRUST_PROXY_HEADERS: "false", VELNOR_AI_API_KEY: undefined, VELNOR_AI_BASE_URL: "https://provider.example/v1" }, async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    };
+    try {
+      for (let i = 0; i < 12; i += 1) {
+        const response = await POST(request("hello", "spoofed-ip-" + i));
+        assert.equal(response.status, 200);
+      }
+      const limited = await POST(request("hello", "spoofed-ip-13"));
       assert.equal(limited.status, 429);
       assert.equal(calls, 12);
     } finally {
