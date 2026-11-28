@@ -19,7 +19,7 @@ test("preview console bridge tags and forwards errors but does not expose parent
  const html=buildPreviewDocument(createDefaultWorkspace().files);
  assert.match(html,/velnor-ide-console/);
  assert.match(html,/parent\.postMessage/);
- assert.match(html,/window\.addEventListener\('error'/);
+ assert.match(html,/window\.addEventListener\("error"/);
  assert.doesNotMatch(html,/parent\.document/);
 });
 test("user script closing tags are neutralized before inline insertion",()=>{
