@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Download,
+  Download,\n  Github,
   Upload,
   History,
   FilePlus2,
@@ -16,7 +16,7 @@ import {
 import EditorPane from "./EditorPane";
 import FileTree from "./FileTree";
 import PreviewPane, { type ConsoleLine } from "./PreviewPane";
-import AiPanel from "./AiPanel";
+import AiPanel from "./AiPanel";\nimport GitHubPanel from "./GitHubPanel";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
 import {
   WorkspaceError,
@@ -82,7 +82,7 @@ export function IdeShell() {
   const [toast, setToast] = useState<Toast | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [aiOpen, setAiOpen] = useState(true);
+  const [aiOpen, setAiOpen] = useState(true);\n  const [githubOpen, setGithubOpen] = useState(false);
   const [token, setToken] = useState("");
   const [ready, setReady] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -412,7 +412,7 @@ export function IdeShell() {
         {dirtyIds.size > 0 ? <span className="ide-dirty">unsaved</span> : null}
         <input ref={importInputRef} type="file" multiple hidden accept=".json,.html,.htm,.css,.js,.jsx,.ts,.tsx,.md,.txt,.svg,.xml,.csv" onChange={(event) => void importWorkspaceFiles(event.target.files)} />
         <div className="ide-topbar-actions">
-          <button type="button" className="ide-icon-button" onClick={() => setPaletteOpen(true)} aria-label="Commands">
+          <button type="button" className="ide-icon-button" onClick={() => setGithubOpen(true)} aria-label="GitHub repositories" title="GitHub"><Github size={16} strokeWidth={1.6} /></button>\n          <button type="button" className="ide-icon-button" onClick={() => setPaletteOpen(true)} aria-label="Commands">
             <Search size={16} strokeWidth={1.6} />
           </button>
           <button type="button" className="ide-icon-button" onClick={() => importInputRef.current?.click()} aria-label="Import files" title="Import files">
@@ -507,7 +507,7 @@ export function IdeShell() {
         ) : null}
       </div>
 
-      <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
+      {githubOpen ? <GitHubPanel onClose={() => setGithubOpen(false)} onImport={(remoteFiles) => { try { setWorkspace(current => { let staged=[...current.files]; for(const file of remoteFiles) staged=[...staged,addFile(staged,file.path,file.content)]; const next={...current,files:staged,activeId:staged.at(-1)?.id??current.activeId}; persist(next); setDirtyIds(new Set(next.files.map(f=>f.id))); return next; }); notify("Imported repository files."); } catch(e) { notify(e instanceof WorkspaceError ? e.message : "Repository import failed.","error"); } }} /> : null}\n      <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
 
       {toast ? (
         <div className={"ide-toast" + (toast.tone === "error" ? " is-error" : "")} role="status">
