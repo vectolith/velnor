@@ -67,7 +67,7 @@ export function loadTaskLedgerWithRecovery(storage: TaskLedgerStorage): TaskLedg
       recoveryBackup: raw,
       recoveryStored: stored,
       notice: stored
-        ? "Saved task data was invalid. A recovery copy was preserved separately; export it before replacing the ledger."
+        ? "Saved task data was invalid. A recovery copy was preserved separately; export it if you need a portable copy."
         : "Saved task data was invalid. A recovery copy is available for export; export it before overwriting or leaving the page.",
     };
   }
