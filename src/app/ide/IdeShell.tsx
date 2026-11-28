@@ -515,7 +515,7 @@ export function IdeShell() {
         ) : null}
       </div>
 
-      {githubOpen ? <GitHubPanel onClose={() => setGithubOpen(false)} onImport={(remoteFiles) => { try { setWorkspace(current => { let staged=[...current.files]; for(const file of remoteFiles) staged=[...staged,addFile(staged,file.path,file.content)]; const next={...current,files:staged,activeId:staged.at(-1)?.id??current.activeId}; persist(next); setDirtyIds(new Set(next.files.map(f=>f.id))); return next; }); notify("Imported repository files."); } catch(e) { notify(e instanceof WorkspaceError ? e.message : "Repository import failed.","error"); } }} /> : null}
+      {githubOpen ? <GitHubPanel workspaceFiles={workspace.files} onClose={() => setGithubOpen(false)} onImport={(remoteFiles) => { try { setWorkspace(current => { let staged=[...current.files]; for(const file of remoteFiles) staged=[...staged,addFile(staged,file.path,file.content)]; const next={...current,files:staged,activeId:staged.at(-1)?.id??current.activeId}; persist(next); setDirtyIds(new Set(next.files.map(f=>f.id))); return next; }); notify("Imported repository files."); } catch(e) { notify(e instanceof WorkspaceError ? e.message : "Repository import failed.","error"); } }} /> : null}
       <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
 
       {toast ? (
