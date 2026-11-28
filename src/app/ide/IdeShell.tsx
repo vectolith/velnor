@@ -40,6 +40,7 @@ import {
 } from "@/lib/ide/workspace";
 import { createSnapshot, restoreSnapshot, retainSnapshots, type WorkspaceSnapshot } from "@/lib/ide/snapshots";
 import { buildAssistantWorkspaceContext } from "@/lib/ide/inventory";
+import { createWorkspaceFromBundle, parseWorkspaceBundle } from "@/lib/ide/workspaceImport";
 
 const WORKSPACE_KEY = "velnor.ide.workspace.v1";
 const SNAPSHOTS_KEY = "velnor.ide.snapshots.v1";
@@ -225,7 +226,7 @@ setReady(true);
   }, [active, notify]);
 
   const exportWorkspace = useCallback(() => {
-    const bundle = JSON.stringify({ files: workspace.files, entry: workspace.entry }, null, 2);
+    const bundle = JSON.stringify({ schemaVersion: 1, files: workspace.files.map(({ path, content }) => ({ path, content })), entry: workspace.entry }, null, 2);
     const blob = new Blob([bundle], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -242,18 +243,26 @@ setReady(true);
       const incoming = await Promise.all(Array.from(selected).map(async (file) => {
         const text = await file.text();
         if (file.name.toLowerCase().endsWith(".json")) {
-          try {
-            const parsed = JSON.parse(text) as { files?: Array<{ path?: unknown; content?: unknown }>; entry?: unknown };
-            if (Array.isArray(parsed.files)) {
-              return {
-                files: parsed.files.map((item) => ({ path: String(item.path ?? ""), content: String(item.content ?? "") })),
-                entry: typeof parsed.entry === "string" ? parsed.entry : null,
-              };
-            }
-          } catch { /* treat non-bundle JSON as a normal file */ }
+          let parsed: unknown = null;
+          try { parsed = JSON.parse(text); } catch { /* ordinary JSON source file */ }
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && ((parsed as { schemaVersion?: unknown }).schemaVersion === 1 || (parsed as { schemaVersion?: unknown }).schemaVersion === undefined) && Array.isArray((parsed as { files?: unknown }).files) && typeof (parsed as { entry?: unknown }).entry === "string") {
+            const validated = parseWorkspaceBundle(text);
+            return { files: validated.files, entry: validated.entry, bundle: validated };
+          }
         }
-        return { files: [{ path: file.name, content: text }], entry: null };
+        return { files: [{ path: file.name, content: text }], entry: null, bundle: null };
       }));
+      const backups = incoming.filter((item) => item.bundle);
+      if (backups.length) {
+        if (incoming.length !== 1) throw new WorkspaceError("Import a workspace backup separately from individual files.");
+        const next = createWorkspaceFromBundle(backups[0].bundle!);
+        setWorkspace(next);
+        setDirtyIds(new Set());
+        persist(next);
+        setReloadKey((value) => value + 1);
+        notify("Restored workspace backup.");
+        return;
+      }
       const flattened = incoming.flatMap((bundle) => bundle.files).filter((item) => item.path.trim());
       if (!flattened.length) throw new WorkspaceError("The selected import contains no usable files.");
       setWorkspace((current) => {
