@@ -81,7 +81,7 @@ Model training notebooks and run artifacts live in Models-by-vectolith, not here
 
 The separate IDE Worker is named `velnor` and uses **https://velnor.vectolith.workers.dev**. It does not replace the headless service.
 
-From a Node.js 24 environment:
+From a Node.js 26 environment:
 
 ```bash
 npm ci
