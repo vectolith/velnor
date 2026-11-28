@@ -254,58 +254,32 @@ export function entryFile(files: IdeFile[]): IdeFile | undefined {
   );
 }
 
-export const CONSOLE_BRIDGE =
-  "<script>
-" +
-  "(function () {
-" +
-  "  var send = function (level, args) {
-" +
-  "    try {
-" +
-  "      parent.postMessage({
-" +
-  "        source: \"velnor-ide-console\",
-" +
-  "        level: level,
-" +
-  "        text: Array.prototype.map.call(args, function (value) {
-" +
-  "          if (typeof value === \"string\") return value;
-" +
-  "          try { return JSON.stringify(value); } catch (e) { return String(value); }
-" +
-  "        }).join(\" \")
-" +
-  "      }, \"*\");
-" +
-  "    } catch (e) {}
-" +
-  "  };
-" +
-  "  [\"log\", \"info\", \"warn\", \"error\", \"debug\"].forEach(function (level) {
-" +
-  "    var original = console[level] ? console[level].bind(console) : function () {};
-" +
-  "    console[level] = function () {
-" +
-  "      send(level, arguments);
-" +
-  "      original.apply(console, arguments);
-" +
-  "    };
-" +
-  "  });
-" +
-  "  window.addEventListener(\"error\", function (event) {
-" +
-  "    send(\"error\", [event.message + (event.lineno ? \" (line \" + event.lineno + \")\" : \"\")]);
-" +
-  "  });
-" +
-  "})();
-" +
-  "</script>";
+export const CONSOLE_BRIDGE = `<script>
+(function () {
+  var send = function (level, args) {
+    try {
+      parent.postMessage({
+        source: "velnor-ide-console",
+        level: level,
+        text: Array.prototype.map.call(args, function (value) {
+          if (typeof value === "string") return value;
+          try { return JSON.stringify(value); } catch (e) { return String(value); }
+        }).join(" ")
+      }, "*");
+    } catch (e) {}
+  };
+  ["log", "info", "warn", "error", "debug"].forEach(function (level) {
+    var original = console[level] ? console[level].bind(console) : function () {};
+    console[level] = function () {
+      send(level, arguments);
+      original.apply(console, arguments);
+    };
+  });
+  window.addEventListener("error", function (event) {
+    send("error", [event.message + (event.lineno ? " (line " + event.lineno + ")" : "")]);
+  });
+})();
+</script>`;
 
 function resolvePreviewAsset(entryPath: string, reference: string): string | null {
   const ref = reference.trim();
