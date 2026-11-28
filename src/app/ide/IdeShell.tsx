@@ -38,7 +38,6 @@ import { createSnapshot, restoreSnapshot, retainSnapshots, type WorkspaceSnapsho
 import { buildAssistantWorkspaceContext } from "@/lib/ide/inventory";
 
 const WORKSPACE_KEY = "velnor.ide.workspace.v1";
-const TOKEN_KEY = "velnor.ide.token.v1";
 const SNAPSHOTS_KEY = "velnor.ide.snapshots.v1";
 
 type Toast = { text: string; tone: "info" | "error" };
@@ -93,12 +92,7 @@ export function IdeShell() {
 
   useEffect(() => {
     setWorkspace(readWorkspace());
-    try {
-      setToken(window.localStorage.getItem(TOKEN_KEY) ?? "");
-    } catch {
-      setToken("");
-    }
-    setReady(true);
+setReady(true);
   }, []);
 
   const notify = useCallback((text: string, tone: Toast["tone"] = "info") => {
@@ -276,15 +270,7 @@ export function IdeShell() {
     }
   }, [notify, persist]);
 
-  const updateToken = useCallback((value: string) => {
-    setToken(value);
-    try {
-      if (value) window.localStorage.setItem(TOKEN_KEY, value);
-      else window.localStorage.removeItem(TOKEN_KEY);
-    } catch {
-      /* storage blocked: the token still works for this tab */
-    }
-  }, []);
+  const updateToken = useCallback((value: string) => setToken(value), []);
 
   const insertReply = useCallback(
     (reply: string) => {
