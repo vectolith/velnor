@@ -12,7 +12,7 @@ export type WorkspaceSnapshot = {
 export type SnapshotDiff = { added: string[]; removed: string[]; changed: string[]; unchanged: string[] };
 
 export const SNAPSHOT_HISTORY_LIMIT = 20;
-export const SNAPSHOT_HISTORY_MAX_BYTES = 4 * 1024 * 1024;
+export const SNAPSHOT_HISTORY_MAX_BYTES = 1_000_000;
 const SNAPSHOT_HISTORY_INPUT_MAX_BYTES = 8 * 1024 * 1024;
 const SNAPSHOT_FILE_LIMIT = 40;
 const SNAPSHOT_FILE_MAX_BYTES = 512 * 1024;
