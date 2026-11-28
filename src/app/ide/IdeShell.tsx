@@ -278,7 +278,7 @@ setReady(true);
         notify("Open a file before inserting a reply.", "error");
         return;
       }
-      const next = active.content ? active.content.replace(/\s*$/, "\\n\\n") + reply : reply;
+      const next = active.content ? active.content.replace(/\s*$/, "\n\n") + reply : reply;
       try {
         setWorkspace((current) => ({
           ...current,
@@ -315,8 +315,8 @@ setReady(true);
       const history = JSON.parse(window.localStorage.getItem(SNAPSHOTS_KEY) ?? "[]") as WorkspaceSnapshot[];
       setSnapshots(history);
       if (!history.length) { notify("No checkpoints available."); return; }
-      const choices = history.map((item, index) => index + ": " + item.label + " (" + item.createdAt + ")").join("\\n");
-      const selected = window.prompt("Choose checkpoint index to restore:\\n" + choices, String(history.length - 1));
+      const choices = history.map((item, index) => index + ": " + item.label + " (" + item.createdAt + ")").join("\n");
+      const selected = window.prompt("Choose checkpoint index to restore:\n" + choices, String(history.length - 1));
       if (selected === null) return;
       const index = Number(selected);
       if (!Number.isInteger(index) || index < 0 || index >= history.length) { notify("Invalid checkpoint selection.", "error"); return; }
