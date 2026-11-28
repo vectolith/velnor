@@ -21,6 +21,7 @@ import EditorPane from "./EditorPane";
 import FileTree from "./FileTree";
 import PreviewPane, { type ConsoleLine } from "./PreviewPane";
 import AiPanel from "./AiPanel";
+import TaskPanel from "./TaskPanel";
 import GitHubPanel from "./GitHubPanel";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
 import {
@@ -88,6 +89,7 @@ export function IdeShell() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(true);
   const [githubOpen, setGithubOpen] = useState(false);
+  const [tasksOpen, setTasksOpen] = useState(false);
   const [token, setToken] = useState("");
   const [ready, setReady] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -459,6 +461,8 @@ setReady(true);
           onConsole={(line) => setConsoleLines((current) => [...current.slice(-199), line])}
           onClearConsole={() => setConsoleLines([])}
         />
+
+        {tasksOpen ? <TaskPanel onClose={() => setTasksOpen(false)} /> : null}
 
         {aiOpen ? (
           <AiPanel

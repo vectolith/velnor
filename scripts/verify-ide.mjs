@@ -48,7 +48,7 @@ const ide = await fetch(base + "/ide");
 assertSecurityHeaders(ide, "/ide");
 if (ide.status !== 200) fail("/ide returned " + ide.status);
 const html = await ide.text();
-for (const marker of ["ide-root", "velnor ide", "ide-topbar"]) {
+for (const marker of ["ide-root", "ide-brand", "ide-topbar"]) {
   if (!html.includes(marker)) fail("/ide HTML is missing marker: " + marker);
 }
 
