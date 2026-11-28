@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
+  Github,
   Upload,
   History,
   FilePlus2,
@@ -17,6 +18,7 @@ import EditorPane from "./EditorPane";
 import FileTree from "./FileTree";
 import PreviewPane, { type ConsoleLine } from "./PreviewPane";
 import AiPanel from "./AiPanel";
+import GitHubPanel from "./GitHubPanel";
 import CommandPalette, { type PaletteCommand } from "./CommandPalette";
 import {
   WorkspaceError,
@@ -83,6 +85,7 @@ export function IdeShell() {
   const [reloadKey, setReloadKey] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [aiOpen, setAiOpen] = useState(true);
+  const [githubOpen, setGithubOpen] = useState(false);
   const [token, setToken] = useState("");
   const [ready, setReady] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -326,8 +329,8 @@ export function IdeShell() {
       const history = JSON.parse(window.localStorage.getItem(SNAPSHOTS_KEY) ?? "[]") as WorkspaceSnapshot[];
       setSnapshots(history);
       if (!history.length) { notify("No checkpoints available."); return; }
-      const choices = history.map((item, index) => index + ": " + item.label + " (" + item.createdAt + ")").join("\n");
-      const selected = window.prompt("Choose checkpoint index to restore:\n" + choices, String(history.length - 1));
+      const choices = history.map((item, index) => index + ": " + item.label + " (" + item.createdAt + ")").join("\\n");
+      const selected = window.prompt("Choose checkpoint index to restore:\\n" + choices, String(history.length - 1));
       if (selected === null) return;
       const index = Number(selected);
       if (!Number.isInteger(index) || index < 0 || index >= history.length) { notify("Invalid checkpoint selection.", "error"); return; }
@@ -412,6 +415,7 @@ export function IdeShell() {
         {dirtyIds.size > 0 ? <span className="ide-dirty">unsaved</span> : null}
         <input ref={importInputRef} type="file" multiple hidden accept=".json,.html,.htm,.css,.js,.jsx,.ts,.tsx,.md,.txt,.svg,.xml,.csv" onChange={(event) => void importWorkspaceFiles(event.target.files)} />
         <div className="ide-topbar-actions">
+          <button type="button" className="ide-icon-button" onClick={() => setGithubOpen(true)} aria-label="GitHub repositories" title="GitHub"><Github size={16} strokeWidth={1.6} /></button>
           <button type="button" className="ide-icon-button" onClick={() => setPaletteOpen(true)} aria-label="Commands">
             <Search size={16} strokeWidth={1.6} />
           </button>
@@ -507,6 +511,7 @@ export function IdeShell() {
         ) : null}
       </div>
 
+      {githubOpen ? <GitHubPanel onClose={() => setGithubOpen(false)} onImport={(remoteFiles) => { try { setWorkspace(current => { let staged=[...current.files]; for(const file of remoteFiles) staged=[...staged,addFile(staged,file.path,file.content)]; const next={...current,files:staged,activeId:staged.at(-1)?.id??current.activeId}; persist(next); setDirtyIds(new Set(next.files.map(f=>f.id))); return next; }); notify("Imported repository files."); } catch(e) { notify(e instanceof WorkspaceError ? e.message : "Repository import failed.","error"); } }} /> : null}
       <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
 
       {toast ? (
