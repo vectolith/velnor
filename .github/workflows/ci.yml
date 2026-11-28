@@ -17,14 +17,18 @@ jobs:
   build-and-verify:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [24, 26]
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Setup Node.js 26
+      - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "26"
+          node-version: ${{ matrix.node-version }}
           cache: "npm"
 
       - name: Install dependencies
@@ -49,12 +53,14 @@ jobs:
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
           npm run verify
           echo "--- server.log ---"
-          tail -50 server.log
+          tail-50 server.log
 
       - name: Build Node 26 Alpine Docker image
+        if: matrix.node-version == 26
         run: docker build --tag velnor-ci:latest .
 
       - name: Smoke-test the Node 26 Alpine Docker image
+        if: matrix.node-version == 26
         run: |
           docker run --detach --name velnor-ci --publish 8080:8080 velnor-ci:latest
           trap 'docker rm --force velnor-ci >/dev/null 2>&1 || true' EXIT
