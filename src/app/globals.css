@@ -76,3 +76,13 @@ button,input,textarea{font:inherit;color:inherit}button{cursor:pointer}button:fo
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important;scroll-behavior:auto!important}}
 
 .ide-github-backdrop{position:fixed;inset:0;z-index:70;background:#02050ab8;display:flex;align-items:center;justify-content:center;padding:14px}.ide-github-panel{width:min(720px,96vw);max-height:85dvh;overflow:auto;border:1px solid #34465a;border-radius:14px;background:#111923;padding:15px;display:flex;flex-direction:column;gap:10px;box-shadow:0 30px 90px #0009}.ide-github-panel header{display:flex;justify-content:space-between;align-items:center;font-weight:700}.ide-github-panel header span{display:flex;align-items:center;gap:8px}.ide-github-panel header button{border:0;background:transparent;color:inherit}.ide-github-note,.ide-github-status{font-size:11px;color:#91a2b5;line-height:1.5}.ide-github-actions{display:flex;gap:7px;flex-wrap:wrap}.ide-github-files{max-height:40dvh;overflow:auto;border:1px solid var(--line);border-radius:8px}.ide-github-files label{display:flex;align-items:center;gap:8px;padding:8px;border-bottom:1px solid var(--line);font:11px "DM Mono",monospace;overflow-wrap:anywhere}.ide-github-files label span{min-width:0}
+
+/* Left-side activity navigation */
+.ide-activity-rail{width:48px;flex:0 0 48px;display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 5px;background:#090e14;border-right:1px solid var(--line);z-index:3}
+.ide-rail-button{width:36px;height:36px;display:grid;place-items:center;border:1px solid transparent;border-radius:9px;background:transparent;color:#8495a9;transition:background .16s,color .16s,border-color .16s}
+.ide-rail-button:hover,.ide-rail-button.is-active{background:#182434;border-color:#293b51;color:#e3edff}
+.ide-rail-run{color:#c6d8ff;background:#192b45;border-color:#344d75}
+.ide-rail-divider{height:1px;width:26px;background:var(--line);margin:4px 0}
+.ide-rail-spacer{flex:1}
+.ide-topbar-status{font-size:10px;color:#627286;letter-spacing:.08em;text-transform:uppercase}
+@media(max-width:560px){.ide-activity-rail{width:42px;flex-basis:42px;padding:6px 3px;gap:3px}.ide-rail-button{width:34px;height:34px}}
