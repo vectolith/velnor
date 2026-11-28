@@ -56,7 +56,6 @@ function normalizeSnapshot(value: unknown): WorkspaceSnapshot {
   });
   if (typeof record.entry !== "string") throw new Error("Checkpoint entry path is invalid.");
   const entry = normalizePath(record.entry);
-  if (!paths.has(entry.toLocaleLowerCase("en"))) throw new Error("Checkpoint entry file is missing.");
   const activeId = typeof record.activeId === "string" && fileIds.has(record.activeId) ? record.activeId : files[0].id;
   return { id: record.id, label: record.label.trim(), createdAt: record.createdAt, files, entry, activeId };
 }
