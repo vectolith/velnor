@@ -109,3 +109,25 @@ test("file size limit is measured in UTF-8 bytes", () => {
   const multibyte = "é".repeat(262_145);
   assert.throws(() => addFile(workspace.files, "large.txt", multibyte), WorkspaceError);
 });
+
+test("preview resolves styles and scripts relative to nested entry file", () => {
+  const files = [
+    { id: "entry", path: "src/pages/index.html", content: '<html><head><link href="../styles/app.css"></head><body><script src="../scripts/app.js"></script></body></html>' },
+    { id: "css", path: "src/styles/app.css", content: "body { color: red; }" },
+    { id: "js", path: "src/scripts/app.js", content: "console.log('nested');" },
+  ];
+  const html = buildPreviewDocument(files);
+  assert.ok(html.includes("body { color: red; }"));
+  assert.ok(html.includes("console.log('nested');"));
+  assert.ok(!html.includes('<link href="../styles/app.css">'));
+});
+
+test("preview refuses workspace-escaping asset paths", () => {
+  const files = [
+    { id: "entry", path: "src/index.html", content: '<html><head><link href="../../outside.css"></head><body><script src="../../outside.js"></script></body></html>' },
+    { id: "css", path: "outside.css", content: "should not inline" },
+    { id: "js", path: "outside.js", content: "should not inline" },
+  ];
+  const html = buildPreviewDocument(files);
+  assert.ok(!html.includes("should not inline"));
+});
