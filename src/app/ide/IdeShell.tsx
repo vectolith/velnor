@@ -13,6 +13,9 @@ import {
   Search,
   Sparkles,
   Terminal,
+  ChevronDown,
+  Settings,
+  Eye,
 } from "lucide-react";
 import EditorPane from "./EditorPane";
 import FileTree from "./FileTree";
@@ -388,36 +391,27 @@ setReady(true);
   return (
     <div className="ide-root">
       <header className="ide-topbar">
-        <button
-          type="button"
-          className="ide-icon-button"
-          onClick={() => setSidebarOpen((value) => !value)}
-          aria-label="Toggle file tree"
-        >
-          <PanelLeft size={16} strokeWidth={1.6} />
-        </button>
-        <span className="ide-brand">velnor ide</span>
+        <span className="ide-brand">velnor</span>
+        <nav className="ide-menu-bar" aria-label="Application menus">
+          <details className="ide-menu"><summary>File <ChevronDown size={12}/></summary><div className="ide-menu-popover"><button onClick={addNewFile}><FilePlus2/>New file</button><button onClick={() => importInputRef.current?.click()}><Upload/>Import files</button><button onClick={save}><Save/>Save workspace <kbd>⌘S</kbd></button><button onClick={renameCurrent}>Rename file</button><button onClick={deleteCurrent}>Delete file</button><button onClick={exportWorkspace}><Download/>Export workspace</button><button onClick={checkpoint}><History/>Create checkpoint</button><button onClick={restoreCheckpoint}><History/>Restore checkpoint</button></div></details>
+          <details className="ide-menu"><summary>View <ChevronDown size={12}/></summary><div className="ide-menu-popover"><button onClick={() => setSidebarOpen(v=>!v)}><PanelLeft/>Toggle Explorer</button><button onClick={() => setPaletteOpen(true)}><Search/>Search / Commands <kbd>⌘K</kbd></button><button onClick={() => setAiOpen(v=>!v)}><Sparkles/>Toggle Assistant</button><button onClick={() => setReloadKey(v=>v+1)}><Eye/>Refresh preview</button><button onClick={() => setConsoleLines([])}><Terminal/>Clear console</button></div></details>
+          <details className="ide-menu"><summary>Settings <ChevronDown size={12}/></summary><div className="ide-menu-popover"><button onClick={() => setAiOpen(true)}><Settings/>Assistant panel</button><button onClick={() => setPaletteOpen(true)}><Settings/>Commands and shortcuts</button></div></details>
+        </nav>
         <span className="ide-path">{active ? active.path : "no file open"}</span>
         {dirtyIds.size > 0 ? <span className="ide-dirty">unsaved</span> : null}
         <input ref={importInputRef} type="file" multiple hidden accept=".json,.html,.htm,.css,.js,.jsx,.ts,.tsx,.md,.txt,.svg,.xml,.csv" onChange={(event) => void importWorkspaceFiles(event.target.files)} />
         <div className="ide-topbar-actions"><span className="ide-topbar-status">Workspace</span></div>
-      </header>
+      </header>>
 
       <div className={"ide-body" + (sidebarOpen ? "" : " is-collapsed")}>
-        <nav className="ide-activity-rail" aria-label="IDE navigation and tools">
-          <button type="button" className="ide-rail-button" onClick={() => setSidebarOpen(v => !v)} aria-label="Toggle explorer" title="Explorer"><PanelLeft size={17}/></button>
-          <button type="button" className="ide-rail-button" onClick={() => setPaletteOpen(true)} aria-label="Search and commands" title="Search / commands"><Search size={17}/></button>
-          <button type="button" className="ide-rail-button" onClick={() => setGithubOpen(true)} aria-label="GitHub repositories" title="GitHub"><GitBranch size={17}/></button>
+        <nav className="ide-activity-rail" aria-label="IDE activity">
+          <button type="button" className={"ide-rail-button"+(sidebarOpen ? " is-active":"")} onClick={() => setSidebarOpen(v => !v)} aria-label="Explorer" title="Explorer"><PanelLeft size={18}/></button>
+          <button type="button" className="ide-rail-button" onClick={() => setPaletteOpen(true)} aria-label="Search" title="Search"><Search size={18}/></button>
+          <button type="button" className="ide-rail-button" onClick={() => setGithubOpen(true)} aria-label="Source control and GitHub" title="Source control"><GitBranch size={18}/></button>
           <div className="ide-rail-divider"/>
-          <button type="button" className="ide-rail-button" onClick={() => importInputRef.current?.click()} aria-label="Import files" title="Import"><Upload size={17}/></button>
-          <button type="button" className="ide-rail-button" onClick={addNewFile} aria-label="New file" title="New file"><FilePlus2 size={17}/></button>
-          <button type="button" className="ide-rail-button" onClick={save} aria-label="Save workspace" title="Save"><Save size={17}/></button>
-          <button type="button" className="ide-rail-button" onClick={checkpoint} aria-label="Create checkpoint" title="Checkpoint"><History size={17}/></button>
-          <button type="button" className="ide-rail-button" onClick={restoreCheckpoint} aria-label="Restore checkpoint" title="Restore checkpoint"><History size={17}/></button>
-          <button type="button" className="ide-rail-button" onClick={exportWorkspace} aria-label="Export workspace" title="Export"><Download size={17}/></button>
-          <button type="button" className="ide-rail-button ide-rail-run" onClick={run} aria-label="Run preview" title="Run"><Play size={17}/></button>
+          <button type="button" className="ide-rail-button ide-rail-run" onClick={run} aria-label="Run project" title="Run"><Play size={18}/></button>
           <div className="ide-rail-spacer"/>
-          <button type="button" className={"ide-rail-button"+(aiOpen ? " is-active":"")} onClick={() => setAiOpen(v => !v)} aria-label="Toggle assistant" title="Assistant"><Sparkles size={17}/></button>
+          <button type="button" className={"ide-rail-button"+(aiOpen ? " is-active":"")} onClick={() => setAiOpen(v => !v)} aria-label="Assistant" title="Assistant"><Sparkles size={18}/></button>
         </nav>
         {sidebarOpen ? (
           <FileTree
