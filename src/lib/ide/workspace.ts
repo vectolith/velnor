@@ -290,12 +290,12 @@ function resolvePreviewAsset(entryPath: string, reference: string): string | nul
 }
 
 function inlineStyles(document: string, files: IdeFile[], entryPath: string): string {
-  return document.replace(/<link\\b[^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href: string) => {
+  return document.replace(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href: string) => {
     const resolved = resolvePreviewAsset(entryPath, String(href));
     const target = resolved ? files.find((file) => file.path === resolved) : undefined;
     if (!target) return match;
-    const safe = target.content.replace(/<\\/style/gi, "<\\\\/style");
-    return "<style>\\n" + safe + "\\n</style>";
+    const safe = target.content.replace(/<\/style/gi, "<\\/style");
+    return "<style>\n" + safe + "\n</style>";
   });
 }
 
