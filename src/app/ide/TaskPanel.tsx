@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Download, FileText, Plus, RotateCcw, X } from "lucide-react";
 import { addTaskNote, completeTask, transitionTask, type IdeTask, type TaskStatus } from "@/lib/ide/tasks";
-import { addLedgerTask, emptyTaskLedger, parseTaskLedger, replaceLedgerTask, type TaskLedger } from "@/lib/ide/taskLedger";
+import { addLedgerTask, emptyTaskLedger, parseTaskLedger, replaceLedgerTask, type TaskLedger, TASK_LEDGER_MAX_BYTES } from "@/lib/ide/taskLedger";
 
 const STORAGE_KEY = "velnor.ide.tasks.v1";
 const labels: Record<TaskStatus, string> = { queued: "Queued", planning: "Planning", executing: "Executing", validating: "Validating", completed: "Completed", blocked: "Blocked", cancelled: "Cancelled" };
@@ -123,7 +123,7 @@ export default function TaskPanel({ onClose }: Props) {
       </div>
       <div className="ide-task-create">
         <form onSubmit={(event) => { event.preventDefault(); create(); }}>
-          <input className="ide-input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Add an engineering task…" aria-label="Task title" />
+          <input className="ide-input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Add an engineering task…" aria-label="Task title" maxLength={500} />
           <button className="ide-button" type="submit" disabled={!title.trim()}><Plus size={14} /> Create</button>
         </form>
         <div className="ide-task-tools">
@@ -157,7 +157,7 @@ export default function TaskPanel({ onClose }: Props) {
               </div>
             ) : null}
             <div className="ide-task-note-form">
-              <input className="ide-input" value={notes[task.id] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [task.id]: event.target.value }))} placeholder="Add a note…" />
+              <input className="ide-input" value={notes[task.id] ?? ""} onChange={(event) => setNotes((current) => ({ ...current, [task.id]: event.target.value }))} placeholder="Add a note…" maxLength={1_000} />
               <button className="ide-button" onClick={() => addNote(task)} disabled={!(notes[task.id] ?? "").trim()}>Add</button>
             </div>
             <details className="ide-task-events">
