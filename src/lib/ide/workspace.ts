@@ -290,50 +290,32 @@ function resolvePreviewAsset(entryPath: string, reference: string): string | nul
 }
 
 function inlineStyles(document: string, files: IdeFile[], entryPath: string): string {
-  return document.replace(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href: string) => {
+  return document.replace(/<link\\b[^>]*href=["']([^"']+)["'][^>]*>/gi, (match, href: string) => {
     const resolved = resolvePreviewAsset(entryPath, String(href));
     const target = resolved ? files.find((file) => file.path === resolved) : undefined;
     if (!target) return match;
-    return "<style>
-" + target.content + "
-</style>";
+    return `<style>\\n${target.content}\\n</style>`;
   });
 }
 
 function inlineScripts(document: string, files: IdeFile[], entryPath: string): string {
-  return document.replace(
-    /<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*><\/script>/gi,
-    (match, src: string) => {
-      const resolved = resolvePreviewAsset(entryPath, String(src));
-      const target = resolved ? files.find((file) => file.path === resolved) : undefined;
-      if (!target) return match;
-      const safe = target.content.replace(/<\/script/gi, "<\\/script");
-      return "<script>
-" + safe + "
-</script>";
-    }
-  );
+  return document.replace(/<script\\b[^>]*\\bsrc=["']([^"']+)["'][^>]*><\\/script>/gi, (match, src: string) => {
+    const resolved = resolvePreviewAsset(entryPath, String(src));
+    const target = resolved ? files.find((file) => file.path === resolved) : undefined;
+    if (!target) return match;
+    const safe = target.content.replace(/<\\/script/gi, "<\\\\/script");
+    return `<script>\\n${safe}\\n</script>`;
+  });
 }
 
 export function buildPreviewDocument(files: IdeFile[]): string {
   const entry = entryFile(files);
-  if (!entry) {
-    throw new WorkspaceError("Add an index.html file to see a preview.");
-  }
+  if (!entry) throw new WorkspaceError("Add an index.html file to see a preview.");
   const withStyles = inlineStyles(entry.content, files, entry.path);
   const withScripts = inlineScripts(withStyles, files, entry.path);
-  // Preview executes workspace code in an opaque-origin sandbox and applies a
-  // restrictive CSP. Workspace scripts cannot make network requests or load
-  // arbitrary remote assets; only inline scripts/styles and data/blob media.
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; media-src data: blob:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">`;
-  if (/<head[^>]*>/i.test(withScripts)) {
-    return withScripts.replace(/<head([^>]*)>/i, (match) => match + "\
-" + csp + "\
-" + CONSOLE_BRIDGE);
-  }
-  return csp + "\
-" + CONSOLE_BRIDGE + "\
-" + withScripts;
+  if (/<head[^>]*>/i.test(withScripts)) return withScripts.replace(/<head([^>]*)>/i, (match) => match + "\\n" + csp + "\\n" + CONSOLE_BRIDGE);
+  return csp + "\\n" + CONSOLE_BRIDGE + "\\n" + withScripts;
 }
 
 export function sortFiles(files: IdeFile[]): IdeFile[] {
