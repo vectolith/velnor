@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
   }
 
   const upstreamContentType = upstream.headers.get("content-type") || "";
-  if (!/^application\\/json(?:\\s*;|$)/i.test(upstreamContentType)) {
+  if (!/^application\/json(?:\s*;|$)/i.test(upstreamContentType)) {
     try { await upstream.body?.cancel(); } catch {}
     return NextResponse.json({ error: "The provider returned an invalid response type." }, { status: 502 });
   }
