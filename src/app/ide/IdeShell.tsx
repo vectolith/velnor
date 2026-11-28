@@ -242,13 +242,12 @@ setReady(true);
       const incoming = await Promise.all(Array.from(selected).map(async (file) => {
         const text = await file.text();
         if (file.name.toLowerCase().endsWith(".json")) {
-          try {
-            const parsed = JSON.parse(text) as { schemaVersion?: unknown; files?: unknown; entry?: unknown };
-            if (parsed.schemaVersion === 1 && Array.isArray(parsed.files)) {
-              const validated = parseWorkspaceBundle(text);
-              return { files: validated.files, entry: validated.entry };
-            }
-          } catch { /* treat non-bundle JSON as a normal file */ }
+          let parsed: unknown = null;
+          try { parsed = JSON.parse(text); } catch { /* ordinary JSON source file */ }
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && (parsed as { schemaVersion?: unknown }).schemaVersion === 1 && Array.isArray((parsed as { files?: unknown }).files)) {
+            const validated = parseWorkspaceBundle(text);
+            return { files: validated.files, entry: validated.entry };
+          }
         }
         return { files: [{ path: file.name, content: text }], entry: null };
       }));
