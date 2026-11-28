@@ -371,6 +371,8 @@ setReady(true);
         label: "Toggle assistant",
         run: () => setAiOpen((value) => !value),
       },
+      { id: "tasks", label: "Open task ledger", run: () => { setPreflightOpen(false); setTasksOpen(true); } },
+      { id: "preflight", label: "Analyze workspace changes", run: () => { setTasksOpen(false); setPreflightOpen(true); } },
       {
         id: "clear",
         label: "Clear console",
