@@ -57,10 +57,9 @@ scripts/verify-ide.mjs   production smoke check
 
 Model training notebooks and run artifacts live in Models-by-vectolith, not here.
 
-
 ## Cloudflare Workers deployment
 
-This repository can deploy the browser IDE separately from the existing Velnor headless service. The Worker name is `velnor-ide` and its URL is `https://velnor-ide.<account-subdomain>.workers.dev`.
+The IDE Worker is named `velnor` and deploys to **https://velnor.vectolith.workers.dev**. It remains separate from the existing Velnor headless service.
 
 Deployment uses the OpenNext Cloudflare adapter and Wrangler. From a Node.js 22 environment:
 
