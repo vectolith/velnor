@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { RotateCw } from "lucide-react";
 import { buildPreviewDocument, WorkspaceError, type IdeFile } from "../../lib/ide/workspace";
+import { parsePreviewConsoleMessage } from "../../lib/ide/previewConsole";
 
 export type ConsoleLine = { level: string; text: string };
 
