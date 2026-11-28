@@ -49,7 +49,7 @@ Everything is optional and read from the environment:
 ## Security
 
 - Workspace content is stored in browser local storage. Provider tokens are kept in memory for the current tab session and are not persisted.
-- Configure HTTPS, secrets management, edge rate limits and trustworthy proxy IP handling in production.
+- Configure HTTPS, secrets management, edge rate limits and trustworthy proxy IP handling in production. Proxy IP headers are ignored by the assistant rate limiter unless `VELNOR_TRUST_PROXY_HEADERS=true`; only enable it when ingress strips client-supplied headers and injects normalized identity.
 - The assistant endpoint's in-memory rate limit is process-local and is not a distributed abuse control.
 - The server-configured provider base URL should be trusted and controlled.
 - Preview code runs in a sandboxed iframe.
