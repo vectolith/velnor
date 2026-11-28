@@ -48,7 +48,7 @@ Everything is optional and read from the environment:
 
 ## Security
 
-- Workspace content and pasted provider tokens are stored in browser local storage; local storage is not a secure vault.
+- Workspace content is stored in browser local storage. Provider tokens are kept in memory for the current tab session and are not persisted.
 - Configure HTTPS, secrets management, edge rate limits and trustworthy proxy IP handling in production.
 - The assistant endpoint's in-memory rate limit is process-local and is not a distributed abuse control.
 - The server-configured provider base URL should be trusted and controlled.
