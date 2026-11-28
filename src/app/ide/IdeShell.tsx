@@ -40,7 +40,7 @@ import {
 } from "@/lib/ide/workspace";
 import { createSnapshot, restoreSnapshot, retainSnapshots, type WorkspaceSnapshot } from "@/lib/ide/snapshots";
 import { buildAssistantWorkspaceContext } from "@/lib/ide/inventory";
-import { parseWorkspaceBundle } from "@/lib/ide/workspaceImport";
+import { createWorkspaceFromBundle, parseWorkspaceBundle } from "@/lib/ide/workspaceImport";
 
 const WORKSPACE_KEY = "velnor.ide.workspace.v1";
 const SNAPSHOTS_KEY = "velnor.ide.snapshots.v1";
@@ -245,13 +245,24 @@ setReady(true);
         if (file.name.toLowerCase().endsWith(".json")) {
           let parsed: unknown = null;
           try { parsed = JSON.parse(text); } catch { /* ordinary JSON source file */ }
-          if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && (parsed as { schemaVersion?: unknown }).schemaVersion === 1 && Array.isArray((parsed as { files?: unknown }).files)) {
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed) && ((parsed as { schemaVersion?: unknown }).schemaVersion === 1 || (parsed as { schemaVersion?: unknown }).schemaVersion === undefined) && Array.isArray((parsed as { files?: unknown }).files) && typeof (parsed as { entry?: unknown }).entry === "string") {
             const validated = parseWorkspaceBundle(text);
-            return { files: validated.files, entry: validated.entry };
+            return { files: validated.files, entry: validated.entry, bundle: validated };
           }
         }
-        return { files: [{ path: file.name, content: text }], entry: null };
+        return { files: [{ path: file.name, content: text }], entry: null, bundle: null };
       }));
+      const backups = incoming.filter((item) => item.bundle);
+      if (backups.length) {
+        if (incoming.length !== 1) throw new WorkspaceError("Import a workspace backup separately from individual files.");
+        const next = createWorkspaceFromBundle(backups[0].bundle!);
+        setWorkspace(next);
+        setDirtyIds(new Set());
+        persist(next);
+        setReloadKey((value) => value + 1);
+        notify("Restored workspace backup.");
+        return;
+      }
       const flattened = incoming.flatMap((bundle) => bundle.files).filter((item) => item.path.trim());
       if (!flattened.length) throw new WorkspaceError("The selected import contains no usable files.");
       setWorkspace((current) => {
