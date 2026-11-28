@@ -87,7 +87,7 @@ export function languageLabel(language: IdeLanguage): string {
   }
 }
 
-const INDEX_HTML = '<!doctype html>
+const INDEX_HTML = `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -103,9 +103,9 @@ const INDEX_HTML = '<!doctype html>
     <script src="app.js"></script>
   </body>
 </html>
-';
+`;
 
-const STYLES_CSS = ':root {
+const STYLES_CSS = `:root {
   color-scheme: dark;
   --ink: #e6edf3;
   --muted: #8b98a5;
@@ -158,9 +158,9 @@ button {
 button:hover {
   background: rgba(122, 162, 247, 0.12);
 }
-';
+`;
 
-const APP_JS = 'const clock = document.getElementById("clock");
+const APP_JS = `const clock = document.getElementById("clock");
 const ping = document.getElementById("ping");
 
 function tick() {
@@ -173,7 +173,7 @@ setInterval(tick, 1000);
 ping?.addEventListener("click", () => {
   console.log("pong at", new Date().toISOString());
 });
-';
+`;
 
 function defaultEntryFiles(): IdeFile[] {
   return [
