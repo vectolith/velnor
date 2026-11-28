@@ -242,19 +242,26 @@ export function IdeShell() {
         if (file.name.toLowerCase().endsWith(".json")) {
           try {
             const parsed = JSON.parse(text) as { files?: Array<{ path?: unknown; content?: unknown }>; entry?: unknown };
-            if (Array.isArray(parsed.files)) return parsed.files.map((item) => ({ path: String(item.path ?? ""), content: String(item.content ?? "") }));
-          } catch { /* import as a regular file if not a workspace bundle */ }
+            if (Array.isArray(parsed.files)) {
+              return {
+                files: parsed.files.map((item) => ({ path: String(item.path ?? ""), content: String(item.content ?? "") })),
+                entry: typeof parsed.entry === "string" ? parsed.entry : null,
+              };
+            }
+          } catch { /* treat non-bundle JSON as a normal file */ }
         }
-        return [{ path: file.name, content: text }];
+        return { files: [{ path: file.name, content: text }], entry: null };
       }));
-      const flattened = incoming.flat();
+      const flattened = incoming.flatMap((bundle) => bundle.files).filter((item) => item.path.trim());
+      if (!flattened.length) throw new WorkspaceError("The selected import contains no usable files.");
       setWorkspace((current) => {
+        // Stage the entire import before committing so a capacity/path/size error
+        // cannot leave a partially imported workspace.
         let files = [...current.files];
-        for (const item of flattened) {
-          if (!item.path.trim()) continue;
-          files = [...files, addFile(files, item.path, item.content)];
-        }
-        const next = { ...current, files, activeId: files.at(-1)?.id ?? current.activeId };
+        for (const item of flattened) files = [...files, addFile(files, item.path, item.content)];
+        const requestedEntry = incoming.find((bundle) => bundle.entry)?.entry;
+        const entry = requestedEntry ? normalizePath(requestedEntry) : current.entry;
+        const next = { ...current, files, entry, activeId: files.at(-1)?.id ?? current.activeId };
         persist(next);
         return next;
       });
