@@ -2,8 +2,7 @@ name: Velnor IDE CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
 
 permissions:
@@ -16,45 +15,46 @@ concurrency:
 jobs:
   build-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
-
       - name: Setup Node.js 24
         uses: actions/setup-node@v7.1.0
         with:
           node-version: "24"
-          cache: "npm"
-
+          cache: npm
       - name: Install dependencies
         run: npm ci
-
       - name: Run unit tests
         run: npm test
-
       - name: TypeScript typecheck
         run: npm run typecheck
-
-      - name: Build production Next.js standalone bundle
+      - name: Build production Next.js bundle
         run: npm run build
-
-      - name: Verify the IDE against the standalone production server
+      - name: Verify the production server
         run: |
-          mkdir -p .next/standalone/.next
-          cp -R .next/static .next/standalone/.next/static
-          if [ -d public ]; then cp -R public .next/standalone/public; fi
-          PORT=3000 HOSTNAME=127.0.0.1 nohup node .next/standalone/server.js > server.log 2>&1 &
+          PORT=3000 HOSTNAME=127.0.0.1 nohup npm run start -- -p 3000 > server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-          npm run verify
+          VELNOR_URL=http://localhost:3000 npm run verify
           echo "--- server.log ---"
           tail -50 server.log
-
+      - name: Build Cloudflare Worker with OpenNext
+        run: npm run cf:build
+      - name: Wrangler deploy dry-run (no upload)
+        run: npx wrangler deploy --dry-run --outdir .wrangler-dry-run
+      - name: Smoke-test local Worker runtime
+        run: |
+          nohup npx wrangler dev --local --port 8787 > worker.log 2>&1 &
+          WORKER_PID=$!
+          trap 'kill "$WORKER_PID" 2>/dev/null || true' EXIT
+          VELNOR_URL=http://localhost:8787 npm run verify
+          echo "--- worker.log ---"
+          tail -80 worker.log
       - name: Build Node 26 Alpine Docker image
         run: docker build --tag velnor-ci:latest .
-
-      - name: Smoke-test the Node 26 Alpine Docker image
+      - name: Smoke-test Docker image
         run: |
           docker run --detach --name velnor-ci --publish 8080:8080 velnor-ci:latest
           trap 'docker rm --force velnor-ci >/dev/null 2>&1 || true' EXIT
